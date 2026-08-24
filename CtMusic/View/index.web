@@ -1,0 +1,60 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <title>CtMusic Player v1.0</title>
+    <style>
+        body { background-color: #FFFFFF; font-family: Arial, sans-serif; margin: 20px; color: #333; }
+        .logo { font-size: 28px; font-weight: bold; color: #000; letter-spacing: -1px; }
+        .logo span { background-color: #FF0000; color: #FFF; padding: 2px 6px; border-radius: 4px; margin-left: 2px; }
+        .search-box { background-color: #EEE; padding: 10px; border: 1px solid #CCC; margin: 15px 0; }
+        input[type="text"] { width: 300px; padding: 4px; font-size: 14px; }
+        button { padding: 4px 12px; font-size: 14px; background-color: #DDD; border: 1px solid #AAA; cursor: pointer; }
+        button:hover { background-color: #CCC; }
+        .filters { margin: 10px 0; font-size: 12px; color: #555; }
+        .results-table { width: 100%; border-collapse: collapse; margin-top: 20px; }
+        .results-table th { background-color: #E5E5E5; text-align: left; padding: 5px; font-size: 13px; border: 1px solid #CCC; }
+        .results-table td { padding: 8px; border: 1px solid #EEE; font-size: 14px; }
+        .track-title { color: #0033CC; font-weight: bold; cursor: pointer; text-decoration: none; }
+        .track-title:hover { text-decoration: underline; }
+    </style>
+</head>
+<body>
+
+    <!-- Шапка старого YouTube -->
+    <table width="100%">
+        <tr>
+            <td class="logo">Ct<span>Music</span></td>
+            <td align="right" style="font-size: 12px;">CtOs Старое Ядро | Локальный режим</td>
+        </tr>
+    </table>
+
+    <!-- Поисковая панель (Параметры Muzophone-фильтрации) -->
+    <div class="search-box">
+        <form method="GET" action="/search">
+            <label>Поиск музыки: </label>
+            <input type="text" name="q" placeholder="Название трека или альбома..." required>
+            <button type="submit">Искать</button>
+            
+            <div class="filters">
+                <label><input type="checkbox" name="original" checked> Жесткий фильтр оригинальности (Без каверов/Яндекс.Цензуры)</label>
+                &nbsp;&nbsp;
+                <label>Фильтр автора: <input type="text" name="author" placeholder="Например: Warframe" style="width:100px;"></label>
+            </div>
+        </form>
+    </div>
+
+    <h3>Результаты поиска:</h3>
+    <table class="results-table">
+        <tr>
+            <th>Название композиции</th>
+            <th>Исполнитель / Автор</th>
+            <th>Длительность</th>
+            <th>Действие</th>
+        </tr>
+        <!-- Сюда наш KITII-интерпретатор будет динамически подставлять строки из YouTube Music -->
+        {{RESULTS}}
+    </table>
+
+</body>
+</html>

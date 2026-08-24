@@ -1,0 +1,66 @@
+//===========================================================
+// [VOID-CORE SYNTAX SPECIFICATION] - Файл: syntax.void
+//===========================================================
+//---- [SYS] ----/
+// ОПРЕДЕЛЕНИЕ ЯДРА ЯЗЫКА (Self-Hosted Syntax)
+
+/**
+ * 1. НАТИВНЫЕ ТИПЫ (Multi-Arch Support)
+ * Автоматическая адаптация под Android 10-15 (ARM) и Ноутбуки (x86/x64).
+ */
+v_word  = @sys.native_width(); // 4 байта (32-bit) или 8 байт (64-bit)
+v_addr  = @sys.ptr_width();    // Размер указателя в адресном пространстве
+
+/**
+ * 2. КЛАСТЕР ЯЧЕЕК (CELL)
+ * Универсальные контейнеры данных с разной логикой защиты.
+ */
+type cell:ghost = { @mem.encrypt, @mem.zeroize_ram }; // RAM-Only: шифрование + полное затирание
+type cell:raw   = { @mem.direct_access };             // Низкий уровень: прямой доступ (B/C style)
+type cell:vocal = { @mem.dinamic_obj };               // Высокий уровень: динамика (JS/Python style)
+
+/**
+ * 3. СИСТЕМНЫЕ ОПЕРАТОРЫ
+ * Механизмы связи слоев и управления владением.
+ */
+operator &-   = @bridge.signal_push;       // Мост: [LOGIC] -> [SYS] (Сигнальная шина)
+operator move = @mem.transfer_ownership;   // Rust-style: передача + немедленный Zeroize источника
+
+/**
+ * 4. WEB-КЛАСТЕР (Интеграция технологий)
+ * Поддержка всего стека Web-разработки и баз данных.
+ */
+type .web = { 
+    @cluster.html5,      // Стандартная верстка
+    @cluster.bootstrap,  // Фреймворки интерфейса
+    @cluster.sql,        // Ядро баз данных
+    @cluster.js_engine   // Логика сценариев
+};
+
+// ТЕГИ КОНТЕКСТА (Для вставки в .web файлы)
+define tag <sql> = embedded_query; // Прямые SQL-запросы в коде (SELECT/INSERT/WIPE)
+define tag <web> = ui_container;   // HTML/CSS контейнер для рендеринга View
+
+/**
+ * 5. СТРУКТУРЫ ДАННЫХ (Data Logic)
+ */
+type table = { @sql.schema, @mem.ghost_storage }; // Таблицы всегда в зашифрованном виде
+type row   = { @sql.entry, @mem.auto_zeroize };   // Строки стираются сразу после извлечения
+
+/**
+ * 6. ДИРЕКТИВЫ КОМПИЛЯТОРА (Optimization)
+ */
+#if @sys.is_low_mem() 
+    @compiler.restrict_cache(true); // Экономия ресурсов на 32-bit/low-end устройствах
+#endif
+
+// Правило доступа для веб-контейнера
+define container .web {
+    allow @cluster.html5;
+    allow @cluster.sql;
+    allow @bridge.direct_link; // Разрешить вызовы ядра через &-
+}
+
+//===========================================================
+// END OF SPECIFICATION
+//===========================================================

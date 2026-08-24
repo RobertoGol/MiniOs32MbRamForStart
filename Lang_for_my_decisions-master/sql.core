@@ -1,0 +1,90 @@
+//===========================================================
+// [SQL CORE ENGINE] - Файл: sql.core
+//===========================================================
+//---- [SYS] ----/
+
+/**
+ * Узел управления данными (DataNode).
+ * Обрабатывает теги <?sql ?> из .web и прямые запросы из [LOGIC].
+ */
+node SqlEngine {
+    
+    // [&-] Связь с защищенными слоями ядра
+    &- import { MemoryCore } from "memory.ctos";
+    &- import { HiddenVault, HardwareGuardian } from "kernel.ctos";
+
+    // Карта физических адресов таблиц в HiddenVault (LBA сектора)
+    cell:ghost TABLE_MAP = {
+        "ghost_table":     0xDE000,
+        "active_sessions": 0xDF000,
+        "external_scan":   0xE0000
+    };
+
+    /**
+     * [QUERY_EXEC] - Главный исполнитель запросов.
+     * Транслирует SQL-синтаксис в поиск по Ghost-ячейкам RAM.
+     */
+    pub async cell:ghost execute(v_vocal query_str) {
+        
+        // 1. [PARSER] - Нативный разбор строки запроса в план действий
+        cell:raw plan = @sql.parse_to_plan(query_str);
+
+        // 2. [DECIDE] - Логика весов для выбора операции
+        decide (plan.action) {
+            weight("SELECT") => {
+                // Извлечение данных из зашифрованной RAM (Ghost-Zone)
+                return SqlEngine.fetch_ghost_data(plan.target_table);
+            }
+            weight("INSERT") => {
+                // Запись новых данных с автоматическим шифрованием
+                return SqlEngine.commit_to_vault(plan.payload);
+            }
+            weight("WIPE") => {
+                // [ZEROIZE] - Полное физическое уничтожение таблицы
+                &- MemoryCore.zeroize(plan.table_addr, plan.table_size);
+                return "TABLE_PHYSICALLY_WIPED";
+            }
+            else => {
+                // Ловушка: если запрос подозрительный — симулируем краш
+                &- HardwareGuardian.trigger_fake_panic("0xDB_ACCESS_DENIED");
+            }
+        }
+    }
+
+    /**
+     * [FETCH_GHOST] - Чтение данных из призрачных страниц.
+     */
+    priv cell:ghost fetch_ghost_data(v_vocal table_name) {
+        v_addr lba = TABLE_MAP[table_name];
+        // Читаем напрямую из HiddenVault (битые сектора диска)
+        cell:ghost data = &- HiddenVault.read_stealth(lba);
+        
+        // [PYTHON_STYLE] - Быстрая фильтрация результата
+        return [row for row in data if row.status == "active"];
+    }
+
+    /**
+     * [PHYSICAL_STORAGE] - Связь с диском через HiddenVault.
+     */
+    priv void commit_to_vault(cell:ghost table_data) {
+        // Двойная защита: данные уходят на диск уже зашифрованными в RAM
+        &- HiddenVault.write_stealth(table_data);
+        @telemetry.log("SQL_COMMIT: SUCCESS");
+    }
+}
+
+/**
+ * Изолят-индексатор (Fast Indexer).
+ * Ускоряет поиск через SIMD (векторные инструкции процессора).
+ */
+isolate SqlIndexer {
+    pub fn build_index(cell:raw table_ptr) {
+        // [MULTI-ARCH] - Оптимизация под Android 11 (ARM64) и Windows (x64)
+        if (@sys.bitness() == 64) {
+            // Прямой проброс инструкций процессора для сканирования памяти
+            @hw.simd_scan_64(table_ptr);
+        } else {
+            @hw.scan_32(table_ptr);
+        }
+    }
+}

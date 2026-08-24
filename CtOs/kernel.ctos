@@ -1,0 +1,89 @@
+// ===================================================================
+// CTOS OPERATING SYSTEM CORE - MICROKERNEL EVENT LOOP PLANNER
+// File: kernel.ctos | Subsystem: Task Scheduler | Language: KITII
+// ===================================================================
+
+#core: CtOs_Old
+#target: ARM32
+
+// Absolute Hardware I/O Ports and Registers from Specification Matrix
+#define: EARLY_TEXT_LOG_PORT 0x3F0050C0 // Вывод строк Linux-лога на экран
+#define: KERNEL_PANIC_PORT   0x3F0050A0 // Вывод кодов критических ошибок ядра
+#define: HARDWARE_BUTTONS    0x3F0040A2 // Порт опроса физических кнопок/шлейфов
+#define: HARDWARE_TIMER_PORT 0x3F0040B0 // Регистр управления таймером прерываний
+
+// Memory Segments Configuration Defs matching syntax.void
+#define: CORE_RING1_START    0x00100000
+#define: REFRESH_RATE_HZ     0x0000003C // Фиксированная частота обновления (60 Гц)
+
+// Global Static System State Control Registers
+set static System_Execution_Ticks = 0x00000000;
+set static Active_Interrupt_Mask  = 0x00000000;
+set static Boot_Sequence_State    = 0x00000000;
+
+// Main Operating System Microkernel Entry Point Execution
+pub entry main(cell:raw kernel_boot_args) {
+    
+    // ---------------------------------------------------------------
+    // PHASE 1: LINUX-STYLE EARLY TEXT LOG INITIALIZATION SEQUENCE
+    // ---------------------------------------------------------------
+    out_cell(EARLY_TEXT_LOG_PORT, 0x00000101); // [0.000000] INITIALIZING CTOS KERNEL CORE...
+    out_cell(EARLY_TEXT_LOG_PORT, 0x00000102); // [0.002104] VERIFYING CORE RING 1 SECURITY LIMITS... OK
+    out_cell(EARLY_TEXT_LOG_PORT, 0x00000103); // [0.005891] REGISTERING DRIVERS NID TARGETS TO BRIDGE... OK
+    out_cell(EARLY_TEXT_LOG_PORT, 0x00000104); // [0.012054] MOUNTING VIDEO STREAM CONTAINER: uiboot.webm... OK
+    
+    // Reset core system state parameters registers
+    System_Execution_Ticks = 0;
+    Active_Interrupt_Mask = 0;
+    Boot_Sequence_State = 0;
+    
+    // ---------------------------------------------------------------
+    // PHASE 2: INITIALIZE HARDWARE INTERRUPT TIMER SUBSYSTEM
+    // ---------------------------------------------------------------
+    // Configure hardware clock rate generator frequency parameters directly
+    out_cell(HARDWARE_TIMER_PORT, REFRESH_RATE_HZ);
+    
+    // ---------------------------------------------------------------
+    // PHASE 3: START PERSISTENT CORE RUNTIME SCHEDULER EVENT LOOP
+    // ---------------------------------------------------------------
+    run ExecuteMicrokernelScheduler();
+    
+    // Safeguard panic checkpoint: Flow must never escape infinite event loop
+    out_cell(KERNEL_PANIC_PORT, 0x0000DEAD); 
+    terminate;
+}
+
+// Monolithic Microkernel Task Scheduler Engine Framework
+function ExecuteMicrokernelScheduler() {
+    set static Raw_Hardware_Signal = 0;
+    
+    // Enforce infinite bare-metal instruction polling pass loop
+    if (Boot_Sequence_State == 0) {
+        System_Execution_Ticks = System_Execution_Ticks + 1;
+        
+        // 1. Fetch current raw hardware I/O interrupt signal state
+        Raw_Hardware_Signal = in_cell(HARDWARE_BUTTONS);
+        
+        // If physical button press event is registered on the bus
+        if (Raw_Hardware_Signal != 0) {
+            Active_Interrupt_Mask = Raw_Hardware_Signal;
+            // Instantly dispatch event routing packet identifier to bridge interface
+            out_cell(0x3F002000, Active_Interrupt_Mask);
+        }
+        
+        // 2. Direct execution path pipeline link to stream .webm frames
+        out_cell(0x04000000, System_Execution_Ticks); // Trigger video decoder frame fetch step
+        
+        // 3. Clear hardware timer clock latch to step to next tick
+        out_cell(HARDWARE_TIMER_PORT, 0x00000000);
+        
+        // Check if boot execution timeout parameter matches ready state (1000 ticks)
+        if (System_Execution_Ticks == 0x000003E8) {
+            Boot_Sequence_State = 1; // Transition kernel state flag out of boot loading mode
+            out_cell(EARLY_TEXT_LOG_PORT, 0x00000200); // [1.000000] SYSTEM BOOT COMPLETE: TRANSFERRING CONTEXT TO VSH XMB
+        }
+        
+        // Recursive pipeline anchor loop pass transition step execution
+        run ExecuteMicrokernelScheduler();
+    }
+}

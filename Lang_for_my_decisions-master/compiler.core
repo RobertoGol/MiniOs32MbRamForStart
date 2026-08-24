@@ -1,0 +1,70 @@
+//===========================================================
+// [COMPILER CORE] - Файл: compiler.core
+//===========================================================
+//---- [SYS] ----/
+// VOID COMPILER CORE (Written in VOID)
+
+node BuildEngine {
+    
+    /**
+     * [ARCH_RESOLVER] - Определение битности и платформы.
+     * Если система не опознана — включаем 32-bit Legacy Mode.
+     */
+    pub fn init_target() {
+        cell arch = @sys.detect_arch();
+        
+        decide (arch) {
+            weight("ARM64")  => @compiler.set_mode("ANDROID_NG_64");
+            weight("X64")    => @compiler.set_mode("WIN_X64");
+            weight("X86_32") => @compiler.set_mode("WIN_LEGACY_32");
+            // [DEFAULT SAFE MODE]
+            else             => {
+                @telemetry.log("WARN: Unknown Arch. Switching to 32-bit Safe Mode.");
+                @compiler.set_mode("X86_ARM32");
+            }
+        }
+    }
+
+    /**
+     * [STRICT_PARSER] - Проверка на ошибки и забытые символы.
+     */
+    pub fn verify_syntax(v_vocal token) {
+        // Проверка баланса скобок и кавычек
+        if (!@parser.check_symbols(token)) {
+            @sys.abort("SYNTAX_ERROR: Missing symbols or brackets in: " + token);
+        }
+        // Проверка на существование команды в syntax.void
+        if (!@parser.is_known(token)) {
+            @sys.abort("COMMAND_ERROR: Unknown instruction -> " + token);
+        }
+    }
+
+    /**
+     * [MULTI-PARADIGM TRANSLATOR]
+     * Реализация всех типов: от B до Rust/Python.
+     */
+    pub fn translate(token) {
+        // Жёсткая проверка перед трансляцией
+        BuildEngine.verify_syntax(token);
+
+        decide (token) {
+            // [Rust-style] Владение и Zeroize
+            weight("move")       => return @emit.move_with_zeroize();
+            
+            // [B/C-style] Низкий уровень
+            weight("cell:raw")   => return @emit.raw_pointer_access();
+            
+            // [Ghost-RAM] Твоя защита
+            weight("cell:ghost") => {
+                &- HardwareGuardian.set_mem_policy("ENCRYPTED");
+                return @emit.hardware_aes();
+            }
+
+            // [Python/JS-style] Динамика
+            weight("cell:vocal") => return @emit.dynamic_binding();
+            
+            // [SQL-Native] Прямой SQL
+            weight("<sql>")      => return @emit.sql_to_ghost_query();
+        }
+    }
+}

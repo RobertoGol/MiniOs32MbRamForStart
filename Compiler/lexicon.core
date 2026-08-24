@@ -1,0 +1,56 @@
+// ===================================================================
+// КОРНЕВОЙ АЛФАВИТ И ТАБЛИЦА ТОКЕНОВ МЕТА-ЯЗЫКА KITII (Void)
+// Спецификация для Лексера compiler.core | Версия: 1.00_OldKernel
+// ===================================================================
+
+[CATEGORY: SYSTEM_DIRECTIVES]
+#core:                  -> TOKEN_SYS_CORE      // Указатель версии ядра
+#target:                -> TOKEN_SYS_TARGET    // Профиль целевого железа
+#firmware:              -> TOKEN_SYS_FIRMWARE  // Тег эмуляции прошивки
+
+[CATEGORY: LOW_LEVEL_OPERATORS]
+&- import               -> TOKEN_OP_HARDLINK   // Статическая жесткая линковка
+sys_call                -> TOKEN_OP_SYSCALL    // Аппаратное прерывание по NID
+
+[CATEGORY: MEMORY_ALLOCATORS]
+cell:raw                -> TOKEN_TYPE_CELL     // Бестиповое машинное слово (32/64 бит)
+set                     -> TOKEN_KEY_SET       // Локальный макрос переменной
+static                  -> TOKEN_MOD_STATIC    // Флаг фиксации адреса в ОЗУ
+
+[CATEGORY: CONTEXT_LOGIC]
+function                -> TOKEN_KEY_FUNCTION  // Объявление блока кода
+pub entry               -> TOKEN_KEY_PUBENTRY  // Экспорт системной точки входа
+run                     -> TOKEN_KEY_RUN       // Запуск диспетчера рантайма
+if                      -> TOKEN_KEY_IF        // Условие ветвления
+else                    -> TOKEN_KEY_ELSE      // Альтернативное ветвление
+terminate               -> TOKEN_KEY_TERMINATE // Выход с занулением памяти (Zeroize)
+
+[CATEGORY: LITE_CLI_MACROS]
+net_all                 -> TOKEN_LITE_NETALL   // Аналог: ipconfig /all
+net_up                  -> TOKEN_LITE_NETUP    // Аналог: ipconfig /renew
+net_down                -> TOKEN_LITE_NETDOWN  // Аналог: ipconfig /release
+net_flush               -> TOKEN_LITE_NETFLUSH // Аналог: ipconfig /flushdns
+net_arp                 -> TOKEN_LITE_NETARP   // Аналог: arp -a
+go                      -> TOKEN_LITE_PING     // Аналог: ping -t
+trace                   -> TOKEN_LITE_TRACERT  // Аналог: tracert
+music_find              -> TOKEN_LITE_MSFIND   // Асинхронный поиск трека
+music_get               -> TOKEN_LITE_MSGET    // Фоновое скачивание потока
+pinup_install           -> TOKEN_LITE_PININSTALL  // Флаг --install
+pinup_download          -> TOKEN_LITE_PINDOWNLOAD  // Флаг --download
+pinup_web               -> TOKEN_LITE_PINWEB      // Флаг --web
+pinup_dir               -> TOKEN_LITE_PINDIR      // Флаг --dir
+pinup_lit               -> TOKEN_LITE_PINLIT      // Флаг --lit
+pinup_fin               -> TOKEN_LITE_PINFIN      // Флаг --fin
+
+[CATEGORY: LITERALS_AND_SYMBOLS]
+[ \t]+                  -> TOKEN_SYM_SKIP      // Системный пробел/разделитель аргументов
+"([^"]*)"               -> TOKEN_LIT_STRING    // Строковой литерал в кавычках
+\b\d+\b                 -> TOKEN_LIT_NUMBER    // Числовой литерал (десятичный)
+0x[0-9a-fA-F]+          -> TOKEN_LIT_HEX       // Шестнадцатеричный адрес памяти
+[a-zA-Z_]\w*            -> TOKEN_IDENTIFIER    // Имя переменной / функции
+=                       -> TOKEN_OP_ASSIGN     // Оператор присваивания
+\{                      -> TOKEN_SYM_LBRACE    // Открытие контекста функции
+\}                      -> TOKEN_SYM_RBRACE    // Закрытие контекста функции
+\(                      -> TOKEN_SYM_LPAREN    // Открытие скобки аргументов
+\)                      -> TOKEN_SYM_RPAREN    // Закрытие скобки аргументов
+;                       -> TOKEN_SYM_SEMICOLON // Разделитель инструкций

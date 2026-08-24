@@ -1,0 +1,56 @@
+//===========================================================
+// [BRIDGE LAYER] - Файл: bridge.ctos
+//===========================================================
+//---- [SYS] ----/
+// Универсальный коммутатор слоев (Native Bridge)
+
+node SystemBridge {
+    
+    // Сигнальная шина (Bus). Адрес подстраивается под битность системы.
+    v_addr BUS_GATE = @sys.map_io_space(0x1000FF00);
+
+    /**
+     * РЕАЛИЗАЦИЯ ОПЕРАТОРА &- (Signal Push)
+     * Связывает [LOGIC] и [SYS]. Поддерживает 32/64 bit.
+     */
+    pub fn signal_push(cell logic_data, v_word target_fn) {
+        
+        // 1. [ANTI-FORENSICS]
+        // Симуляция системного сбоя при несанкционированном доступе.
+        if (!@sys.verify_call_stack()) {
+            &- HardwareGuardian.trigger_fake_panic("0xC0000005");
+        }
+
+        // 2. [MULTI-ARCH MARSHALLING]
+        // Android 11/x64 -> Регистры | x86 Legacy -> Стек
+        if (@sys.is_64bit()) {
+            asm {
+                "mov x0, %0" // Данные в x0 (ARM64/x64)
+                "mov x8, %1" // ID функции в x8
+                "svc #0"     // Системный вызов
+                : : "r"(logic_data), "r"(target_fn)
+            };
+        } else {
+            asm {
+                "push %0"
+                "mov eax, %1"
+                "int 0x80"   // Прерывание для 32-bit систем
+                : : "r"(logic_data), "r"(target_fn)
+            };
+        }
+    }
+
+    /**
+     * [INPUT SHIELD]
+     * Аппаратный фильтр BadUSB и эмуляторов ввода.
+     */
+    pub handler on_raw_input(v_word event_ptr) {
+        if (@hw.is_injected(event_ptr)) {
+            @telemetry.log("BLOCK: UNAUTHORIZED_INPUT_INJECTION");
+            return; // Пакет уничтожен
+        }
+        
+        // Проброс чистого события в слой LOGIC
+        @logic.dispatch_event(event_ptr);
+    }
+}

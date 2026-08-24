@@ -1,0 +1,68 @@
+// ===================================================================
+// CTOS OPERATING SYSTEM CORE - LOW-LEVEL MEMORY MANAGER ALOCATOR
+// Compilation Target: BARE_METAL_OS | Architecture Profile: Void
+// ===================================================================
+
+#core: CtOs_Old
+#target: ARM32
+
+// Absolute Physical Boundaries Addresses from System Specification Matrix
+#define: CORE_RING0_START 0x00000000
+#define: CORE_RING0_END   0x00100000
+#define: SYSTEM_POOL_START 0x00100000
+#define: USER_POOL_START   0x00A00000
+#define: PHYSICAL_RAM_END  0x02000000
+
+// Internal Hardware Control Diagnostic Feedback Registers Ports
+#define: KERNEL_PANIC_PORT 0x3F0050A0
+#define: EARLY_BOOT_IO_OUT 0x3F0050C0
+
+// Global Static Kernel Allocation Control Tracking Pointers
+set static Current_System_Alloc_Ptr = 0x00100000;
+set static Current_User_Alloc_Ptr   = 0x00A00000;
+set static Allocation_Fault_Counter = 0x00000000;
+
+// Main Kernel Core Memory Management Initialization Entry Point
+pub entry main(cell:raw kernel_args) {
+    // Output Early Boot state notification log directly to frame-buffer string pointer
+    out_cell(EARLY_BOOT_IO_OUT, 0x00001001); // Frame log payload message: "MEMORY.CTOS: ALLOCATOR INITIALIZED"
+    
+    // Test execution pass baseline values clear tracking counters flags
+    Allocation_Fault_Counter = 0;
+    
+    // Transfer system runtime management execution link back to main scheduling frame loop
+    terminate;
+}
+
+// Protected Functional Routine: Safely write 32-bit data primitive into target memory slot
+function CoreSecureWrite(cell:raw target_address, cell:raw data_payload) {
+    // Hardware Core Ring Protection Constraint Enforcement: Intercept Ring 0 modifications attempts
+    if (target_address < CORE_RING0_END) {
+        Allocation_Fault_Counter = Allocation_Fault_Counter + 1;
+        // Broadcast hardware memory write access bounds policy violation signature code to Panic controller
+        out_cell(KERNEL_PANIC_PORT, 0x0000C001); // Panic payload flag: "CORE PROTECTION FAULT: RING 0 ACCESS DENIED"
+        terminate;
+    }
+    
+    // Complete bare-metal inline assembler store instructions synchronization memory barriers pass
+    out_cell(target_address, data_payload);
+    __asm__ {
+        DSB ISH // Core Data Synchronization Barrier physical execution pipeline sync flush
+        ISB     // Core Instruction Synchronization Barrier context pipeline structural rebuild
+    }
+}
+
+// Protected Functional Routine: Dynamic runtime heap system area allocator token mechanism
+function RequestSystemCellMemory(cell:raw request_size_bytes) {
+    set static Planned_Next_Address_Offset = 0;
+    Planned_Next_Address_Offset = Current_System_Alloc_Ptr + request_size_bytes;
+    
+    // Structural boundary condition check: Prevent System Heap from spilling into User Space Ring 2
+    if (Planned_Next_Address_Offset > USER_POOL_START) {
+        out_cell(KERNEL_PANIC_PORT, 0x0000C002); // Panic code: "SYSTEM HEAP OVERFLOW EXCEPTION"
+        terminate;
+    }
+    
+    // Register allocation block commit sync pointer boundary shift configuration adjustment
+    Current_System_Alloc_Ptr = Planned_Next_Address_Offset;
+}

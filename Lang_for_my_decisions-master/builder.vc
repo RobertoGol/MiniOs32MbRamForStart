@@ -1,0 +1,41 @@
+//===========================================================
+// [MASTER BUILDER] - Файл: builder.vc
+//===========================================================
+//---- [LOGIC] ----/
+
+node VoidProjectMaster {
+    
+    // Параметры системы (Dell 9300 / Android 11)
+    cell TARGET_ARCH = @sys.detect_arch(); 
+    cell DEBUG_MODE  = true;               // Режим отладки (без обфускации)
+
+    pub entry start_build() {
+        print("--- VOID-CORE: STARTING FULL ASSEMBLY ---");
+
+        // 1. Инициализация правил из syntax.void
+        &- BuildEngine.init_compiler(source: "syntax.void");
+        &- BuildEngine.init_target(); // Настройка 32/64 bit
+
+        // 2. Линковка системных модулей [SYS]
+        &- BuildEngine.link_module("memory.ctos");
+        &- BuildEngine.link_module("kernel.ctos");
+        &- BuildEngine.link_module("bridge.ctos");
+        &- BuildEngine.link_module("sql.core");
+        &- BuildEngine.link_module("runtime.ctos");
+
+        // 3. Компиляция Приложения (Интерфейс + Логика)
+        // Объединяем логику и веб-интерфейс в один void.run
+        &- BuildEngine.compile_app(
+            logic: "main.vc", 
+            view: "index.web",
+            output: "void.run"
+        );
+
+        // 4. Финальная проверка целостности сборки
+        if (BuildEngine.verify_integrity()) {
+            print("--- BUILD SUCCESS: void.run is ready for " + TARGET_ARCH + " ---");
+        } else {
+            @sys.abort("BUILD_FAILED: INTEGRITY_ERROR (Check logs)");
+        }
+    }
+}

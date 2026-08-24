@@ -1,0 +1,20 @@
+PS C:\Users\RJ\Downloads\SpotDll\Python_compiler> python codegen.py ../Compiler/stage1_compiler.kt
+>> 
+===========================================================================
+[0.000000] Инициализация ядра CtOs Bootloader (Архитектура: Void)...
+[0.003114] Проверка аппаратного профиля хост-платформы... OK
+[0.009452] Выделение пула памяти memory.ctos (32МБ фиксировано)... OK
+[0.021084] Инициализация системной шины и портов I/O bridge.ctos... OK
+[0.035912] Загрузка спецификации и таблицы опкодов Стадии-0 из lexicon.core...
+===========================================================================
+
+[Ядро CtOs]: Запуск кодогенератора Стадии-0...
+Traceback (most recent call last):
+  File "C:\Users\RJ\Downloads\SpotDll\Python_compiler\codegen.py", line 207, in <module>
+    compiled_bytes = codegen.generate(target_profile=target_prof)
+                     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\RJ\Downloads\SpotDll\Python_compiler\codegen.py", line 51, in generate
+    self.macro_table[macro_name] = int(macro_val, 16)
+                                   ^^^^^^^^^^^^^^^^^^
+ValueError: invalid literal for int() with base 16: '0x00A00000 // Адрес начала исходного текста в памяти'
+PS C:\Users\RJ\Downloads\SpotDll\Python_compiler> 

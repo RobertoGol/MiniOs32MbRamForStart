@@ -1,0 +1,18 @@
+// Системный мост ядра CtOs для CtMusic
+#core: CtOs_Old
+#mode: Sandbox_NoServer
+
+set CensorshipFilter = "YandexMusic_Block"
+set SearchEngine = "ytsearch"
+
+function FilterEngine(input_title, current_author) {
+    if input_title == "" {
+        terminate
+    }
+    
+    // Посылаем низкоуровневый сигнал в yt-dlp для точного поиска
+    ct_call_node SearchEngine + ":" + input_title
+    
+    // Блокируем мусор, ремиксы и каверы, если ищем оригинал
+    apply_strict_meta_filter current_author
+}

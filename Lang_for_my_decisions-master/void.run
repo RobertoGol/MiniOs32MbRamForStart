@@ -1,0 +1,95 @@
+//===========================================================
+// [UNIVERSAL RUNTIME] - Файл: void.run
+//===========================================================
+//---- [SYS] ----/
+
+/**
+ * Глобальный загрузчик (The Bootstrapper).
+ * Инициализирует аппаратные слои защиты до выполнения первой строки кода.
+ */
+node VoidRuntime {
+    
+    // Таблица системных прерываний (Защита от BadUSB и инъекций)
+    cell:raw interrupt_vector = 0x0000FF10;
+
+    /**
+     * [ENTRY] - Начало жизненного цикла системы.
+     */
+    pub entry start(cell:raw args) {
+        
+        // 1. [HARDWARE SYNC] - Принудительная связь с ядром
+        // Вызываем верификацию HWID из kernel.ctos
+        &- import { HardwareGuardian, BIOSGuardian } from "kernel.ctos";
+        
+        // [BIOS_SHIELD] - Проверка прошивки перед запуском
+        if (BIOSGuardian.verify_firmware_integrity() == false) {
+            sys.abort("FIRMWARE_COMPROMISED");
+        }
+
+        if (HardwareGuardian.boot_verify() == false) {
+            // Если не Dell 9300 или не твой Android 11 — мгновенная смерть
+            sys.abort("IDENTITY_FAILED");
+        }
+
+        // 2. [INPUT SHIELD] - Активация аппаратного моста
+        // Устанавливаем фильтр прерываний из bridge.ctos для защиты ввода
+        &- import { SystemBridge } from "bridge.ctos";
+        sys.set_interrupt_handler(interrupt_vector, SystemBridge.on_raw_input);
+
+        // 3. [EXECUTION] - Запуск интерпретатора/компилятора
+        if (args.count() > 0) {
+            // Загружаем и запускаем конкретный .vc или .ctos файл
+            cell app_path = args;
+            VoidRuntime.execute_binary(app_path);
+        } else {
+            // Если файл не указан — открываем твою StatusDashboard
+            &- import { StatusDashboard } from "main.vc";
+            StatusDashboard.render();
+        }
+    }
+
+    /**
+     * [EXECUTE_BINARY] - Работает со скоростью машинного кода.
+     */
+    priv void execute_binary(cell path) {
+        // [GHOST_LOAD] Чтение кода напрямую в защищенную область RAM
+        cell app_code = fs.read_raw(path);
+        
+        // [STEALTH] Скрытие контекста процесса из системных мониторов
+        sys.hide_process_context();
+        
+        // Прыжок в точку входа приложения через оператор &-
+        &- call app_code.app_entry();
+        
+        // [Zeroize] Полная физическая очистка RAM после завершения сессии
+        VoidRuntime.global_purge();
+    }
+
+    /**
+     * Глобальная очистка (Zeroize Manager).
+     */
+    priv void global_purge() {
+        // Затираем нулями весь выделенный диапазон RAM
+        mem.physical_wipe_range(0x0, 0xFFFFFFFF); 
+        print("--- SESSION_CLOSED: ALL_TRACES_PURGED ---");
+    }
+}
+
+//===========================================================
+// [LOGIC] - Мост совместимости (Cross-Platform Logic)
+//===========================================================
+//---- [LOGIC] ----/
+
+isolate OsAdapter {
+    /**
+     * Этот блок автоматически адаптирует системные вызовы под платформу.
+     * Если мы на Android (ARM64) — шлем SVC #0, на Windows (x64) — SYSCALL.
+     */
+    pub func resolve_syscall(cell op_id) {
+        decide (sys.platform()) {
+            weight("ARM_ANDROID_11") => hw.emit_arm_svc(op_id);
+            weight("WIN_X64_NT")     => hw.emit_x64_syscall(op_id);
+            weight("LEGACY_32")      => hw.emit_x86_int80(op_id);
+        }
+    }
+}
