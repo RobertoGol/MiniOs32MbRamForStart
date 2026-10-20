@@ -47,7 +47,14 @@ rootcmd: ring0.guard off          // снять защиту Ring 0 (тольк�
 rootcmd: boot.video off           // отключить загрузочный ролик .webm
 rootcmd: mem.pool 32              // жёсткий лимит пула ОЗУ в МБ
 rootcmd: theme.force builtin/ark4_dark
+rootcmd: fs.scan.delay 1000       // честная задержка скана диска после монтажа
+rootcmd: fs.scan.now              // честный повторный скан вручную
+rootcmd: fs.osdisk ms0:           // честная пере-метка системного диска
 ```
+
+Подсистемы rootcmd (полный реестр — в EMULATION_SPEC «rootcmd»):
+диски/скан/правила записи, темы, память, guard. Скрытые из Settings —
+не просто так: честный доступ только к владельцу.
 
 Правила честности:
 1. Скрытые параметры **не отображаются** в меню Settings и в `rootcmd: help`
