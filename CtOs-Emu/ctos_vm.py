@@ -41,7 +41,11 @@ OP_LOAD      = 0x12
 OP_SYSCALL   = 0x13
 OP_INCELL    = 0x50
 OP_OUTCELL   = 0x51
+OP_INCELL_IND = 0x52
 OP_ASMBLOCK  = 0x60
+OP_JZ        = 0x06
+OP_JMP       = 0x07
+OP_STORE_A   = 0x14
 OP_CONST     = 0x15   # «положить константу на акк» — эмитится как 0x15 + BE u32
 NET_OPS = {
     0x20: "net_all", 0x21: "net_up", 0x22: "net_down",
@@ -65,6 +69,8 @@ class CtOsVm:
         self.pc = None
         self.op_count = 0
         self._t0 = None
+        self._acc = 0    # аккумулятор арифметики стадий-0
+        self.rts = []    # стек возвратов для OP_CALL / OP_RET
 
     # ---------- лог ----------
     def log(self, line):
@@ -83,12 +89,20 @@ class CtOsVm:
             raise VmFault("хвостовая магия заголовка испорчена: 0x%08X" % tail)
         if entry < HEADER_SIZE or entry > len(self.b):
             raise VmFault("точка входа %d вне файла (0..%d)" % (entry, len(self.b)))
+        self.pc_entry = entry
         self.log("заголовок: v%d.%d, цель %s, вход 0x%08X" %
                  ((ver >> 8) & 0xFF, ver & 0xFF,
                   TARGETS.get(target_id, "0x%04X" % target_id), entry))
         self.pc = entry
 
     # ---------- шаг VM ----------
+    def jump_target(self, addr):
+        """Честная проверка адреса перехода: строго внутрь потока опкодов."""
+        if addr <= self.pc_entry or addr >= len(self.b):
+            raise VmFault("переход по адресу 0x%08X вне потока опкодов "
+                          "(файл 0x%08X байт)" % (addr, len(self.b)))
+        return addr
+
     def step(self):
         """Исполняет один опкод; возвращает False, когда поток закончен (OP_TERM/RET)."""
         b = self.b
@@ -102,12 +116,27 @@ class CtOsVm:
         elif op == OP_INIT:
             self.log("OP_INIT: инициализация модуля")
             self.pc = pc + 1
+        elif op in (OP_JZ, OP_JMP):
+            if pc + 5 > len(b):
+                raise VmFault("переходной опкод обрезан в конце файла")
+            target = struct.unpack_from(C1, b, pc + 1)[0]
+            if op == OP_JZ and self._acc != 0:
+                self.log("OP_JZ: acc=%d — условие ложно не сработало, идём дальше"
+                         % self._acc)
+                self.pc = pc + 5
+            else:
+                self.log("%s: [%s] -> 0x%08X"
+                         % ("OP_JZ" if op == OP_JZ else "OP_JMP", "acc=0" if op == OP_JZ else "всегда", target))
+                self.pc = self.jump_target(target)
         elif op == OP_TERM:
             self.log("OP_TERM: завершение контекста, зачистка ячеек стека")
             return False
         elif op == OP_RET:
-            self.log("OP_RET: возврат из функции")
-            return False
+            if not self.rts:
+                raise VmFault("OP_RET: возврат вне вызова функции — "
+                              "стек вызовов пуст в точке 0x%08X" % pc)
+            self.pc = self.rts.pop()
+            self.log("OP_RET: возврат из функции, pc = 0x%08X" % self.pc)
         elif op in NET_OPS:
             self.log("сеть: %s" % NET_OPS[op])
             self.pc = pc + 1
@@ -163,17 +192,36 @@ class CtOsVm:
                 raise VmFault("OP_CALL обрезан в конце файла")
             addr = struct.unpack_from(C1, b, pc + 1)[0]
             if addr == 0:
-                self.log("OP_CALL: адрес не выставлен стадией-0 (заглушка) — пропускаю")
+                self.log("OP_CALL: адрес 0 — старые бинари стадий-0 без таблицы "
+                         "вызовов, пропускаю")
+                self.pc = pc + 5
             else:
-                raise VmFault("OP_CALL: таблица адресов функций ещё не встроена "
-                              "в бинарь стадий-0 (адрес 0x%08X)" % addr)
-            self.pc = pc + 5
+                self.rts.append(pc + 5)
+                self.log("OP_CALL: стек возврата <- 0x%08X, вход в 0x%08X"
+                         % (pc + 5, addr))
+                self.pc = self.jump_target(addr)
         elif op == OP_SYSCALL:
             if pc + 5 > len(b):
                 raise VmFault("OP_SYSCALL обрезан в конце файла")
             nid = struct.unpack_from(C1, b, pc + 1)[0]
             raise VmFault("OP_SYSCALL: NID 0x%08X — на хосте нет драйвера с "
                           "таким адресом (эмуляция шины пока не встроена)" % nid)
+        elif op == OP_STORE_A:
+            if pc + 5 > len(b):
+                raise VmFault("OP_STORE_A обрезан в конце файла")
+            addr = struct.unpack_from(C1, b, pc + 1)[0]
+            self.cells[addr] = self._acc
+            self.log("OP_STORE_A: cell[0x%08X] = 0x%08X" % (addr, self._acc))
+            self.pc = pc + 5
+        elif op == OP_INCELL_IND:
+            if pc + 5 > len(b):
+                raise VmFault("OP_INCELL_IND обрезан в конце файла")
+            holder = struct.unpack_from(C1, b, pc + 1)[0]
+            addr = self.cells.get(holder, 0)
+            self._acc = self.cells.get(addr, 0)
+            self.log("OP_INCELL_IND: acc = cell[cell[0x%08X]=0x%08X] = 0x%08X"
+                     % (holder, addr, self._acc))
+            self.pc = pc + 5
         elif op == OP_ASMBLOCK:
             if pc + 5 > len(b):
                 raise VmFault("OP_ASMBLOCK обрезан в конце файла")
@@ -200,7 +248,10 @@ class CtOsVm:
         self.read_header()
         self._acc = 0
         while self.step():
-            pass
+            # честный предохранитель от неконечного цикла в бинаре
+            if self.op_count > 10_000_000:
+                raise VmFault("VM крутится дольше 10 млн опкодов — бинарь "
+                              "испорчен (нет OP_TERM/OP_RET)")
         return 0
 
 

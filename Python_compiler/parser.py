@@ -10,9 +10,10 @@ class DirectiveNode(ASTNode):
         self.type = type_
         self.value = value
 class FunctionNode(ASTNode):
-    def __init__(self, name, body):
+    def __init__(self, name, body, is_pub=False):
         self.name = name
         self.body = body
+        self.is_pub = is_pub
 class CommandNode(ASTNode):
     def __init__(self, name, args, line):
         self.name = name

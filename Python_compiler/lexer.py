@@ -187,6 +187,12 @@ class KitiiLexer:
                 current_pos = end_word
                 continue
 
+            if char == '=' and remaining_code.startswith('=='):
+                # Оператор равенства обязан разбираться ДО одиночного '='
+                tokens.append({'type': 'TOKEN_OP_EQ', 'value': '==', 'line': line_num})
+                current_pos += 2
+                continue
+
             if char in self.symbols:
                 tokens.append({'type': self.symbols[char], 'value': char, 'line': line_num})
                 current_pos += 1
