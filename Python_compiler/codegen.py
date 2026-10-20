@@ -124,7 +124,9 @@ class KitiiCodegen:
         self.pos += len(data)
 
     def emit_op(self, out, op):
-        self.emit(out, bytes([op]))
+        out.append(op)
+        self.pos += 1
+        self._last_opcode = op   # честный трекинг: последний ИМЕННО опкод
 
     def emit_be(self, out, val):
         self.emit(out, struct.pack(BE, val))
@@ -192,21 +194,18 @@ class KitiiCodegen:
 
     # ---------- функции и инструкции ----------
     def compile_function(self, func, out):
+        self._last_opcode = None
         for stmt in func.body:
             self.compile_stmt(stmt, out)
         if getattr(func, 'is_pub', False):
-            if self._last_op(out) != OP_TERM:
+            if self._last_opcode != OP_TERM:
                 self.emit_op(out, OP_TERM)   # честный выход даже без terminate
         else:
-            if self._last_op(out) not in (OP_RET, OP_TERM):
+            if self._last_opcode not in (OP_RET, OP_TERM):
                 self.emit_op(out, OP_RET)    # неявный возврат из функции
 
-    @staticmethod
-    def _last_op(out):
-        if len(out) == 0:
-            return None
-        # выискиваем самый последний опкод, включая потомков OP_JZ-веток
-        return out[-1]
+    def _last_op(self, out):   # устаревшая заглушка для совместимости вызовов
+        return self._last_opcode
 
     def compile_stmt(self, stmt, out):
         from parser import CommandNode, AssignmentNode, IfNode
@@ -326,9 +325,11 @@ class KitiiCodegen:
         self.emit(out, bytes([0x16]))
         self.emit_be(out, self.resolve(rhs))
 
-        # OP_JZ с отложенной заплаткой: адрес станет известен после ветки
+        # OP_JZ с отложенной заплаткой: адрес станет известен после ветки.
+        # ВАЖНО: patch_at — индекс В ПОТОКЕ out (без 16-байтного заголовка),
+        # а цель перехода — абсолютный адрес В ФАЙЛЕ (так же читает VM).
         self.emit_op(out, OP_JZ)
-        patch_at = self.pos
+        patch_at = len(out)
         self.emit_be(out, 0xFFFFFFFF)   # заглушка ровно 4 байта — размер совпадает
         for sub in stmt.body:
             self.compile_stmt(sub, out)
