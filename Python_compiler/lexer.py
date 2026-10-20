@@ -17,6 +17,8 @@ class KitiiLexer:
             'sys_call': 'TOKEN_OP_SYSCALL',
             'in_cell': 'TOKEN_OP_INCELL',
             'out_cell': 'TOKEN_OP_OUTCELL',
+            'store_ind': 'TOKEN_OP_STOREIND',   # запись по адресу из ячейки-указателя
+            'log_cell': 'TOKEN_OP_LOGCELL',     # вывод значения переменной в порт
             'net_all': 'TOKEN_LITE_NETALL',
             'net_up': 'TOKEN_LITE_NETUP',
             'net_down': 'TOKEN_LITE_NETDOWN',

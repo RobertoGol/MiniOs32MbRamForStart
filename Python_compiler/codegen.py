@@ -50,6 +50,8 @@ NET_FLUSH     = 0x23
 OP_INCELL     = 0x50
 OP_OUTCELL    = 0x51
 OP_INCELL_IND = 0x52
+OP_STORE_IND  = 0x53   # запись acc в cell[cell[arg]] — по адресу-указателю из ячейки
+OP_OUTCELL_V  = 0x54   # вывод ЗНАЧЕНИЯ ячейки (cell[arg]) в порт — честный log_cell
 OP_ASMBLOCK   = 0x60
 
 OPCODES = {
@@ -242,10 +244,37 @@ class KitiiCodegen:
             val_arg = stmt.args[1] if len(stmt.args) > 1 else ''
             if self.is_var(val_arg):
                 self.fail("out_cell в стадии-0 пишет только константы/макросы; "
-                          f"переменная '{val_arg}' будет доступна после "
-                          "OP_OUTCELL_IND (следующий спринт)", stmt)
+                          f"для вывода переменной есть честный log_cell "
+                          f"(OP_OUTCELL_V); пришло: '{val_arg}'", stmt)
             self.emit_be(out, self.resolve(port_arg))
             self.emit_be(out, self.resolve(val_arg))
+        elif name == 'log_cell':
+            # честный вывод ЗНАЧЕНИЯ переменной в порт: OP_OUTCELL_V
+            self.emit_op(out, OP_OUTCELL_V)
+            port_arg = stmt.args[0] if len(stmt.args) > 0 else ''
+            val_arg = stmt.args[1] if len(stmt.args) > 1 else ''
+            if not self.is_var(val_arg):
+                self.fail("log_cell выводит ПЕРЕМЕННУЮ (опкод 0x54 OP_OUTCELL_V); "
+                          f"константы выводятся честным out_cell: '{val_arg}'", stmt)
+            self.emit_be(out, self.resolve(port_arg))
+            self.emit_be(out, self.var_addr(val_arg))
+        elif name == 'store_ind':
+            # честная запись по адресу из ячейки-указателя: OP_STORE_IND.
+            # Контракт: acc должен быть готов ДО опкода — сначала источник,
+            # потом 0x53 + BE(адрес ячейки-указателя).
+            ptr_arg = stmt.args[0] if len(stmt.args) > 0 else ''
+            val_arg = stmt.args[1] if len(stmt.args) > 1 else ''
+            if not self.is_var(ptr_arg):
+                self.fail("store_ind: первый аргумент — переменная-указатель, "
+                          f"пришло '{ptr_arg}'", stmt)
+            if self.is_var(val_arg):
+                self.emit_op(out, OP_INCELL)
+                self.emit_be(out, self.var_addr(val_arg))
+            else:
+                self.emit_op(out, OP_CONST)
+                self.emit_be(out, self.resolve(val_arg))
+            self.emit_op(out, OP_STORE_IND)
+            self.emit_be(out, self.var_addr(ptr_arg))
         elif name == 'in_cell':
             self.emit_op(out, OP_INCELL)
             port_arg = stmt.args[0] if len(stmt.args) > 0 else ''
@@ -278,7 +307,30 @@ class KitiiCodegen:
             self.emit_be(out, tgt_addr)
             return
 
-        # вид:      имя = число/макрос
+        # вид:      имя = имя/константа ± число
+        # честная поддержка вычитания: «имя - число» -> OP_LOAD режим 0x17
+        if ' - ' in expr:
+            lhs, rhs = (p.strip() for p in expr.split(' - ', 1))
+            if not rhs.isdigit():
+                self.fail("в стадии-0 вычитание ограничено: "
+                          f"'имя - число', справа не число: '{expr}'", stmt)
+            if '- ' not in lhs and ' -' not in lhs:
+                if self.is_var(lhs):
+                    self.emit_op(out, OP_INCELL)
+                    self.emit_be(out, self.var_addr(lhs))
+                else:
+                    self.emit_op(out, OP_CONST)
+                    self.emit_be(out, self.resolve(lhs))
+                self.emit_op(out, OP_LOAD)
+                self.emit(out, bytes([0x17]))   # acc = acc - N (честный режим)
+                self.emit_be(out, int(rhs))
+            else:
+                self.fail(f"вложенное вычитание '{expr}' в стадии-0 не поддержано", stmt)
+            self.emit_op(out, OP_STORE_A)
+            self.emit_be(out, tgt_addr)
+            return
+
+        # вид:      имя = число/макрос (+ число)
         parts = [p.strip() for p in expr.split('+')]
         if len(parts) == 2:
             lhs, rhs = parts
@@ -325,16 +377,31 @@ class KitiiCodegen:
         self.emit(out, bytes([0x16]))
         self.emit_be(out, self.resolve(rhs))
 
-        # OP_JZ с отложенной заплаткой: адрес станет известен после ветки.
-        # ВАЖНО: patch_at — индекс В ПОТОКЕ out (без 16-байтного заголовка),
-        # а цель перехода — абсолютный адрес В ФАЙЛЕ (так же читает VM).
+        # честная схема ветки:
+        #   JZ -> (код then ПОСЛЕДНЯЯ точка: else, если есть; иначе конец)
+        #   then...
+        #   [else: JMPpast + else-код]
+        # ----------- then -----------
         self.emit_op(out, OP_JZ)
-        patch_at = len(out)
-        self.emit_be(out, 0xFFFFFFFF)   # заглушка ровно 4 байта — размер совпадает
+        jz_at = len(out)                 # заплатка: индекс В ПОТОКЕ out
+        self.emit_be(out, 0xFFFFFFFF)
         for sub in stmt.body:
             self.compile_stmt(sub, out)
-        # заплатка: переход ПОСЛЕ ветки в абсолютный адрес файла
-        out[patch_at:patch_at + 4] = struct.pack(BE, self.pos)
+
+        if stmt.else_body is not None:
+            # тогда наливаем JMP поверх else и исполняем else после then:
+            self.emit_op(out, OP_JMP)
+            jmp_at = len(out)            # индекс В ПОТОКЕ out
+            self.emit_be(out, 0xFFFFFFFF)
+            # цель JZ — начало else (ТОЧНО здесь)
+            out[jz_at:jz_at + 4] = struct.pack(BE, self.pos)
+            for sub in stmt.else_body:
+                self.compile_stmt(sub, out)
+            # цель JMP — точка СРАЗУ ПОСЛЕ else
+            out[jmp_at:jmp_at + 4] = struct.pack(BE, self.pos)
+        else:
+            # без else: цель JZ — точка СРАЗУ ПОСЛЕ then
+            out[jz_at:jz_at + 4] = struct.pack(BE, self.pos)
 
 
 if __name__ == "__main__":

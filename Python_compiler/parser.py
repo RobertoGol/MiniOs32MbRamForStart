@@ -25,9 +25,10 @@ class AssignmentNode(ASTNode):
         self.value_expr = value_expr
         self.line = line
 class IfNode(ASTNode):
-    def __init__(self, condition, body, line):
+    def __init__(self, condition, body, line, else_body=None):
         self.condition = condition
         self.body = body
+        self.else_body = else_body   # честная else-ветка стадии-0 (может быть None)
         self.line = line
 
 class KitiiParser:
@@ -113,7 +114,16 @@ class KitiiParser:
             while self.pos < self.total_tokens and self.current_token()['type'] != 'TOKEN_SYM_RBRACE':
                 if_body.append(self.parse_statement())
             self.consume('TOKEN_SYM_RBRACE')
-            return IfNode(" ".join(cond_expr), if_body, line_num)
+            # честная else-ветка: лексер даёт TOKEN_KEY_ELSE, парсер обязан съесть
+            else_body = None
+            if self.current_token() and self.current_token()['type'] == 'TOKEN_KEY_ELSE':
+                self.consume('TOKEN_KEY_ELSE')
+                self.consume('TOKEN_SYM_LBRACE')
+                else_body = []
+                while self.pos < self.total_tokens and self.current_token()['type'] != 'TOKEN_SYM_RBRACE':
+                    else_body.append(self.parse_statement())
+                self.consume('TOKEN_SYM_RBRACE')
+            return IfNode(" ".join(cond_expr), if_body, line_num, else_body)
         if token['type'] == 'TOKEN_KEY_SET':
             line_num = token['line']
             self.consume('TOKEN_KEY_SET')
@@ -134,7 +144,7 @@ class KitiiParser:
                 expr_tokens.append(self.consume()['value'])
             self.consume('TOKEN_SYM_SEMICOLON')
             return AssignmentNode(target_var, " ".join(expr_tokens), line_num)
-        if token['type'].startswith('TOKEN_LITE_') or token['type'] in ['TOKEN_KEY_TERMINATE', 'TOKEN_OP_OUTCELL', 'TOKEN_OP_INCELL', 'TOKEN_OP_SYSCALL', 'TOKEN_KEY_RUN']:
+        if token['type'].startswith('TOKEN_LITE_') or token['type'] in ['TOKEN_KEY_TERMINATE', 'TOKEN_OP_OUTCELL', 'TOKEN_OP_INCELL', 'TOKEN_OP_SYSCALL', 'TOKEN_KEY_RUN', 'TOKEN_OP_STOREIND', 'TOKEN_OP_LOGCELL']:
             cmd_val = token['value']
             line_num = token['line']
             self.consume()

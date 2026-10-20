@@ -42,6 +42,8 @@ OP_SYSCALL   = 0x13
 OP_INCELL    = 0x50
 OP_OUTCELL   = 0x51
 OP_INCELL_IND = 0x52
+OP_STORE_IND  = 0x53   # запись acc в cell[cell[arg]] — по адресу-указателю из ячейки
+OP_OUTCELL_V  = 0x54   # вывод ЗНАЧЕНИЯ ячейки (cell[arg]) в порт — честный log_cell
 OP_ASMBLOCK  = 0x60
 OP_JZ        = 0x06
 OP_JMP       = 0x07
@@ -164,6 +166,8 @@ class CtOsVm:
             mode, arg = b[pc + 1], struct.unpack_from(C1, b, pc + 2)[0]
             if mode == 0x14:      # склейка «прибавить»
                 self._acc = getattr(self, "_acc", 0) + arg
+            elif mode == 0x17:    # честное вычитание константы
+                self._acc = getattr(self, "_acc", 0) - arg
             elif mode == 0x16:    # сравнение «равно?»
                 self._acc = 1 if getattr(self, "_acc", 0) == arg else 0
             else:
@@ -222,6 +226,29 @@ class CtOsVm:
             self.log("OP_INCELL_IND: acc = cell[cell[0x%08X]=0x%08X] = 0x%08X"
                      % (holder, addr, self._acc))
             self.pc = pc + 5
+        elif op == OP_STORE_IND:
+            if pc + 5 > len(b):
+                raise VmFault("OP_STORE_IND обрезан в конце файла")
+            holder = struct.unpack_from(C1, b, pc + 1)[0]
+            addr = self.cells.get(holder, 0)
+            # честная защита: запись по адресу ноль — подмена мастер-ячейки
+            if addr == 0:
+                raise VmFault("OP_STORE_IND: запись по адресу 0 из ячейки "
+                              "0x%08X — указатель не инициализирован" % holder)
+            self.cells[addr] = self._acc
+            self.log("OP_STORE_IND: cell[cell[0x%08X]=0x%08X] = 0x%08X"
+                     % (holder, addr, self._acc))
+            self.pc = pc + 5
+        elif op == OP_OUTCELL_V:
+            if pc + 9 > len(b):
+                raise VmFault("OP_OUTCELL_V обрезан в конце файла")
+            port = struct.unpack_from(C1, b, pc + 1)[0]
+            var_addr = struct.unpack_from(C1, b, pc + 5)[0]
+            val = self.cells.get(var_addr, 0)
+            self.cells[port] = val
+            self.log("OP_OUTCELL_V: порт 0x%08X <- cell[0x%08X] = 0x%08X"
+                     % (port, var_addr, val))
+            self.pc = pc + 9
         elif op == OP_ASMBLOCK:
             if pc + 5 > len(b):
                 raise VmFault("OP_ASMBLOCK обрезан в конце файла")
