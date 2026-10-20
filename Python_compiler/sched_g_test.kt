@@ -113,8 +113,6 @@ function Init_Slots() {
         Task_Addr = Task_Addr + 4;
         store_ind(Task_Addr, 0);
         Task_Addr = Task_Addr + 4;
-        store_ind(Task_Addr, 0);
-        Task_Addr = Task_Addr + 24;
         Init_Slot = Init_Slot + 1;
         run Init_Slots();
     }
