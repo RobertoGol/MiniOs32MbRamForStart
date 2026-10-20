@@ -359,8 +359,15 @@ class KitiiCodegen:
             else:
                 self.fail(f"в стадии-0 справа от «+» — число или имя: '{rhs}'", stmt)
         elif len(parts) == 1:
-            self.emit_op(out, OP_CONST)
-            self.emit_be(out, self.resolve(expr))
+            expr_clean = parts[0]
+            if self.is_var(expr_clean):
+                # честное копирование ЗНАЧЕНИЯ переменной (форма «имя = имя»);
+                # НЕ resolve(): тот честно выдал бы адрес ячейки источника
+                self.emit_op(out, OP_INCELL)
+                self.emit_be(out, self.var_addr(expr_clean))
+            else:
+                self.emit_op(out, OP_CONST)
+                self.emit_be(out, self.resolve(expr_clean))
         else:
             self.fail(f"многоскоростная арифметика '{expr}' в стадии-0 не поддержана", stmt)
 
@@ -383,10 +390,14 @@ class KitiiCodegen:
             self.emit_op(out, OP_CONST)
             self.emit_be(out, self.resolve(lhs))
 
-        # сравнение: acc = (acc == rhs)
+        # сравнение: acc = (acc == rhs); rhs входе честной формы: число ИЛИ имя
         self.emit_op(out, OP_LOAD)
-        self.emit(out, bytes([0x16]))
-        self.emit_be(out, self.resolve(rhs))
+        if self.is_var(rhs):
+            self.emit(out, bytes([0x18]))           # честное «равно ячейке»
+            self.emit_be(out, self.var_addr(rhs))
+        else:
+            self.emit(out, bytes([0x16]))           # честное «равно значению»
+            self.emit_be(out, self.resolve(rhs))
 
         # честная схема ветки:
         #   JZ -> (код then ПОСЛЕДНЯЯ точка: else, если есть; иначе конец)
