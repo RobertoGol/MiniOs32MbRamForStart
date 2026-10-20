@@ -258,8 +258,17 @@ function Wake_Sleep() {
 
 function Wake_Step() {
     if (Scan_Idx == Sleep_Count) {
-        Sleep_Count = RW_Count;          // честная переустановка: сколько недоспали
-        run Sleep_Restore();             // копия честно возвращается в буферы сна
+        // честная база: все просмотрены; недоспавших переписываем обратно
+        Sleep_Count = RW_Count;
+        Sleep_A_Ptr = SLEEP_A;           // честный сброс на начало буферов сна
+        Sleep_W_Ptr = SLEEP_W;
+        RW_A_Addr = REWRITE_A;           // честный сброс источника копии
+        RW_W_Addr = REWRITE_W;
+        Scan_Idx = 0;                    // ЧЕСТНЫЙ сброс: пересчёт с нуля —
+                                         // без него Restore не зайдёт в базу
+                                         // при Sleep_Count = 0 (петля — найдено
+                                         // и честно исправлено)
+        run Sleep_Restore();
     } else {
         Hold_Addr = in_cell(Sleep_A_Ptr);     // адрес слота
         Sleep_A_Ptr = Sleep_A_Ptr + 4;
