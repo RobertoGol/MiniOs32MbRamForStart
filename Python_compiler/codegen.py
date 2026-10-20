@@ -330,23 +330,34 @@ class KitiiCodegen:
             self.emit_be(out, tgt_addr)
             return
 
-        # вид:      имя = число/макрос (+ число)
+        # вид:      имя = число/макрос (+ число или + имя)
         parts = [p.strip() for p in expr.split('+')]
         if len(parts) == 2:
             lhs, rhs = parts
-            if not rhs.isdigit():
-                self.fail(f"в стадии-0 арифметика ограничена: "
-                          f"'имя + число', справа не число: '{rhs}'", stmt)
-            # читаем источник lhs: переменная или константа
-            if self.is_var(lhs):
-                self.emit_op(out, OP_INCELL)
-                self.emit_be(out, self.var_addr(lhs))
+            if rhs.isdigit():
+                # читаем источник lhs: переменная или константа
+                if self.is_var(lhs):
+                    self.emit_op(out, OP_INCELL)
+                    self.emit_be(out, self.var_addr(lhs))
+                else:
+                    self.emit_op(out, OP_CONST)
+                    self.emit_be(out, self.resolve(lhs))
+                self.emit_op(out, OP_LOAD)
+                self.emit(out, bytes([0x14]))
+                self.emit_be(out, int(rhs))
+            elif self.is_var(rhs):
+                # честная арифметика двух имён: режим 0x15 «прибавить ячейку»
+                if self.is_var(lhs):
+                    self.emit_op(out, OP_INCELL)
+                    self.emit_be(out, self.var_addr(lhs))
+                else:
+                    self.emit_op(out, OP_CONST)
+                    self.emit_be(out, self.resolve(lhs))
+                self.emit_op(out, OP_LOAD)
+                self.emit(out, bytes([0x15]))
+                self.emit_be(out, self.var_addr(rhs))
             else:
-                self.emit_op(out, OP_CONST)
-                self.emit_be(out, self.resolve(lhs))
-            self.emit_op(out, OP_LOAD)
-            self.emit(out, bytes([0x14]))
-            self.emit_be(out, int(rhs))
+                self.fail(f"в стадии-0 справа от «+» — число или имя: '{rhs}'", stmt)
         elif len(parts) == 1:
             self.emit_op(out, OP_CONST)
             self.emit_be(out, self.resolve(expr))

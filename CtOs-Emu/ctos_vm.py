@@ -166,6 +166,8 @@ class CtOsVm:
             mode, arg = b[pc + 1], struct.unpack_from(C1, b, pc + 2)[0]
             if mode == 0x14:      # склейка «прибавить»
                 self._acc = getattr(self, "_acc", 0) + arg
+            elif mode == 0x15:    # прибавить ЗНАЧЕНИЕ ячейки: acc += cell[arg]
+                self._acc = getattr(self, "_acc", 0) + self.cells.get(arg, 0)
             elif mode == 0x17:    # честное вычитание константы
                 self._acc = getattr(self, "_acc", 0) - arg
             elif mode == 0x16:    # сравнение «равно?»
