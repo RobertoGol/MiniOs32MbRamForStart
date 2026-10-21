@@ -97,7 +97,10 @@ class KitiiParser:
             if token['type'] == 'TOKEN_SYM_RBRACE': break
             body.append(self.parse_statement())
         self.consume('TOKEN_SYM_RBRACE')
-        return FunctionNode(name_token['value'], body)
+        # Честный фикс: is_pub обязан дойти до узла — иначе auto-OP_TERM
+        # для pub-функции не срабатывает (вылезло на stage1_selftest:
+        # main без terminate; кончался OP_RET на пустом стеке — KERNEL PANIC)
+        return FunctionNode(name_token['value'], body, is_pub)
 
     def parse_statement(self):
         token = self.current_token()
