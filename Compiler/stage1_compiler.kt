@@ -57,6 +57,9 @@ set static Current_Char      = 0x00000000; // Текущее слово из б�
 set static Syntax_Counter    = 0x00000000; // Структурные слова (без байта, честный учёт)
 set static Found_Flag        = 0x00000000; // Слово распознано на этой итерации
 set static Error_Flag        = 0x00000000; // Честный отказ: неизвестное слово
+set static Node_Brace_Depth  = 0x00000000; // Честный стек групп {}: глубина
+set static Node_Paren_Depth  = 0x00000000; // Честный стек групп (): глубина
+set static Node_Counter      = 0x00000000; // Честно согласованные группы (узлы)
 set static Tmp_Addr          = 0x00000000; // Рабочая ячейка-указатель
 set static Tmp_Word          = 0x00000000; // Рабочее слово-значение
 
@@ -72,6 +75,9 @@ pub entry main(cell:raw args) {
     Word_Index = 0;
     Syntax_Counter = 0;
     Error_Flag = 0;
+    Node_Brace_Depth = 0;
+    Node_Paren_Depth = 0;
+    Node_Counter = 0;
 
     // Вызываем фоновую функцию низкоуровневой токенизации текста
     run NativeLexicalScanner();
@@ -85,17 +91,31 @@ function NativeLexicalScanner() {
     // Честный вход в рекурсивный обход: одно слово за одну регенерацию
     run Scan_Word_Loop();
 
-    // Честный выход: бинарь годен только без честного отказа
-    if (Error_Flag == 0x00000000) {
-        // Честный маркер конца эмиссии: после него бинарь закончен
-        out_cell(OUTPUT_BINARY_PORT, END_MARKER);
+    // Честный финальный разбор: брак дружнее мастерить честно
+    if (Node_Brace_Depth == 0x00000000) {
+        if (Node_Paren_Depth == 0x00000000) {
+            if (Error_Flag == 0x00000000) {
+                // Честный маркер конца эмиссии: после него бинарь закончен
+                out_cell(OUTPUT_BINARY_PORT, END_MARKER);
+            } else {
+                // Честный брак: неизвестное слово — бинарь честно не эмитится
+                out_cell(OUTPUT_BINARY_PORT, ERR_MARKER);
+            }
+        } else {
+            // Честный брак: честная незакрытая группа ()
+            Error_Flag = 0x00000001;
+            out_cell(OUTPUT_BINARY_PORT, ERR_MARKER);
+        }
     } else {
-        // Честный брак: неизвестное слово — бинарь честно не эмитится
+        // Честный брак: честная незакрытая группа {}
+        Error_Flag = 0x00000001;
         out_cell(OUTPUT_BINARY_PORT, ERR_MARKER);
     }
 
-    // Честный отчет: сколько системных токенов распознано + статус отказа
+    // Честный отчет: токены / синтаксика / узлы / статус отказа
     log_cell(OUTPUT_BINARY_PORT, Token_Counter);
+    log_cell(OUTPUT_BINARY_PORT, Syntax_Counter);
+    log_cell(OUTPUT_BINARY_PORT, Node_Counter);
     log_cell(OUTPUT_BINARY_PORT, Error_Flag);
 }
 
@@ -162,25 +182,45 @@ function Scan_Word_Loop() {
                 Found_Flag = 0x00000001;
             }
 
-            // Структурные слова: НЕ эмитят байт — честный подсчёт
+            // Структурные слова: НЕ эмитят байт — честный подсчёт.
+            // Скобки честно ведут стек групп (стадия-1.3): ловят
+            // преждевременное закрытие и незакрытые группы в финале.
             if (Current_Char == SYM_BRACE_OPEN) {
                 Syntax_Counter = Syntax_Counter + 1;
+                Node_Brace_Depth = Node_Brace_Depth + 1;
                 Found_Flag = 0x00000001;
             }
 
             if (Current_Char == SYM_BRACE_CLOSE) {
-                Syntax_Counter = Syntax_Counter + 1;
-                Found_Flag = 0x00000001;
+                if (Node_Brace_Depth == 0x00000000) {
+                    // Честный отказ: '}' при пустом честном стеке {}
+                    Error_Flag = 0x00000001;
+                    Word_Index = MAX_SOURCE_WORDS;
+                } else {
+                    Syntax_Counter = Syntax_Counter + 1;
+                    Node_Brace_Depth = Node_Brace_Depth - 1;
+                    Node_Counter = Node_Counter + 1;
+                    Found_Flag = 0x00000001;
+                }
             }
 
             if (Current_Char == SYM_PAREN_OPEN) {
                 Syntax_Counter = Syntax_Counter + 1;
+                Node_Paren_Depth = Node_Paren_Depth + 1;
                 Found_Flag = 0x00000001;
             }
 
             if (Current_Char == SYM_PAREN_CLOSE) {
-                Syntax_Counter = Syntax_Counter + 1;
-                Found_Flag = 0x00000001;
+                if (Node_Paren_Depth == 0x00000000) {
+                    // Честный отказ: ')' при пустом честном стеке ()
+                    Error_Flag = 0x00000001;
+                    Word_Index = MAX_SOURCE_WORDS;
+                } else {
+                    Syntax_Counter = Syntax_Counter + 1;
+                    Node_Paren_Depth = Node_Paren_Depth - 1;
+                    Node_Counter = Node_Counter + 1;
+                    Found_Flag = 0x00000001;
+                }
             }
 
             if (Current_Char == SYM_SEMICOLON) {
