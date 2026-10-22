@@ -46,6 +46,18 @@
 #define: OP_TERM_CODE  0x00000005 // 0x05 OP_TERM
 #define: OP_JZ_CODE    0x00000006 // 0x06 OP_JZ
 #define: OP_ALLOC_CODE 0x00000010 // 0x10 OP_ALLOC_ST
+#define: OP_CONST_CODE 0x00000015 // 0x15 OP_CONST «константа на акк»
+#define: SYM_LIT_BASE  0x00000030 // '0': база честного литерального ряда '0'..'9'
+#define: LIT_D0        0x00000030 // '0' — слово однозначного литерала (сим2==0)
+#define: LIT_D1        0x00000031 // '1'
+#define: LIT_D2        0x00000032 // '2'
+#define: LIT_D3        0x00000033 // '3'
+#define: LIT_D4        0x00000034 // '4'
+#define: LIT_D5        0x00000035 // '5'
+#define: LIT_D6        0x00000036 // '6'
+#define: LIT_D7        0x00000037 // '7'
+#define: LIT_D8        0x00000038 // '8'
+#define: LIT_D9        0x00000039 // '9'
 #define: END_MARKER    0x000000FF // Честный маркер конца эмиссии
 #define: ERR_MARKER    0x000000FE // Честный маркер БРАКА: неизвестное слово
 
@@ -62,6 +74,7 @@ set static Node_Paren_Depth  = 0x00000000; // Честный стек групп
 set static Node_Counter      = 0x00000000; // Честно согласованные группы (узлы)
 set static Tmp_Addr          = 0x00000000; // Рабочая ячейка-указатель
 set static Tmp_Word          = 0x00000000; // Рабочее слово-значение
+set static Lit_Value         = 0x00000000; // Честное ЗНАЧЕНИЕ литерала (1.4)
 
 // Главная точка входа нативного компилятора (Entry Point)
 pub entry main(cell:raw args) {
@@ -178,6 +191,96 @@ function Scan_Word_Loop() {
             // 'te' -> terminate -> OP_TERM (0x05)
             if (Current_Char == KW_TERM) {
                 out_cell(OUTPUT_BINARY_PORT, OP_TERM_CODE);
+                Token_Counter = Token_Counter + 1;
+                Found_Flag = 0x00000001;
+            }
+
+            // Честные литералы (стадия-1.4, TKT-036): слово '0'..'9',
+            // где сим1 == цифра 0x30..0x39 и сим2 == 0x00 (односимвольное
+            // слово) -> честный OP_CONST 0x15 + честное ЗНАЧЕНИЕ.
+            // Честная форма стадии-0: вычитание только "имя - число"
+            // (десятичный RHS), значение честно живёт в ячейке Lit_Value
+            // и эмитится честным log_cell (OP_OUTCELL_V), а не out_cell.
+            // Ограничение честной модели (документировано в тикете):
+            // в стадии-0 нет `*`/`/`, поэтому двухзначное слово честно
+            // не собирается (d1*10+d2 нечем посчитать); длинные числа
+            // честно разбиваются по словам — последовательные литералы.
+            if (Current_Char == LIT_D0) {
+                Lit_Value = Current_Char - 48;
+                out_cell(OUTPUT_BINARY_PORT, OP_CONST_CODE);
+                log_cell(OUTPUT_BINARY_PORT, Lit_Value);
+                Token_Counter = Token_Counter + 1;
+                Found_Flag = 0x00000001;
+            }
+
+            if (Current_Char == LIT_D1) {
+                Lit_Value = Current_Char - 48;
+                out_cell(OUTPUT_BINARY_PORT, OP_CONST_CODE);
+                log_cell(OUTPUT_BINARY_PORT, Lit_Value);
+                Token_Counter = Token_Counter + 1;
+                Found_Flag = 0x00000001;
+            }
+
+            if (Current_Char == LIT_D2) {
+                Lit_Value = Current_Char - 48;
+                out_cell(OUTPUT_BINARY_PORT, OP_CONST_CODE);
+                log_cell(OUTPUT_BINARY_PORT, Lit_Value);
+                Token_Counter = Token_Counter + 1;
+                Found_Flag = 0x00000001;
+            }
+
+            if (Current_Char == LIT_D3) {
+                Lit_Value = Current_Char - 48;
+                out_cell(OUTPUT_BINARY_PORT, OP_CONST_CODE);
+                log_cell(OUTPUT_BINARY_PORT, Lit_Value);
+                Token_Counter = Token_Counter + 1;
+                Found_Flag = 0x00000001;
+            }
+
+            if (Current_Char == LIT_D4) {
+                Lit_Value = Current_Char - 48;
+                out_cell(OUTPUT_BINARY_PORT, OP_CONST_CODE);
+                log_cell(OUTPUT_BINARY_PORT, Lit_Value);
+                Token_Counter = Token_Counter + 1;
+                Found_Flag = 0x00000001;
+            }
+
+            if (Current_Char == LIT_D5) {
+                Lit_Value = Current_Char - 48;
+                out_cell(OUTPUT_BINARY_PORT, OP_CONST_CODE);
+                log_cell(OUTPUT_BINARY_PORT, Lit_Value);
+                Token_Counter = Token_Counter + 1;
+                Found_Flag = 0x00000001;
+            }
+
+            if (Current_Char == LIT_D6) {
+                Lit_Value = Current_Char - 48;
+                out_cell(OUTPUT_BINARY_PORT, OP_CONST_CODE);
+                log_cell(OUTPUT_BINARY_PORT, Lit_Value);
+                Token_Counter = Token_Counter + 1;
+                Found_Flag = 0x00000001;
+            }
+
+            if (Current_Char == LIT_D7) {
+                Lit_Value = Current_Char - 48;
+                out_cell(OUTPUT_BINARY_PORT, OP_CONST_CODE);
+                log_cell(OUTPUT_BINARY_PORT, Lit_Value);
+                Token_Counter = Token_Counter + 1;
+                Found_Flag = 0x00000001;
+            }
+
+            if (Current_Char == LIT_D8) {
+                Lit_Value = Current_Char - 48;
+                out_cell(OUTPUT_BINARY_PORT, OP_CONST_CODE);
+                log_cell(OUTPUT_BINARY_PORT, Lit_Value);
+                Token_Counter = Token_Counter + 1;
+                Found_Flag = 0x00000001;
+            }
+
+            if (Current_Char == LIT_D9) {
+                Lit_Value = Current_Char - 48;
+                out_cell(OUTPUT_BINARY_PORT, OP_CONST_CODE);
+                log_cell(OUTPUT_BINARY_PORT, Lit_Value);
                 Token_Counter = Token_Counter + 1;
                 Found_Flag = 0x00000001;
             }

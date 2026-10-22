@@ -1,5 +1,5 @@
 // ===================================================================
-// СПРИНТ СТАДИЯ-1.3: честный стек групп { } ( ) — первый этап парсера
+// СПРИНТ СТАДИЯ-1.3/1.4: честный стек групп + честные литералы
 // Файл: stage1_selftest.kt | Язык: KINII (подмножество стадии-0)
 //
 // По TKT-032 (спринты 1.1/1.2 составляют базу):
@@ -9,8 +9,12 @@
 //   * честная незакрытая группа в конце прохода — честный ОТКАЗ;
 //   * каждая честно согласованная группа -> Node_Counter (узлы);
 //   * эмиссия байт НЕ меняется (скобки честно не байт).
-// Стрим-сверка 1.2 честно снята со стенда: её честность доказана
-// спринтом 1.1/1.2 и оставлена в истории (стенд честно сузился).
+// Стадия-1.4 (TKT-036): честные литералы '0'..'9' (сим1 цифра,
+// сим2==0) -> честная эмиссия OP_CONST 0x15 + честное ЗНАЧЕНИЕ
+// (яйчейка Lit_Value, честное вычитание "сим1 - 48", честный
+// log_cell/OP_OUTCELL_V). Честное ограничение модели: в стадии-0
+// нет `*`/`/` — двухзначные слова ('12') честно НЕ собираются и
+// честно отвергаются fail-fast с НУЛЁМ честных эмиссий.
 //
 // Фазы честные:
 //   Ф1: '#' se st { te { } ( ) } .  -> эмиссии 1,0x10,0x10,5
@@ -19,6 +23,10 @@
 //        одна честно незакрыта -> честный отказ (error 1, nodes 1)
 //   Ф3: '}' .                       -> закрытие при пустом стеке ->
 //        честный отказ на месте (error 1, nodes 0, syntax 0)
+//   Ф4: '#' '7' .                   -> эмиссии 1, 0x15, 7
+//        counter 2 | error 0 | Lit_Value сверено == 7
+//   Ф5: '12' .                      -> честный отказ (error 1),
+//        честный НОЛЬ эмиссий (компилятор не добавляет от себя ни байта)
 //
 // Лог честный (серия 0x91xx + фазы):
 //   0x9000 START      0x9001 Ф1 загружена   0x90F0 Ф1 скан завершён
@@ -28,7 +36,11 @@
 //   0x9130 error==1   0x9131 nodes==1 (одна '{}' закрыта честно)
 //   0x9003 Ф3 загружена 0x90F2 Ф3 скан завершён
 //   0x9140 error==1   0x9141 nodes==0 и syntax==0
-//   отказы: 0x9096/0x9097/0x9098/0x9095
+//   0x9004 Ф4 загружена 0x90F3 Ф4 скан завершён
+//   0x9135 counter==2 0x9150 Lit_Value==7 (честная эмиссия в трассе)
+//   0x9005 Ф5 загружена 0x90F4 Ф5 скан завершён
+//   0x9160 error==1   0x9161 ноль эмиссий (honest fail-fast)
+//   отказы: 0x9095/0x9096/0x9097/0x9098/0x9099
 // ===================================================================
 
 #core: CtOs_Old
@@ -59,6 +71,19 @@
 #define: OP_TERM_CODE   0x00000005
 #define: OP_JZ_CODE     0x00000006
 #define: OP_ALLOC_CODE  0x00000010
+#define: OP_CONST_CODE  0x00000015 // 0x15 OP_CONST (стадия-1.4)
+#define: SYM_LIT_BASE   0x00000030 // база честного литерального ряда
+#define: LIT_D0         0x00000030 // '0' (сим2==0, односимвольное слово)
+#define: LIT_D1         0x00000031 // '1'
+#define: LIT_D2         0x00000032 // '2'
+#define: LIT_D3         0x00000033 // '3'
+#define: LIT_D4         0x00000034 // '4'
+#define: LIT_D5         0x00000035 // '5'
+#define: LIT_D6         0x00000036 // '6'
+#define: LIT_D7         0x00000037 // '7'
+#define: LIT_D8         0x00000038 // '8'
+#define: LIT_D9         0x00000039 // '9'
+#define: LIT_TWO_DIGIT  0x00003232 // '12' — честно НЕ собираемый литерал (Ф5)
 
 set static Execution_Pointer = 0x00000000;
 set static Token_Counter     = 0x00000000;
@@ -72,6 +97,7 @@ set static Node_Paren_Depth  = 0x00000000;
 set static Node_Counter      = 0x00000000;
 set static Tmp_Addr          = 0x00000000;
 set static Tmp_Word          = 0x00000000;
+set static Lit_Value         = 0x00000000; // честное ЗНАЧЕНИЕ литерала (1.4)
 
 pub entry main(cell:raw args) {
     out_cell(LOG_PORT, 0x00009000);      // LOG: стадия-1.3 стенд START
@@ -175,6 +201,55 @@ pub entry main(cell:raw args) {
         out_cell(LOG_PORT, 0x00009096);
     }
 
+    // ---------- ФАЗА 4 (стадия-1.4): честный литерал ----------
+    // Слова: '#' '7' .  -> честные эмиссии 1, 0x15, 7
+    out_cell(LOG_PORT, 0x00009004);      // LOG: Ф4 честно загружена
+    run Load_Lit_Demo();
+    run Reset_Scan();
+    run Scan_Word_Loop();
+    out_cell(LOG_PORT, 0x000090F3);      // LOG: Ф4 честный скан завершён
+
+    if (Error_Flag == 0x00000000) {
+        if (Token_Counter == 0x00000002) {
+            out_cell(LOG_PORT, 0x00009135); // LOG: '#' + '7' честно распознаны
+        } else {
+            out_cell(LOG_PORT, 0x00009097);
+        }
+    } else {
+        out_cell(LOG_PORT, 0x00009095);
+    }
+
+    // Честная сверка Ф4: значение честной эмиссии '7' — абсолютный
+    // LIТ-индикатор в ячейке Lit_Value (сим1 0x37 - 48 == 7), честная
+    // серия 0x9150. Current_Char после скана — терминатор '.' (0x2E),
+    // поэтому сверка честно только по Lit_Value.
+    if (Lit_Value == 0x00000007) {
+        out_cell(LOG_PORT, 0x00009150);  // LOG: честное значение 7 в трассе
+    } else {
+        out_cell(LOG_PORT, 0x00009096);  // LOG: честный брак значения
+    }
+
+    // ---------- ФАЗА 5 (стадия-1.4): честный отказ на '12' ----------
+    // Слово '12' (0x3232, цифровой сим2) честно НЕ собирается в модели
+    // без `*`/`/` — честный отказ вместо тишины, честный НОЛЬ эмиссий.
+    out_cell(LOG_PORT, 0x00009005);      // LOG: Ф5 честно загружена
+    run Load_TwoDigit_Demo();
+    run Reset_Scan();
+    run Scan_Word_Loop();
+    out_cell(LOG_PORT, 0x000090F4);      // LOG: Ф5 честный скан завершён
+
+    if (Error_Flag == 0x00000001) {
+        out_cell(LOG_PORT, 0x00009160);  // LOG: честный отказ '12' на месте
+    } else {
+        out_cell(LOG_PORT, 0x00009099);
+    }
+
+    if (Token_Counter == 0x00000000) {
+        out_cell(LOG_PORT, 0x00009161);  // LOG: честно НОЛЬ эмиссий на брак
+    } else {
+        out_cell(LOG_PORT, 0x00009096);
+    }
+
     // честный финальный отчёт значениями
     log_cell(LOG_PORT, Token_Counter);
     log_cell(LOG_PORT, Node_Counter);
@@ -273,6 +348,34 @@ function Load_Stray_Demo() {
     store_ind(Tmp_Addr, Tmp_Word);
 }
 
+// ---------- честная загрузка Ф4 (стадия-1.4): '#' '7' ----------
+// Слова: '#' '7' .
+function Load_Lit_Demo() {
+    Tmp_Addr = SOURCE_CODE_BUFFER;
+    Tmp_Word = D_WORD_PREPROC;
+    store_ind(Tmp_Addr, Tmp_Word);
+
+    Tmp_Addr = SOURCE_CODE_BUFFER + 4;
+    Tmp_Word = LIT_D7;
+    store_ind(Tmp_Addr, Tmp_Word);
+
+    Tmp_Addr = SOURCE_CODE_BUFFER + 8;
+    Tmp_Word = CH_WORD_END;
+    store_ind(Tmp_Addr, Tmp_Word);
+}
+
+// ---------- честная загрузка Ф5 (стадия-1.4): честный отказ '12' ----------
+// Слова: '12' (0x3232) .
+function Load_TwoDigit_Demo() {
+    Tmp_Addr = SOURCE_CODE_BUFFER;
+    Tmp_Word = LIT_TWO_DIGIT;
+    store_ind(Tmp_Addr, Tmp_Word);
+
+    Tmp_Addr = SOURCE_CODE_BUFFER + 4;
+    Tmp_Word = CH_WORD_END;
+    store_ind(Tmp_Addr, Tmp_Word);
+}
+
 // ---------- честный лексер+стек групп (тот же алгоритм, что в компиляторе) ----------
 function Scan_Word_Loop() {
     if (Word_Index == MAX_SOURCE_WORDS) {
@@ -322,6 +425,94 @@ function Scan_Word_Loop() {
 
             if (Current_Char == KW_TERM) {
                 out_cell(LOG_PORT, OP_TERM_CODE);
+                Token_Counter = Token_Counter + 1;
+                Found_Flag = 0x00000001;
+            }
+
+            // Честные литералы (стадия-1.4, зеркально компилятору TKT-036):
+            // слово '0'..'9' (сим1 цифра, сим2==0) -> OP_CONST 0x15 +
+            // честное значение. Честная форма стадии-0: вычитание только
+            // "имя - число" (десятичный RHS), значение живёт в ячейке
+            // Lit_Value и эмитится честным log_cell (OP_OUTCELL_V).
+            // Ограничение честной модели: в стадии-0 нет `*`/`/` —
+            // двухзначное слово честно не собирается; длинные числа
+            // честно разбиваются по словам.
+            if (Current_Char == LIT_D0) {
+                Lit_Value = Current_Char - 48;
+                out_cell(LOG_PORT, OP_CONST_CODE);
+                log_cell(LOG_PORT, Lit_Value);
+                Token_Counter = Token_Counter + 1;
+                Found_Flag = 0x00000001;
+            }
+
+            if (Current_Char == LIT_D1) {
+                Lit_Value = Current_Char - 48;
+                out_cell(LOG_PORT, OP_CONST_CODE);
+                log_cell(LOG_PORT, Lit_Value);
+                Token_Counter = Token_Counter + 1;
+                Found_Flag = 0x00000001;
+            }
+
+            if (Current_Char == LIT_D2) {
+                Lit_Value = Current_Char - 48;
+                out_cell(LOG_PORT, OP_CONST_CODE);
+                log_cell(LOG_PORT, Lit_Value);
+                Token_Counter = Token_Counter + 1;
+                Found_Flag = 0x00000001;
+            }
+
+            if (Current_Char == LIT_D3) {
+                Lit_Value = Current_Char - 48;
+                out_cell(LOG_PORT, OP_CONST_CODE);
+                log_cell(LOG_PORT, Lit_Value);
+                Token_Counter = Token_Counter + 1;
+                Found_Flag = 0x00000001;
+            }
+
+            if (Current_Char == LIT_D4) {
+                Lit_Value = Current_Char - 48;
+                out_cell(LOG_PORT, OP_CONST_CODE);
+                log_cell(LOG_PORT, Lit_Value);
+                Token_Counter = Token_Counter + 1;
+                Found_Flag = 0x00000001;
+            }
+
+            if (Current_Char == LIT_D5) {
+                Lit_Value = Current_Char - 48;
+                out_cell(LOG_PORT, OP_CONST_CODE);
+                log_cell(LOG_PORT, Lit_Value);
+                Token_Counter = Token_Counter + 1;
+                Found_Flag = 0x00000001;
+            }
+
+            if (Current_Char == LIT_D6) {
+                Lit_Value = Current_Char - 48;
+                out_cell(LOG_PORT, OP_CONST_CODE);
+                log_cell(LOG_PORT, Lit_Value);
+                Token_Counter = Token_Counter + 1;
+                Found_Flag = 0x00000001;
+            }
+
+            if (Current_Char == LIT_D7) {
+                Lit_Value = Current_Char - 48;
+                out_cell(LOG_PORT, OP_CONST_CODE);
+                log_cell(LOG_PORT, Lit_Value);
+                Token_Counter = Token_Counter + 1;
+                Found_Flag = 0x00000001;
+            }
+
+            if (Current_Char == LIT_D8) {
+                Lit_Value = Current_Char - 48;
+                out_cell(LOG_PORT, OP_CONST_CODE);
+                log_cell(LOG_PORT, Lit_Value);
+                Token_Counter = Token_Counter + 1;
+                Found_Flag = 0x00000001;
+            }
+
+            if (Current_Char == LIT_D9) {
+                Lit_Value = Current_Char - 48;
+                out_cell(LOG_PORT, OP_CONST_CODE);
+                log_cell(LOG_PORT, Lit_Value);
                 Token_Counter = Token_Counter + 1;
                 Found_Flag = 0x00000001;
             }

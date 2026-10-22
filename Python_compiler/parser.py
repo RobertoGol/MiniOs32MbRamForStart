@@ -158,12 +158,21 @@ class KitiiParser:
                 self.consume('TOKEN_SYM_LPAREN')
                 while self.pos < self.total_tokens:
                     arg_token = self.current_token()
-                    if arg_token['type'] == 'TOKEN_SYM_RPAREN': break
+                    if arg_token['type'] == 'TOKEN_SYM_RPAREN':
+                        break
                     if arg_token['type'] in ['TOKEN_IDENTIFIER', 'TOKEN_LIT_HEX', 'TOKEN_LIT_NUMBER', 'TOKEN_LIT_STRING', 'TOKEN_TYPE_CELL', 'TOKEN_RAW_MODIFIER', 'TOKEN_SYM_COLON']:
                         args.append(arg_token['value'])
                         self.consume()
-                    if self.current_token() and self.current_token()['type'] == 'TOKEN_SYM_COMMA':
+                        continue
+                    if arg_token['type'] == 'TOKEN_SYM_COMMA':
                         self.consume('TOKEN_SYM_COMMA')
+                        continue
+                    # honest fail-fast: unrecognized token in call arguments
+                    # (например '-' из выражения вида 'X - L') — раньше честно
+                    # крутил цикл на месте (висение), теперь честная
+                    # диагностика вместо тишины/петли.
+                    print(f"[PARSER ERROR]: unsupported token '{arg_token['value']}' in call arguments at line {arg_token['line']} (an honest expression in the argument is not supported in stage-0: compute into a cell first)")
+                    sys.exit(1)
                 self.consume('TOKEN_SYM_RPAREN')
             else:
                 while self.current_token() and self.current_token()['type'] in ['TOKEN_IDENTIFIER', 'TOKEN_LIT_STRING', 'TOKEN_LIT_NUMBER']:
