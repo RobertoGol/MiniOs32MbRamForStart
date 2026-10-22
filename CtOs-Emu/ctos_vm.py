@@ -14,6 +14,10 @@ ctos_vm.py — хост-исполнитель бинарников CtOs (.ctos)
 
 Запуск:
     python ctos_vm.py <файл.ctos> [файл2.ctos ...] [--quiet]
+      [--steps N]       честный лимит шагов VM (по умолчанию 10 млн)
+      [--trace FILE]    честная трасса в файл (консоль остаётся чистой)
+
+Флаги честно совместимы со старым поведением: без флагов — как раньше.
 
 Выход: код возврата 0 — все бинарники отработали до OP_TERM; 1 — сбой VM.
 """
@@ -62,10 +66,13 @@ class VmFault(Exception):
 
 
 class CtOsVm:
-    def __init__(self, binary, path, trace=True, clock_scale=1):
+    def __init__(self, binary, path, trace=True, clock_scale=1,
+                 trace_file=None, max_steps=10_000_000):
         self.b = binary
         self.path = path
         self.trace = trace
+        self.trace_file = trace_file  # честная трасса в файл (TKT-035), None = консоль
+        self.max_steps = max_steps    # честный лимит шагов (TKT-035, дефолт 10 млн)
         self.cells = {}       # ячейки cell:raw: адрес -> значение
         self.static_set = {}  # статические ячейки компилятора (OP_ALLOC_ST)
         self.pc = None
@@ -75,11 +82,17 @@ class CtOsVm:
         self.rts = []    # стек возвратов для OP_CALL / OP_RET
         self.outfile = None    # честный файл-воркер (стадия-1.5, syscall-слой)
         self.outfile_n = 0     # честный счётчик записанных байт
+        self.last_out = None   # честный след: последний вывод в порт (где брак, TKT-035)
 
     # ---------- лог ----------
     def log(self, line):
-        if self.trace:
-            print("[%09.6f] %s" % ((time.perf_counter() - self._t0) * 1.0, line))
+        if not self.trace:
+            return
+        stamped = "[%09.6f] %s" % ((time.perf_counter() - self._t0) * 1.0, line)
+        if self.trace_file is not None:
+            self.trace_file.write(stamped + "\n")
+        else:
+            print(stamped)
 
     # ---------- разбор заголовка ----------
     def read_header(self):
@@ -193,6 +206,7 @@ class CtOsVm:
             port = struct.unpack_from(C1, b, pc + 1)[0]
             val = struct.unpack_from(C1, b, pc + 5)[0]
             self.cells[port] = val
+            self.last_out = (self.pc, "OP_OUTCELL", port, val)
             self.log("OP_OUTCELL: порт 0x%08X <- 0x%08X" % (port, val))
             self.pc = pc + 9
 
@@ -284,6 +298,7 @@ class CtOsVm:
             var_addr = struct.unpack_from(C1, b, pc + 5)[0]
             val = self.cells.get(var_addr, 0)
             self.cells[port] = val
+            self.last_out = (pc, "OP_OUTCELL_V", port, val)
             self.log("OP_OUTCELL_V: порт 0x%08X <- cell[0x%08X] = 0x%08X"
                      % (port, var_addr, val))
             self.pc = pc + 9
@@ -314,9 +329,12 @@ class CtOsVm:
         self._acc = 0
         while self.step():
             # честный предохранитель от неконечного цикла в бинаре
-            if self.op_count > 10_000_000:
-                raise VmFault("VM крутится дольше 10 млн опкодов — бинарь "
-                              "испорчен (нет OP_TERM/OP_RET)")
+            # (лимит честно настраиваемый: --steps, дефолт 10 млн — TKT-035)
+            if self.op_count > self.max_steps:
+                raise VmFault("VM крутится дольше %d опкодов (фактически "
+                              "исполнено %d, наступило на шаге pc=0x%08X) — "
+                              "бинарь испорчен (нет OP_TERM/OP_RET)"
+                              % (self.max_steps, self.op_count, self.pc))
         # честная страховка 1.5: артефакт остался открытым — FILE_END не был вызван
         if self.outfile is not None:
             raise VmFault("честный артефакт не закрыт — FILE_END не вызвался "
@@ -324,25 +342,97 @@ class CtOsVm:
         return 0
 
 
+def honest_flags(args_in):
+    """Честный разбор флагов VM (TKT-035) в argparse-стиле; поведение без
+    флагов честно прежнее — бэккомпат."""
+    quiet = False
+    steps = 10_000_000
+    trace_path = None
+    files = []
+    i = 0
+    while i < len(args_in):
+        a = args_in[i]
+        if a == "--quiet":
+            quiet = True
+        elif a == "--steps":
+            i += 1
+            if i >= len(args_in):
+                raise SystemExit("[VM FLAGS]: --steps требует честное число "
+                                 "шагов (например --steps 500000)")
+            try:
+                steps = int(args_in[i])
+            except ValueError:
+                raise SystemExit("[VM FLAGS]: --steps: '%s' не число "
+                                 "(честный лимит шагов)" % args_in[i])
+            if steps <= 0:
+                raise SystemExit("[VM FLAGS]: --steps должен быть > 0 "
+                                 "(честно)")
+        elif a == "--trace":
+            i += 1
+            if i >= len(args_in):
+                raise SystemExit("[VM FLAGS]: --trace требует честный путь "
+                                 "к файлу трассы (например --trace out.log)")
+            trace_path = args_in[i]
+        elif a.startswith("--"):
+            raise SystemExit("[VM FLAGS]: неизвестный флаг '%s' (честные "
+                             "флаги VM: --quiet / --steps N / --trace FILE)"
+                             % a)
+        else:
+            files.append(a)
+        i += 1
+    if quiet and trace_path is not None:
+        raise SystemExit("[VM FLAGS]: конфликт честных флагов: --quiet глушит "
+                         "трассу, а --trace FILE её пишет; выбери один")
+    return quiet, steps, trace_path, files
+
+
 def main(argv):
-    quiet = "--quiet" in argv[1:]
+    quiet, steps, trace_path, args = honest_flags(argv[1:])
     trace = not quiet
-    args = [a for a in argv[1:] if a != "--quiet"]
     if not args:
         print(__doc__)
         return 1
     rc = 0
     for path in args:
+        fh = None
+        vm = None
         try:
+            # честная трасса в файл (TKT-035): консоль не тонет, аудит жив
+            if trace_path is not None:
+                fh = open(trace_path, "w", encoding="utf-8")
             with open(path, "rb") as f:
                 binary = f.read()
-            vm = CtOsVm(binary, path, trace=trace)
-            vm.run()
+            vm = CtOsVm(binary, path, trace=trace, trace_file=fh,
+                        max_steps=steps)
+            try:
+                vm.run()
+            finally:
+                if fh is not None:
+                    fh.close()
             print("[SUCCESS]: %s — %d опкодов(а), ячеек: %d" %
                   (path, vm.op_count, len(vm.cells)))
         except VmFault as e:
-            print("[KERNEL PANIC]: %s" % e)
+            panic = "[KERNEL PANIC]: %s" % e
+            # честные итоги паники: сколько шагов сделано и где последний
+            # честный вывод в порт (по нему и сверяют трассу — TKT-035)
+            if vm is not None:
+                panic += " [итоги: шагов %d" % vm.op_count
+                if vm.last_out is not None:
+                    op_pc, op_name, port, val = vm.last_out
+                    panic += (", последний честный вывод %s порт 0x%08X <- "
+                              "0x%08X на смещении 0x%08X"
+                              % (op_name, port, val, op_pc))
+                else:
+                    panic += ", честных выводов в порт не было"
+                panic += "]"
+            print(panic)
             rc = 1
+        except OSError as e:
+            print("[VM ERROR]: файл не открыт — %s" % e)
+            rc = 1
+        finally:
+            if fh is not None:
+                fh.close()
     return rc
 
 
