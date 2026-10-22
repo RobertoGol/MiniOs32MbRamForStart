@@ -69,6 +69,12 @@
 #define: FILE_U16         0x00000132 // младшие 16 бит -> 2 байта BE
 #define: FILE_END         0x00000133 // закрыть артефакт (не закрыт = честный брак)
 
+// Честные коды брака стадии-1 (TKT-033, по образцу K-кодов):
+// позиция брака — честная ячейка Fail_Position на момент сбоя
+#define: BRK_UNKNOWN_WORD 0x00000001 // K-S1: неизвестное слово
+#define: BRK_STRAY_CLOSE  0x00000002 // K-S2: '}' или ')' при пустом честном стеке
+#define: BRK_UNCLOSED     0x00000003 // K-S3: незакрытая честная группа в финале
+
 // Объявляем глобальные статические ячейки памяти ядра (регистры компилятора)
 set static Execution_Pointer = 0x00000000; // Текущая позиция чтения слов
 set static Token_Counter     = 0x00000000; // Счетчик распознанных системных токенов
@@ -83,6 +89,8 @@ set static Node_Counter      = 0x00000000; // Честно согласован�
 set static Tmp_Addr          = 0x00000000; // Рабочая ячейка-указатель
 set static Tmp_Word          = 0x00000000; // Рабочее слово-значение
 set static Lit_Value         = 0x00000000; // Честное ЗНАЧЕНИЕ литерала (1.4)
+set static Fail_Code         = 0x00000000; // Честный код брака (0 = успеха нет сбоя)
+set static Fail_Position     = 0x00000000; // Честная позиция слова на момент брака
 
 // Главная точка входа нативного компилятора (Entry Point)
 pub entry main(cell:raw args) {
@@ -96,6 +104,8 @@ pub entry main(cell:raw args) {
     Word_Index = 0;
     Syntax_Counter = 0;
     Error_Flag = 0;
+    Fail_Code = 0;        // честный код брака: успех = 0 (TKT-033)
+    Fail_Position = 0;    // честная позиция брака: успех = 0 (TKT-033)
     Node_Brace_Depth = 0;
     Node_Paren_Depth = 0;
     Node_Counter = 0;
@@ -120,16 +130,22 @@ function NativeLexicalScanner() {
                 out_cell(OUTPUT_BINARY_PORT, END_MARKER);
             } else {
                 // Честный брак: неизвестное слово — бинарь честно не эмитится
+                // (код/позиция уже честно записаны в сканере: K-S1)
                 out_cell(OUTPUT_BINARY_PORT, ERR_MARKER);
             }
         } else {
-            // Честный брак: честная незакрытая группа ()
+            // Честный брак: честная незакрытая группа () (K-S3, TKT-033);
+            // позиция честно = граница прохода (Word_Index == MAX) — честно.
             Error_Flag = 0x00000001;
+            Fail_Code = BRK_UNCLOSED;
+            Fail_Position = Word_Index;
             out_cell(OUTPUT_BINARY_PORT, ERR_MARKER);
         }
     } else {
-        // Честный брак: честная незакрытая группа {}
+        // Честный брак: честная незакрытая группа {} (K-S3, TKT-033)
         Error_Flag = 0x00000001;
+        Fail_Code = BRK_UNCLOSED;
+        Fail_Position = Word_Index;
         out_cell(OUTPUT_BINARY_PORT, ERR_MARKER);
     }
 
@@ -156,13 +172,21 @@ function NativeLexicalScanner() {
     sys_call(FILE_PUT);
     log_cell(STREAM_EMIT_CELL, Error_Flag);
     sys_call(FILE_PUT);
+    // 1.5-б + TKT-033: 2 честных слова кода и позиции брака (артефакт = 40 байт)
+    log_cell(STREAM_EMIT_CELL, Fail_Code);
+    sys_call(FILE_PUT);
+    log_cell(STREAM_EMIT_CELL, Fail_Position);
+    sys_call(FILE_PUT);
     sys_call(FILE_END);
 
     // Честный отчет: токены / синтаксика / узлы / статус отказа
+    // + честные код и позиция брака (TKT-033)
     log_cell(OUTPUT_BINARY_PORT, Token_Counter);
     log_cell(OUTPUT_BINARY_PORT, Syntax_Counter);
     log_cell(OUTPUT_BINARY_PORT, Node_Counter);
     log_cell(OUTPUT_BINARY_PORT, Error_Flag);
+    log_cell(OUTPUT_BINARY_PORT, Fail_Code);
+    log_cell(OUTPUT_BINARY_PORT, Fail_Position);
 }
 
 // Честный рекурсивный обход: одно слово за один вызов (как в спринте M1)
@@ -329,7 +353,9 @@ function Scan_Word_Loop() {
 
             if (Current_Char == SYM_BRACE_CLOSE) {
                 if (Node_Brace_Depth == 0x00000000) {
-                    // Честный отказ: '}' при пустом честном стеке {}
+                    // Честный отказ: '}' при пустом честном стеке {} (K-S2, TKT-033)
+                    Fail_Code = BRK_STRAY_CLOSE;
+                    Fail_Position = Word_Index;
                     Error_Flag = 0x00000001;
                     Word_Index = MAX_SOURCE_WORDS;
                 } else {
@@ -348,7 +374,9 @@ function Scan_Word_Loop() {
 
             if (Current_Char == SYM_PAREN_CLOSE) {
                 if (Node_Paren_Depth == 0x00000000) {
-                    // Честный отказ: ')' при пустом честном стеке ()
+                    // Честный отказ: ')' при пустом честном стеке () (K-S2, TKT-033)
+                    Fail_Code = BRK_STRAY_CLOSE;
+                    Fail_Position = Word_Index;
                     Error_Flag = 0x00000001;
                     Word_Index = MAX_SOURCE_WORDS;
                 } else {
@@ -365,9 +393,19 @@ function Scan_Word_Loop() {
             }
 
             // Честный отказ: слово не совпало ни с одной честной сигнатурой
+            // (K-S1, TKT-033) — честная позиция слова ЗАПОМИНАЕТСЯ ДО обрыва,
+            // иначе Word_Index = MAX затирает честную позицию брака.
+            // Приоритет честный: код брака = ПЕРВЫЙ честный сбой; если брак
+            // уже был (Error_Flag == 1), честный код и позиция не трогаются —
+            // иначе следом идущий unknown затёр бы честный код (ловлено
+            // трассой Ф3: stray '}' не ставит Found_Flag и тянул K-S1 сверху).
             if (Found_Flag == 0x00000000) {
-                Error_Flag = 0x00000001;
-                Word_Index = MAX_SOURCE_WORDS;
+                if (Error_Flag == 0x00000000) {
+                    Fail_Code = BRK_UNKNOWN_WORD;
+                    Fail_Position = Word_Index;
+                    Error_Flag = 0x00000001;
+                    Word_Index = MAX_SOURCE_WORDS;
+                }
             }
 
             if (Word_Index == MAX_SOURCE_WORDS) {

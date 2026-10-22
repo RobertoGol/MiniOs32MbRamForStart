@@ -72,6 +72,11 @@
 #define: FILE_U16         0x00000132 // младшие 16 бит -> 2 байта BE
 #define: FILE_END         0x00000133 // закрыть артефакт
 
+// честные коды брака стадии-1 (TKT-033, зеркало stage1_compiler.kt)
+#define: BRK_UNKNOWN_WORD 0x00000001 // K-S1: неизвестное слово
+#define: BRK_STRAY_CLOSE  0x00000002 // K-S2: '}' или ')' при пустом честном стеке
+#define: BRK_UNCLOSED     0x00000003 // K-S3: незакрытая честная группа в финале
+
 // честные опкоды
 #define: OP_INIT_CODE   0x00000001
 #define: OP_CALL_CODE   0x00000003
@@ -105,6 +110,8 @@ set static Node_Counter      = 0x00000000;
 set static Tmp_Addr          = 0x00000000;
 set static Tmp_Word          = 0x00000000;
 set static Lit_Value         = 0x00000000; // честное ЗНАЧЕНИЕ литерала (1.4)
+set static Fail_Code         = 0x00000000; // честный код брака (TKT-033)
+set static Fail_Position     = 0x00000000; // честная позиция брака (TKT-033)
 
 pub entry main(cell:raw args) {
     out_cell(LOG_PORT, 0x00009000);      // LOG: стадия-1.3 стенд START
@@ -164,15 +171,26 @@ pub entry main(cell:raw args) {
             // честно закрыто — Error_Flag не трогаем
         } else {
             Error_Flag = 0x00000001;     // честная незакрытая ()
+            Fail_Code = BRK_UNCLOSED;    // честный код K-S3 (TKT-033)
+            Fail_Position = Word_Index;  // честная позиция = граница прохода
         }
     } else {
         Error_Flag = 0x00000001;         // честная незакрытая {}
+        Fail_Code = BRK_UNCLOSED;        // честный код K-S3 (TKT-033)
+        Fail_Position = Word_Index;      // честная позиция = граница прохода
     }
 
     if (Error_Flag == 0x00000001) {
         out_cell(LOG_PORT, 0x00009130);  // LOG: честный отказ незакрытой
     } else {
         out_cell(LOG_PORT, 0x00009096);
+    }
+
+    // TKT-033: честный код K-S3 (0x03) у Ф2 — незакрытая группа
+    if (Fail_Code == BRK_UNCLOSED) {
+        out_cell(LOG_PORT, 0x00009180);  // LOG: честный K-S3 на месте
+    } else {
+        out_cell(LOG_PORT, 0x00009097);
     }
 
     if (Node_Counter == 0x00000001) {
@@ -194,6 +212,17 @@ pub entry main(cell:raw args) {
 
     if (Error_Flag == 0x00000001) {
         out_cell(LOG_PORT, 0x00009140);  // LOG: честный отказ на месте
+    } else {
+        out_cell(LOG_PORT, 0x00009098);
+    }
+
+    // TKT-033: честный код K-S2 (0x02) у Ф3 — '}' при пустом стеке
+    if (Fail_Code == BRK_STRAY_CLOSE) {
+        if (Fail_Position == 0x00000000) {
+            out_cell(LOG_PORT, 0x00009181); // LOG: честный K-S2 + позиция 0
+        } else {
+            out_cell(LOG_PORT, 0x00009098);
+        }
     } else {
         out_cell(LOG_PORT, 0x00009098);
     }
@@ -257,6 +286,17 @@ pub entry main(cell:raw args) {
         out_cell(LOG_PORT, 0x00009096);
     }
 
+    // TKT-033: честный код K-S1 (0x01) + честная позиция 0 у Ф5 ('12' первое слово)
+    if (Fail_Code == BRK_UNKNOWN_WORD) {
+        if (Fail_Position == 0x00000000) {
+            out_cell(LOG_PORT, 0x00009182); // LOG: честный K-S1 + позиция 0
+        } else {
+            out_cell(LOG_PORT, 0x00009099);
+        }
+    } else {
+        out_cell(LOG_PORT, 0x00009099);
+    }
+
     // --- 1.5-б честный шаг: стадия-1 сама пишет свой артефакт-файл ---
     // Финальное состояние = Ф5 (честный брак '12'): артефакт честно пишется
     // И на браке, Error_Flag в отчёте честно говорит про брак — тишины нет.
@@ -292,6 +332,11 @@ function Write_Artifact_Report() {
     sys_call(FILE_PUT);
     log_cell(STREAM_EMIT_CELL, Error_Flag);
     sys_call(FILE_PUT);
+    // TKT-033: 2 честных слова кода и позиции брака (артефакт = 40 байт)
+    log_cell(STREAM_EMIT_CELL, Fail_Code);
+    sys_call(FILE_PUT);
+    log_cell(STREAM_EMIT_CELL, Fail_Position);
+    sys_call(FILE_PUT);
     sys_call(FILE_END);
 }
 
@@ -302,6 +347,8 @@ function Reset_Scan() {
     Word_Index = 0;
     Syntax_Counter = 0;
     Error_Flag = 0;
+    Fail_Code = 0;        // честный код брака: успех = 0 (TKT-033)
+    Fail_Position = 0;    // честная позиция брака: успех = 0 (TKT-033)
     Node_Brace_Depth = 0;
     Node_Paren_Depth = 0;
     Node_Counter = 0;
@@ -563,9 +610,11 @@ function Scan_Word_Loop() {
                 Found_Flag = 0x00000001;
             }
 
-            // '}': честный сним — или честный отказ
+            // '}': честный сним — или честный отказ (K-S2, TKT-033)
             if (Current_Char == SYM_BRACE_CLOSE) {
                 if (Node_Brace_Depth == 0x00000000) {
+                    Fail_Code = BRK_STRAY_CLOSE;
+                    Fail_Position = Word_Index;
                     Error_Flag = 0x00000001;
                     Word_Index = MAX_SOURCE_WORDS;
                 } else {
@@ -583,9 +632,11 @@ function Scan_Word_Loop() {
                 Found_Flag = 0x00000001;
             }
 
-            // ')': честный сним — или честный отказ
+            // ')': честный сним — или честный отказ (K-S2, TKT-033)
             if (Current_Char == SYM_PAREN_CLOSE) {
                 if (Node_Paren_Depth == 0x00000000) {
+                    Fail_Code = BRK_STRAY_CLOSE;
+                    Fail_Position = Word_Index;
                     Error_Flag = 0x00000001;
                     Word_Index = MAX_SOURCE_WORDS;
                 } else {
@@ -601,10 +652,16 @@ function Scan_Word_Loop() {
                 Found_Flag = 0x00000001;
             }
 
-            // честный отказ: неизвестное слово
+            // честный отказ: неизвестное слово (K-S1, TKT-033)
+            // позиция честно запоминается ДО обрыва (Word_Index = MAX затёр бы);
+            // приоритет честный: код брака = ПЕРВЫЙ честный сбой (см. stage1_compiler)
             if (Found_Flag == 0x00000000) {
-                Error_Flag = 0x00000001;
-                Word_Index = MAX_SOURCE_WORDS;
+                if (Error_Flag == 0x00000000) {
+                    Fail_Code = BRK_UNKNOWN_WORD;
+                    Fail_Position = Word_Index;
+                    Error_Flag = 0x00000001;
+                    Word_Index = MAX_SOURCE_WORDS;
+                }
             }
 
             if (Word_Index == MAX_SOURCE_WORDS) {
