@@ -44,10 +44,13 @@ class KitiiParser:
     def consume(self, expected_type=None):
         token = self.current_token()
         if not token:
-            print(f"[PARSER ERROR]: Unexpected end of file.")
+            # честный код D001 (TKT-034): неожиданный конец файла
+            print("[KINII D001]: неожиданный конец файла (стадия-0 парсер)")
             sys.exit(1)
         if expected_type and token['type'] != expected_type:
-            print(f"[PARSER ERROR]: Boundary verification fault! Expected '{expected_type}', found '{token['type']}' ('{token['value']}') at line {token['line']}")
+            # честный код D002 (TKT-034): ждётся тип X, найден Y
+            print(f"[KINII D002@{token['line']}]: граница честная: ждётся '{expected_type}', "
+                  f"найдено '{token['type']}' ('{token['value']}') (стадия-0 парсер)")
             sys.exit(1)
         self.pos += 1
         return token
@@ -76,7 +79,10 @@ class KitiiParser:
             elif token['type'] == 'TOKEN_KEY_PUBENTRY':
                 functions.append(self.parse_function(is_pub=True))
             else:
-                print(f"[PARSER ERROR]: Illegal global frame instruction '{token['value']}' at line {token['line']}")
+                # честный код D003 (TKT-034): незаконная глобальная инструкция
+                print(f"[KINII D003@{token['line']}]: незаконная глобальная инструкция "
+                      f"'{token['value']}' (на глобальном уровне честны только "
+                      f"#директивы, set static и function/pub entry)")
                 sys.exit(1)
         return ProgramNode(directives, functions)
 
@@ -171,7 +177,10 @@ class KitiiParser:
                     # (например '-' из выражения вида 'X - L') — раньше честно
                     # крутил цикл на месте (висение), теперь честная
                     # диагностика вместо тишины/петли.
-                    print(f"[PARSER ERROR]: unsupported token '{arg_token['value']}' in call arguments at line {arg_token['line']} (an honest expression in the argument is not supported in stage-0: compute into a cell first)")
+                    # честный код D005 (TKT-034) — закрытие B-12
+                    print(f"[KINII D005@{arg_token['line']}]: токен '{arg_token['value']}' "
+                          f"не поддержан в аргументах вызова (честное выражение в "
+                          f"аргументе стадии-0 не положено: сначала посчитай в ячейку)")
                     sys.exit(1)
                 self.consume('TOKEN_SYM_RPAREN')
             else:
@@ -179,7 +188,12 @@ class KitiiParser:
                     args.append(self.consume()['value'])
             self.consume('TOKEN_SYM_SEMICOLON')
             return CommandNode(cmd_val, args, line_num)
-        print(f"[PARSER ERROR]: Illegal instruction sequence '{token['value']}' inside function context loop layer boundary context wrapper context tracking nodes at line {token['line']}")
+        # честный код D004 (TKT-034): незаконная инструкция внутри функции
+        # (вместо честного шума «loop layer boundary context wrapper…»)
+        print(f"[KINII D004@{token['line']}]: незаконная последовательность "
+              f"'{token['value']}' внутри функции (честный набор утверждений "
+              f"стадии-0: if/set/имя=/команды LITE/terminate/run/out_cell/in_cell/"
+              f"log_cell/store_ind/sys_call/__asm__)")
         sys.exit(1)
 
 if __name__ == "__main__":

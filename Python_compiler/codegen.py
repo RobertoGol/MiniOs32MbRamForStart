@@ -92,10 +92,12 @@ class KitiiCodegen:
         return 16  # 'CTOS' + 2+2 цели/версия + 4 вход + 4 магия
 
     # ---------- честные сбои ----------
-    def fail(self, msg, node=None):
+    def fail(self, msg, node=None, code=None):
         line = getattr(node, 'line', None)
-        where = f" (строка {line})" if line is not None else ""
-        print(f"[CODEGEN ERROR]: {msg}{where}")
+        # честный формат диагностики стадии-0 (TKT-034): [KINII D0xx@строка]
+        where = (f"@{line}" if line is not None else "")
+        prefix = f"[KINII {code}{where}]" if code else f"[CODEGEN ERROR]{where}"
+        print(f"{prefix}: {msg}")
         sys.exit(1)
 
     # ---------- резолвер имён ----------
@@ -114,7 +116,7 @@ class KitiiCodegen:
         if t.isdigit():
             return int(t)
         self.fail(f"неизвестное имя '{t}': это не макрос #define, не переменная "
-                  f"set static и не число")
+                  f"set static и не число", code="D010")
 
     def is_var(self, name):
         return name.strip() in self.var_table
@@ -165,7 +167,7 @@ class KitiiCodegen:
                 if raw.startswith('static cell'):
                     raw = raw[len('static cell'):].strip()
                 if '=' not in raw:
-                    self.fail(f"глобальная переменная без инициализации: '{raw}'")
+                    self.fail(f"глобальная переменная без инициализации: '{raw}'", code="D011")
                 name, val = (p.strip() for p in raw.split('=', 1))
                 self.var_addr(name)
                 # начальное значение резервируем на память memory.ctos: VM
@@ -180,7 +182,7 @@ class KitiiCodegen:
         pubs = [f for f in self.ast.functions if getattr(f, 'is_pub', False)]
         others = [f for f in self.ast.functions if not getattr(f, 'is_pub', False)]
         if len(pubs) > 1:
-            self.fail("pub entry должен быть ровно один, найдено %d" % len(pubs))
+            self.fail("pub entry должен быть ровно один, найдено %d" % len(pubs), code="D012")
         order = pubs + others
 
         # ПРОХОД 1 (сухой): только меряем функции, чтобы знать адреса OP_CALL.
@@ -229,7 +231,7 @@ class KitiiCodegen:
         elif isinstance(stmt, IfNode):
             self.compile_if(stmt, out)
         else:
-            self.fail("неизвестный узел AST: %r" % (stmt.__class__.__name__,), stmt)
+            self.fail("неизвестный узел AST: %r" % (stmt.__class__.__name__,), stmt, code="D013")
 
     # --- команды ---
     def compile_command(self, stmt, out):
@@ -247,7 +249,7 @@ class KitiiCodegen:
                 self.emit_be(out, 0x00000000)        # сухой проход: 4 байта места
             else:
                 if callee not in self.call_targets:
-                    self.fail(f"run '{callee}': функция не объявлена в файле", stmt)
+                    self.fail(f"run '{callee}': функция не объявлена в файле", stmt, code="D014")
                 self.emit_be(out, self.call_targets[callee])
         elif name == 'out_cell':
             self.emit_op(out, OP_OUTCELL)
@@ -256,7 +258,7 @@ class KitiiCodegen:
             if self.is_var(val_arg):
                 self.fail("out_cell в стадии-0 пишет только константы/макросы; "
                           f"для вывода переменной есть честный log_cell "
-                          f"(OP_OUTCELL_V); пришло: '{val_arg}'", stmt)
+                          f"(OP_OUTCELL_V); пришло: '{val_arg}'", stmt, code="D015")
             self.emit_be(out, self.resolve(port_arg))
             self.emit_be(out, self.resolve(val_arg))
         elif name == 'log_cell':
@@ -266,7 +268,7 @@ class KitiiCodegen:
             val_arg = stmt.args[1] if len(stmt.args) > 1 else ''
             if not self.is_var(val_arg):
                 self.fail("log_cell выводит ПЕРЕМЕННУЮ (опкод 0x54 OP_OUTCELL_V); "
-                          f"константы выводятся честным out_cell: '{val_arg}'", stmt)
+                          f"константы выводятся честным out_cell: '{val_arg}'", stmt, code="D016")
             self.emit_be(out, self.resolve(port_arg))
             self.emit_be(out, self.var_addr(val_arg))
         elif name == 'store_ind':
@@ -277,7 +279,7 @@ class KitiiCodegen:
             val_arg = stmt.args[1] if len(stmt.args) > 1 else ''
             if not self.is_var(ptr_arg):
                 self.fail("store_ind: первый аргумент — переменная-указатель, "
-                          f"пришло '{ptr_arg}'", stmt)
+                          f"пришло '{ptr_arg}'", stmt, code="D017")
             if self.is_var(val_arg):
                 self.emit_op(out, OP_INCELL)
                 self.emit_be(out, self.var_addr(val_arg))
@@ -301,16 +303,16 @@ class KitiiCodegen:
             nid_arg = stmt.args[0].strip() if len(stmt.args) > 0 else ''
             if not nid_arg:
                 self.fail("sys_call требует честный NID-аргумент "
-                          "(макрос #define или число, например sys_call(FILE_BEGIN))", stmt)
+                          "(макрос #define или число, например sys_call(FILE_BEGIN))", stmt, code="D018")
             if self.is_var(nid_arg):
                 # честный сбой: переменная — это АДРЕС ячейки, не NID драйвера;
                 # молча пропустить её как NID — значит врать бинарю.
                 self.fail(f"sys_call: '{nid_arg}' — переменная, её адрес нельзя подсовывать "
-                          f"как честный NID; используй макрос #define или число", stmt)
+                          f"как честный NID; используй макрос #define или число", stmt, code="D019")
             self.emit_op(out, OP_SYSCALL)
             self.emit_be(out, self.resolve(nid_arg))
         else:
-            self.fail(f"команда '{name}' не поддержана кодогенератором Стадии-0", stmt)
+            self.fail(f"команда '{name}' не поддержана кодогенератором Стадии-0", stmt, code="D020")
 
     # --- присваивания ---
     def compile_assign(self, stmt, out):
@@ -338,7 +340,7 @@ class KitiiCodegen:
             lhs, rhs = (p.strip() for p in expr.split(' - ', 1))
             if not rhs.isdigit():
                 self.fail("в стадии-0 вычитание ограничено: "
-                          f"'имя - число', справа не число: '{expr}'", stmt)
+                          f"'имя - число', справа не число: '{expr}'", stmt, code="D021")
             if '- ' not in lhs and ' -' not in lhs:
                 if self.is_var(lhs):
                     self.emit_op(out, OP_INCELL)
@@ -350,7 +352,7 @@ class KitiiCodegen:
                 self.emit(out, bytes([0x17]))   # acc = acc - N (честный режим)
                 self.emit_be(out, int(rhs))
             else:
-                self.fail(f"вложенное вычитание '{expr}' в стадии-0 не поддержано", stmt)
+                self.fail(f"вложенное вычитание '{expr}' в стадии-0 не поддержано", stmt, code="D022")
             self.emit_op(out, OP_STORE_A)
             self.emit_be(out, tgt_addr)
             return
@@ -382,7 +384,7 @@ class KitiiCodegen:
                 self.emit(out, bytes([0x15]))
                 self.emit_be(out, self.var_addr(rhs))
             else:
-                self.fail(f"в стадии-0 справа от «+» — число или имя: '{rhs}'", stmt)
+                self.fail(f"в стадии-0 справа от «+» — число или имя: '{rhs}'", stmt, code="D023")
         elif len(parts) == 1:
             expr_clean = parts[0]
             if self.is_var(expr_clean):
@@ -394,7 +396,7 @@ class KitiiCodegen:
                 self.emit_op(out, OP_CONST)
                 self.emit_be(out, self.resolve(expr_clean))
         else:
-            self.fail(f"многоскоростная арифметика '{expr}' в стадии-0 не поддержана", stmt)
+            self.fail(f"многоскоростная арифметика '{expr}' в стадии-0 не поддержана", stmt, code="D024")
 
         self.emit_op(out, OP_STORE_A)
         self.emit_be(out, tgt_addr)
@@ -404,7 +406,7 @@ class KitiiCodegen:
         cond = stmt.condition.strip()
         if '==' not in cond:
             self.fail("в стадии-0 поддержано сравнение только вида "
-                      f"`имя == значение`, пришло: '{cond}'", stmt)
+                      f"`имя == значение`, пришло: '{cond}'", stmt, code="D025")
         lhs, rhs = (p.strip() for p in cond.split('==', 1))
 
         # lhs: чтение переменной либо константы

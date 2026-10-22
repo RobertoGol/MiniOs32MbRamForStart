@@ -114,7 +114,10 @@ class KitiiLexer:
                         'macro_val': macro_val
                     })
                 else:
-                    print(f"[PREPROCESSOR ERROR]: Unknown directive '{full_directive}' at line {line_num}")
+                    # честный код D101 (TKT-034): неизвестная честная #директива
+                    print(f"[KINII D101@{line_num}]: неизвестная директива "
+                          f"'{full_directive}' (честные: #core:/#target:/#define:/"
+                          f"#firmware:/#include:)")
                     sys.exit(1)
                 current_pos = end_of_line
                 continue
@@ -155,7 +158,9 @@ class KitiiLexer:
             if char == '"':
                 end_quotes = source_code.find('"', current_pos + 1)
                 if end_quotes == -1:
-                    print(f"[LEXER ERROR]: Unterminated string literal at line {line_num}")
+                    # честный код D102 (TKT-034): незакрытая строка
+                    print(f"[KINII D102@{line_num}]: незакрытый строковый литерал (стадия-0 лексер)")
+                    sys.exit(1)
                     sys.exit(1)
                 tokens.append({'type': 'TOKEN_LIT_STRING', 'value': source_code[current_pos:end_quotes + 1], 'line': line_num})
                 current_pos = end_quotes + 1
@@ -200,7 +205,8 @@ class KitiiLexer:
                 current_pos += 1
                 continue
 
-            print(f"[LEXER ERROR]: Illegal sequence '{char}' at line {line_num}")
+            # честный код D103 (TKT-034): неизвестный честному лексеру символ
+            print(f"[KINII D103@{line_num}]: незакодированный символ '{char}' (стадия-0 лексер)")
             sys.exit(1)
         return tokens
 
@@ -215,11 +221,13 @@ def print_kernel_boot():
 
 if __name__ == "__main__":
     if len(sys.argv) < 2:
-        print("[STAGE-0 ERROR]: Compilation input source file target path parameter required.")
+        # честный код D104 (TKT-034): нет входного файла
+        print("[KINII D104]: нужен честный путь к исходнику (стадия-0 вход)")
         sys.exit(1)
     file_path = sys.argv[1]
     if not os.path.exists(file_path):
-        print(f"[STAGE-0 ERROR]: File path '{file_path}' not found.")
+        # честный код D105 (TKT-034): файл не найден
+        print(f"[KINII D105]: файл '{file_path}' не найден (стадия-0 вход)")
         sys.exit(1)
     with open(file_path, 'r', encoding='utf-8') as f:
         source_bytes = f.read()
