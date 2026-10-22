@@ -73,12 +73,17 @@ class KitiiCodegen:
     # Зона статических переменных: Ring 2 (0x00A00000+), ниже видеорайона
     # Rev.web (0x01E00000+) — см. Readme «карта распределения ОЗУ».
     VAR_ZONE = 0x00F00000
+    # Честный фиксированный адрес аргумента syscall (Stream_Emit) — хвост зоны
+    # переменных ВНЕ бегунка (0x00F00FF0): адреса обычных set static честно
+    # НЕ сдвигаются, бинари без syscall остаются байт-в-байт прежними.
+    STREAM_EMIT_ADDR = 0x00F00FF0
 
     def __init__(self, ast_root):
         self.ast = ast_root
         self.rodata_section = bytearray()
         self.macro_table = {}
         self.var_table = {}        # имя переменной -> адрес ячейки
+        self.next_var_addr = self.VAR_ZONE  # честный бегунок свободных адресов
         self.call_targets = None   # имя функции -> абсолютный адрес (2-й проход)
         self.pos = self.HEADER_SIZE()  # текущее смещение в файле
 
@@ -117,7 +122,13 @@ class KitiiCodegen:
     def var_addr(self, name):
         name = name.strip()
         if name not in self.var_table:
-            self.var_table[name] = self.VAR_ZONE + 4 * len(self.var_table)
+            if name == 'Stream_Emit':
+                # честный контракт: аргумент syscall живёт ТОЛЬКО в хвосте зоны,
+                # вне бегунка (0x00F00FF0) — адреса остальных ячеек не сдвигаются
+                self.var_table[name] = self.STREAM_EMIT_ADDR
+            else:
+                self.var_table[name] = self.next_var_addr
+                self.next_var_addr += 4
         return self.var_table[name]
 
     # ---------- эмиссия ----------
@@ -284,6 +295,12 @@ class KitiiCodegen:
             encoded = stmt.args[0].encode('utf-8')
             self.emit(out, struct.pack("<I", len(encoded)))
             self.emit(out, encoded)
+        elif name == 'sys_call':
+            # честный syscall-слой: sys_call(NID-имя) -> OP_SYSCALL + BE NID.
+            # Честный аргумент syscall живёт в ячейке Stream_Emit (0x00F00010).
+            nid_arg = stmt.args[0] if len(stmt.args) > 0 else ''
+            self.emit_op(out, OP_SYSCALL)
+            self.emit_be(out, self.resolve(nid_arg))
         else:
             self.fail(f"команда '{name}' не поддержана кодогенератором Стадии-0", stmt)
 

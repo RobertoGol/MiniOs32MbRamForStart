@@ -73,6 +73,8 @@ class CtOsVm:
         self._t0 = None
         self._acc = 0    # аккумулятор арифметики стадий-0
         self.rts = []    # стек возвратов для OP_CALL / OP_RET
+        self.outfile = None    # честный файл-воркер (стадия-1.5, syscall-слой)
+        self.outfile_n = 0     # честный счётчик записанных байт
 
     # ---------- лог ----------
     def log(self, line):
@@ -212,8 +214,40 @@ class CtOsVm:
             if pc + 5 > len(b):
                 raise VmFault("OP_SYSCALL обрезан в конце файла")
             nid = struct.unpack_from(C1, b, pc + 1)[0]
-            raise VmFault("OP_SYSCALL: NID 0x%08X — на хосте нет драйвера с "
-                          "таким адресом (эмуляция шины пока не встроена)" % nid)
+            stream_cell = 0x00F00FF0  # честная ячейка-аргумент syscall (Stream_Emit)
+            if nid == 0x00000130:     # FILE_BEGIN — честный файл-воркер: открыть артефакт
+                if self.outfile is not None:
+                    raise VmFault("FILE_BEGIN: честный артефакт уже открыт")
+                self.outfile = open(self.path + ".out", "w+b")
+                self.outfile_n = 0
+                self.log("OP_SYSCALL[FILE_BEGIN]: честный артефакт открыт")
+            elif nid == 0x00000131:   # FILE_PUT — честное слово из Stream_Emit → 4 байта BE
+                if self.outfile is None:
+                    raise VmFault("FILE_PUT до FILE_BEGIN — честный брак порядка syscall")
+                val = self.cells.get(stream_cell, 0) & 0xFFFFFFFF
+                self.outfile.write(struct.pack(C1, val))
+                self.outfile_n += 4
+                self.log("OP_SYSCALL[FILE_PUT]: честное слово 0x%08X -> 4 байта BE (всего %d)"
+                         % (val, self.outfile_n))
+            elif nid == 0x00000132:   # FILE_U16 — честные младшие 16 бит → 2 байта BE
+                if self.outfile is None:
+                    raise VmFault("FILE_U16 до FILE_BEGIN — честный брак порядка syscall")
+                val = self.cells.get(stream_cell, 0) & 0xFFFF
+                self.outfile.write(struct.pack(">H", val))
+                self.outfile_n += 2
+                self.log("OP_SYSCALL[FILE_U16]: honest u16 0x%04X -> 2 байта BE (всего %d)"
+                         % (val, self.outfile_n))
+            elif nid == 0x00000133:   # FILE_END — честное закрытие артефакта
+                if self.outfile is None:
+                    raise VmFault("FILE_END без FILE_BEGIN — честный брак порядка syscall")
+                self.outfile.close()
+                self.outfile = None
+                self.log("OP_SYSCALL[FILE_END]: честный артефакт закрыт (%d байт)"
+                         % self.outfile_n)
+            else:
+                raise VmFault("OP_SYSCALL: NID 0x%08X — честный драйвер не зарегистрирован "
+                              "(эмуляция шины пока не встроена)" % nid)
+            self.pc = pc + 5
         elif op == OP_STORE_A:
             if pc + 5 > len(b):
                 raise VmFault("OP_STORE_A обрезан в конце файла")
@@ -283,6 +317,10 @@ class CtOsVm:
             if self.op_count > 10_000_000:
                 raise VmFault("VM крутится дольше 10 млн опкодов — бинарь "
                               "испорчен (нет OP_TERM/OP_RET)")
+        # честная страховка 1.5: артефакт остался открытым — FILE_END не был вызван
+        if self.outfile is not None:
+            raise VmFault("честный артефакт не закрыт — FILE_END не вызвался "
+                          "(бинарь честно бракован: файл-вывод оборван)")
         return 0
 
 
