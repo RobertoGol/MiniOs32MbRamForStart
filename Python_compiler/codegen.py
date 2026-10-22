@@ -297,8 +297,16 @@ class KitiiCodegen:
             self.emit(out, encoded)
         elif name == 'sys_call':
             # честный syscall-слой: sys_call(NID-имя) -> OP_SYSCALL + BE NID.
-            # Честный аргумент syscall живёт в ячейке Stream_Emit (0x00F00010).
-            nid_arg = stmt.args[0] if len(stmt.args) > 0 else ''
+            # Честный аргумент syscall живёт в ячейке Stream_Emit (0x00F00FF0).
+            nid_arg = stmt.args[0].strip() if len(stmt.args) > 0 else ''
+            if not nid_arg:
+                self.fail("sys_call требует честный NID-аргумент "
+                          "(макрос #define или число, например sys_call(FILE_BEGIN))", stmt)
+            if self.is_var(nid_arg):
+                # честный сбой: переменная — это АДРЕС ячейки, не NID драйвера;
+                # молча пропустить её как NID — значит врать бинарю.
+                self.fail(f"sys_call: '{nid_arg}' — переменная, её адрес нельзя подсовывать "
+                          f"как честный NID; используй макрос #define или число", stmt)
             self.emit_op(out, OP_SYSCALL)
             self.emit_be(out, self.resolve(nid_arg))
         else:

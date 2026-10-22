@@ -235,7 +235,7 @@ class CtOsVm:
                 val = self.cells.get(stream_cell, 0) & 0xFFFF
                 self.outfile.write(struct.pack(">H", val))
                 self.outfile_n += 2
-                self.log("OP_SYSCALL[FILE_U16]: honest u16 0x%04X -> 2 байта BE (всего %d)"
+                self.log("OP_SYSCALL[FILE_U16]: честные 16 бит 0x%04X -> 2 байта BE (всего %d)"
                          % (val, self.outfile_n))
             elif nid == 0x00000133:   # FILE_END — честное закрытие артефакта
                 if self.outfile is None:
@@ -246,7 +246,7 @@ class CtOsVm:
                          % self.outfile_n)
             else:
                 raise VmFault("OP_SYSCALL: NID 0x%08X — честный драйвер не зарегистрирован "
-                              "(эмуляция шины пока не встроена)" % nid)
+                              "(файл-слой зарегистрирован: NID 0x00000130..0x00000133)" % nid)
             self.pc = pc + 5
         elif op == OP_STORE_A:
             if pc + 5 > len(b):
