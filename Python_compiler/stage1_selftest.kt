@@ -116,6 +116,22 @@ set static Fail_Position     = 0x00000000; // честная позиция бр
 pub entry main(cell:raw args) {
     out_cell(LOG_PORT, 0x00009000);      // LOG: стадия-1.3 стенд START
 
+    // --- 1.6 (TKT-036): честный артефакт стадии-1 на бенче ---
+    // Артефакт честно открывается РАЗ на весь стенд, до Ф1; честный
+    // заголовок TKT-009 честно первым, эмит-потоки всех Ф-фаз честно
+    // дописываются за ним (одна честная запись — один честный файл).
+    sys_call(FILE_BEGIN);
+    out_cell(STREAM_EMIT_CELL, 0x43544F53);  // 'CTOS' BE
+    sys_call(FILE_PUT);
+    out_cell(STREAM_EMIT_CELL, 0x00000001);  // честная версия 1
+    sys_call(FILE_U16);
+    out_cell(STREAM_EMIT_CELL, 0x00000002);  // честный таргет 2 (ARM32)
+    sys_call(FILE_U16);
+    out_cell(STREAM_EMIT_CELL, 0x00000010);  // честный entry 0x10
+    sys_call(FILE_PUT);
+    out_cell(STREAM_EMIT_CELL, 0xAAAAFFFF);  // честная магия
+    sys_call(FILE_PUT);
+
     // ---------- ФАЗА 1: валидный исходник с группами ----------
     out_cell(LOG_PORT, 0x00009001);      // LOG: Ф1 честно загружена
     run Load_Node_Demo();
@@ -309,20 +325,12 @@ pub entry main(cell:raw args) {
     log_cell(LOG_PORT, Error_Flag);
 }
 
-// ---------- 1.5-б: честный артефакт стадии-1 (syscall-файл-слой) ----------
-// Заголовок 16 байт по контракту TKT-009 + 4 честных слова отчёта.
+// ---------- 1.6 (TKT-036): честный отчёт стадии-1 ----------
+// Артефакт уже открыт в main с честным заголовком; отчёт честно
+// ДОПИСЫВАЕТСЯ после эмит-потоков Ф-фаз, затем файл честно закрывается.
+// Пишется ВСЕГДА (и на браке): Error_Flag в отчёте честно говорит
+// про брак — тишины нет.
 function Write_Artifact_Report() {
-    sys_call(FILE_BEGIN);
-    out_cell(STREAM_EMIT_CELL, 0x43544F53);  // 'CTOS' BE
-    sys_call(FILE_PUT);
-    out_cell(STREAM_EMIT_CELL, 0x00000001);  // честная версия 1
-    sys_call(FILE_U16);
-    out_cell(STREAM_EMIT_CELL, 0x00000002);  // честный таргет 2 (ARM32)
-    sys_call(FILE_U16);
-    out_cell(STREAM_EMIT_CELL, 0x00000010);  // честный entry 0x10
-    sys_call(FILE_PUT);
-    out_cell(STREAM_EMIT_CELL, 0xAAAAFFFF);  // честная магия
-    sys_call(FILE_PUT);
     // 4 честных слова отчёта (значения переменных — честно через log_cell)
     log_cell(STREAM_EMIT_CELL, Token_Counter);
     sys_call(FILE_PUT);
@@ -479,38 +487,47 @@ function Scan_Word_Loop() {
         } else {
             Found_Flag = 0x00000000;
 
+            // 1.6 (TKT-036): эмит-сайты честно пишут поток В АРТЕФАКТ
+            // (STREAM_EMIT_CELL + FILE_PUT), зеркально компилятору; LOG_PORT
+            // остаётся только для честных маркеров сверок.
             if (Current_Char == D_WORD_PREPROC) {
-                out_cell(LOG_PORT, OP_INIT_CODE);
+                out_cell(STREAM_EMIT_CELL, OP_INIT_CODE);
+                sys_call(FILE_PUT);
                 Token_Counter = Token_Counter + 1;
                 Found_Flag = 0x00000001;
             }
 
             if (Current_Char == KW_SET) {
-                out_cell(LOG_PORT, OP_ALLOC_CODE);
+                out_cell(STREAM_EMIT_CELL, OP_ALLOC_CODE);
+                sys_call(FILE_PUT);
                 Token_Counter = Token_Counter + 1;
                 Found_Flag = 0x00000001;
             }
 
             if (Current_Char == KW_STATIC) {
-                out_cell(LOG_PORT, OP_ALLOC_CODE);
+                out_cell(STREAM_EMIT_CELL, OP_ALLOC_CODE);
+                sys_call(FILE_PUT);
                 Token_Counter = Token_Counter + 1;
                 Found_Flag = 0x00000001;
             }
 
             if (Current_Char == KW_FUNCTION) {
-                out_cell(LOG_PORT, OP_CALL_CODE);
+                out_cell(STREAM_EMIT_CELL, OP_CALL_CODE);
+                sys_call(FILE_PUT);
                 Token_Counter = Token_Counter + 1;
                 Found_Flag = 0x00000001;
             }
 
             if (Current_Char == KW_IF) {
-                out_cell(LOG_PORT, OP_JZ_CODE);
+                out_cell(STREAM_EMIT_CELL, OP_JZ_CODE);
+                sys_call(FILE_PUT);
                 Token_Counter = Token_Counter + 1;
                 Found_Flag = 0x00000001;
             }
 
             if (Current_Char == KW_TERM) {
-                out_cell(LOG_PORT, OP_TERM_CODE);
+                out_cell(STREAM_EMIT_CELL, OP_TERM_CODE);
+                sys_call(FILE_PUT);
                 Token_Counter = Token_Counter + 1;
                 Found_Flag = 0x00000001;
             }
@@ -525,80 +542,100 @@ function Scan_Word_Loop() {
             // честно разбиваются по словам.
             if (Current_Char == LIT_D0) {
                 Lit_Value = Current_Char - 48;
-                out_cell(LOG_PORT, OP_CONST_CODE);
-                log_cell(LOG_PORT, Lit_Value);
+                out_cell(STREAM_EMIT_CELL, OP_CONST_CODE);
+                sys_call(FILE_PUT);
+                log_cell(STREAM_EMIT_CELL, Lit_Value);
+                sys_call(FILE_PUT);
                 Token_Counter = Token_Counter + 1;
                 Found_Flag = 0x00000001;
             }
 
             if (Current_Char == LIT_D1) {
                 Lit_Value = Current_Char - 48;
-                out_cell(LOG_PORT, OP_CONST_CODE);
-                log_cell(LOG_PORT, Lit_Value);
+                out_cell(STREAM_EMIT_CELL, OP_CONST_CODE);
+                sys_call(FILE_PUT);
+                log_cell(STREAM_EMIT_CELL, Lit_Value);
+                sys_call(FILE_PUT);
                 Token_Counter = Token_Counter + 1;
                 Found_Flag = 0x00000001;
             }
 
             if (Current_Char == LIT_D2) {
                 Lit_Value = Current_Char - 48;
-                out_cell(LOG_PORT, OP_CONST_CODE);
-                log_cell(LOG_PORT, Lit_Value);
+                out_cell(STREAM_EMIT_CELL, OP_CONST_CODE);
+                sys_call(FILE_PUT);
+                log_cell(STREAM_EMIT_CELL, Lit_Value);
+                sys_call(FILE_PUT);
                 Token_Counter = Token_Counter + 1;
                 Found_Flag = 0x00000001;
             }
 
             if (Current_Char == LIT_D3) {
                 Lit_Value = Current_Char - 48;
-                out_cell(LOG_PORT, OP_CONST_CODE);
-                log_cell(LOG_PORT, Lit_Value);
+                out_cell(STREAM_EMIT_CELL, OP_CONST_CODE);
+                sys_call(FILE_PUT);
+                log_cell(STREAM_EMIT_CELL, Lit_Value);
+                sys_call(FILE_PUT);
                 Token_Counter = Token_Counter + 1;
                 Found_Flag = 0x00000001;
             }
 
             if (Current_Char == LIT_D4) {
                 Lit_Value = Current_Char - 48;
-                out_cell(LOG_PORT, OP_CONST_CODE);
-                log_cell(LOG_PORT, Lit_Value);
+                out_cell(STREAM_EMIT_CELL, OP_CONST_CODE);
+                sys_call(FILE_PUT);
+                log_cell(STREAM_EMIT_CELL, Lit_Value);
+                sys_call(FILE_PUT);
                 Token_Counter = Token_Counter + 1;
                 Found_Flag = 0x00000001;
             }
 
             if (Current_Char == LIT_D5) {
                 Lit_Value = Current_Char - 48;
-                out_cell(LOG_PORT, OP_CONST_CODE);
-                log_cell(LOG_PORT, Lit_Value);
+                out_cell(STREAM_EMIT_CELL, OP_CONST_CODE);
+                sys_call(FILE_PUT);
+                log_cell(STREAM_EMIT_CELL, Lit_Value);
+                sys_call(FILE_PUT);
                 Token_Counter = Token_Counter + 1;
                 Found_Flag = 0x00000001;
             }
 
             if (Current_Char == LIT_D6) {
                 Lit_Value = Current_Char - 48;
-                out_cell(LOG_PORT, OP_CONST_CODE);
-                log_cell(LOG_PORT, Lit_Value);
+                out_cell(STREAM_EMIT_CELL, OP_CONST_CODE);
+                sys_call(FILE_PUT);
+                log_cell(STREAM_EMIT_CELL, Lit_Value);
+                sys_call(FILE_PUT);
                 Token_Counter = Token_Counter + 1;
                 Found_Flag = 0x00000001;
             }
 
             if (Current_Char == LIT_D7) {
                 Lit_Value = Current_Char - 48;
-                out_cell(LOG_PORT, OP_CONST_CODE);
-                log_cell(LOG_PORT, Lit_Value);
+                out_cell(STREAM_EMIT_CELL, OP_CONST_CODE);
+                sys_call(FILE_PUT);
+                log_cell(STREAM_EMIT_CELL, Lit_Value);
+                sys_call(FILE_PUT);
                 Token_Counter = Token_Counter + 1;
                 Found_Flag = 0x00000001;
             }
 
             if (Current_Char == LIT_D8) {
                 Lit_Value = Current_Char - 48;
-                out_cell(LOG_PORT, OP_CONST_CODE);
-                log_cell(LOG_PORT, Lit_Value);
+                out_cell(STREAM_EMIT_CELL, OP_CONST_CODE);
+                sys_call(FILE_PUT);
+                log_cell(STREAM_EMIT_CELL, Lit_Value);
+                sys_call(FILE_PUT);
                 Token_Counter = Token_Counter + 1;
                 Found_Flag = 0x00000001;
             }
 
             if (Current_Char == LIT_D9) {
                 Lit_Value = Current_Char - 48;
-                out_cell(LOG_PORT, OP_CONST_CODE);
-                log_cell(LOG_PORT, Lit_Value);
+                out_cell(STREAM_EMIT_CELL, OP_CONST_CODE);
+                sys_call(FILE_PUT);
+                log_cell(STREAM_EMIT_CELL, Lit_Value);
+                sys_call(FILE_PUT);
                 Token_Counter = Token_Counter + 1;
                 Found_Flag = 0x00000001;
             }
