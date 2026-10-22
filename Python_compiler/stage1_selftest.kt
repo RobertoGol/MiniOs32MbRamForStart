@@ -65,6 +65,13 @@
 #define: CH_WORD_END    0x0000002E
 #define: UNKNOWN_WORD   0x00007171  // 'qq'
 
+// честный syscall-файл-слой (1.5-б, зеркало stage1_compiler.kt)
+#define: STREAM_EMIT_CELL 0x00F00FF0 // честная ячейка-аргумент syscall (Stream_Emit)
+#define: FILE_BEGIN       0x00000130 // открыть артефакт
+#define: FILE_PUT         0x00000131 // слово Stream_Emit -> 4 байта BE
+#define: FILE_U16         0x00000132 // младшие 16 бит -> 2 байта BE
+#define: FILE_END         0x00000133 // закрыть артефакт
+
 // честные опкоды
 #define: OP_INIT_CODE   0x00000001
 #define: OP_CALL_CODE   0x00000003
@@ -250,10 +257,42 @@ pub entry main(cell:raw args) {
         out_cell(LOG_PORT, 0x00009096);
     }
 
+    // --- 1.5-б честный шаг: стадия-1 сама пишет свой артефакт-файл ---
+    // Финальное состояние = Ф5 (честный брак '12'): артефакт честно пишется
+    // И на браке, Error_Flag в отчёте честно говорит про брак — тишины нет.
+    run Write_Artifact_Report();
+    out_cell(LOG_PORT, 0x00009170);      // LOG: артефакт стадии-1 записан честно
+
     // честный финальный отчёт значениями
     log_cell(LOG_PORT, Token_Counter);
     log_cell(LOG_PORT, Node_Counter);
     log_cell(LOG_PORT, Error_Flag);
+}
+
+// ---------- 1.5-б: честный артефакт стадии-1 (syscall-файл-слой) ----------
+// Заголовок 16 байт по контракту TKT-009 + 4 честных слова отчёта.
+function Write_Artifact_Report() {
+    sys_call(FILE_BEGIN);
+    out_cell(STREAM_EMIT_CELL, 0x43544F53);  // 'CTOS' BE
+    sys_call(FILE_PUT);
+    out_cell(STREAM_EMIT_CELL, 0x00000001);  // честная версия 1
+    sys_call(FILE_U16);
+    out_cell(STREAM_EMIT_CELL, 0x00000002);  // честный таргет 2 (ARM32)
+    sys_call(FILE_U16);
+    out_cell(STREAM_EMIT_CELL, 0x00000010);  // честный entry 0x10
+    sys_call(FILE_PUT);
+    out_cell(STREAM_EMIT_CELL, 0xAAAAFFFF);  // честная магия
+    sys_call(FILE_PUT);
+    // 4 честных слова отчёта (значения переменных — честно через log_cell)
+    log_cell(STREAM_EMIT_CELL, Token_Counter);
+    sys_call(FILE_PUT);
+    log_cell(STREAM_EMIT_CELL, Syntax_Counter);
+    sys_call(FILE_PUT);
+    log_cell(STREAM_EMIT_CELL, Node_Counter);
+    sys_call(FILE_PUT);
+    log_cell(STREAM_EMIT_CELL, Error_Flag);
+    sys_call(FILE_PUT);
+    sys_call(FILE_END);
 }
 
 // ---------- честный сброс сканирующих регистров между фазами ----------
