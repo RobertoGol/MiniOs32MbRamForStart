@@ -133,6 +133,13 @@ class CtOsVm:
         elif op == OP_INIT:
             self.log("OP_INIT: инициализация модуля")
             self.pc = pc + 1
+        elif op == OP_ALLOC_ST:
+            # TKT-047: стадия-1 эмитит 'se'/'st' как голый 0x10 (без операнда) —
+            # связь имени статики с ячейкой живёт на стороне стадии-1;
+            # на исполнении это честный маркер объявления: поток идёт дальше,
+            # статики этапа компиляции не создаются молча (лог виден).
+            self.log("OP_ALLOC_ST: объявление статики (стадия-1, без операнда)")
+            self.pc = pc + 1
         elif op in (OP_JZ, OP_JMP):
             if pc + 5 > len(b):
                 raise VmFault("переходной опкод обрезан в конце файла")
@@ -258,9 +265,17 @@ class CtOsVm:
                 self.outfile = None
                 self.log("OP_SYSCALL[FILE_END]: честный артефакт закрыт (%d байт)"
                          % self.outfile_n)
+            elif nid == 0x00000134:   # FILE_U8 — честный байт → 1 байт (TKT-047)
+                if self.outfile is None:
+                    raise VmFault("FILE_U8 до FILE_BEGIN — честный брак порядка syscall")
+                val = self.cells.get(stream_cell, 0) & 0xFF
+                self.outfile.write(struct.pack(">B", val))
+                self.outfile_n += 1
+                self.log("OP_SYSCALL[FILE_U8]: честный байт 0x%02X -> 1 байт (всего %d)"
+                         % (val, self.outfile_n))
             else:
                 raise VmFault("OP_SYSCALL: NID 0x%08X — честный драйвер не зарегистрирован "
-                              "(файл-слой зарегистрирован: NID 0x00000130..0x00000133)" % nid)
+                              "(файл-слой зарегистрирован: NID 0x00000130..0x00000134)" % nid)
             self.pc = pc + 5
         elif op == OP_STORE_A:
             if pc + 5 > len(b):
