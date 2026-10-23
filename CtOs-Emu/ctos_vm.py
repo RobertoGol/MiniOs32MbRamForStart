@@ -4,12 +4,15 @@
 ctos_vm.py — хост-исполнитель бинарников CtOs (.ctos), Этап 4.
 
 Честная VM формата кодогенератора Стадии-0 (Python_compiler/codegen.py):
-  Заголовок (16 байт):
+  Заголовок v1.0 (16 байт) / v1.1 (20 байт, TKT-040 веха-1):
     [0..4)  'CTOS'               магия
-    [4..6)  версия (LE u16)      сейчас 0x0100
+    [4..6)  версия (LE u16)      0x0100 (v1.0) / 0x0101 (v1.1, с контролем)
     [6..8)  цель (LE u16)        0x01 = ARM32, 0x02 = прочее
     [8..12) точка входа (LE u32) смещение в файле
     [12..16) магия-конец 0xAAAAFFFF
+    v1.1: [16..20) контрольное слово тела (LE u32) — CRC-32 (zlib, честная
+          открытая реализация stdlib) по всем байтам после заголовка;
+          порча файлов ловится честным KERNEL PANIC на загрузке.
   Дальше — поток опкодов (формат аргументов смотри в __init__).
 
 Запуск:
@@ -25,8 +28,12 @@ ctos_vm.py — хост-исполнитель бинарников CtOs (.ctos)
 import struct
 import sys
 import time
+import zlib  # честная метка источника: CRC-32 из stdlib (open-source zlib)
 
-HEADER_SIZE = 16
+HEADER_SIZE = 16   # наименьший честный заголовок (v1.0 legacy)
+HEADER_SIZE_V11 = 20  # v1.1: + контрольное слово тела (TKT-040 веха-1)
+VER_BASE  = 0x0100  # v1.0 — без контрольного слова (legacy, работает, честный лог)
+VER_CHECK = 0x0101  # v1.1 — с контрольным словом, VM честно проверяет
 MAGIC = b"CTOS"
 TAIL_MAGIC = 0xAAAAFFFF
 
@@ -104,8 +111,25 @@ class CtOsVm:
         entry, tail = struct.unpack_from("<II", self.b, 8)
         if tail != TAIL_MAGIC:
             raise VmFault("хвостовая магия заголовка испорчена: 0x%08X" % tail)
-        if entry < HEADER_SIZE or entry > len(self.b):
-            raise VmFault("точка входа %d вне файла (0..%d)" % (entry, len(self.b)))
+        if ver == VER_CHECK:
+            # честное Контрольное слово тела (TKT-040 веха-1, контракт v1.1)
+            if len(self.b) < HEADER_SIZE_V11:
+                raise VmFault("файл заявлен как v1.1 (с контролем), но меньше "
+                              "%d байт — не может быть CTOS-бинарником" % HEADER_SIZE_V11)
+            stored = struct.unpack_from("<I", self.b, 16)[0]
+            real = zlib.crc32(self.b[HEADER_SIZE_V11:]) & 0xFFFFFFFF
+            if stored != real:
+                raise VmFault("[TKT-040] честный брак целостности: контрольное "
+                              "слово в файле 0x%08X, а честный CRC-32 тела "
+                              "0x%08X — бинарь подменён/испорчен" % (stored, real))
+            self.log("целостность: контрольное слово 0x%08X сошлось (CRC-32 тела, "
+                     "байт %d)" % (stored, len(self.b) - HEADER_SIZE_V11))
+        else:
+            self.log("заголовок v1.0 (legacy): контрольного слова нет — "
+                     "проверка целостности не производилась")
+        if entry < HEADER_SIZE or entry >= len(self.b):
+            raise VmFault("точка входа %d вне файла (0..%d): пустой поток опкодов "
+                          "или бинарь без кода — честный брак" % (entry, len(self.b)))
         self.pc_entry = entry
         self.log("заголовок: v%d.%d, цель %s, вход 0x%08X" %
                  ((ver >> 8) & 0xFF, ver & 0xFF,
@@ -124,6 +148,13 @@ class CtOsVm:
         """Исполняет один опкод; возвращает False, когда поток закончен (OP_TERM/RET)."""
         b = self.b
         pc = self.pc
+        if pc >= len(b):
+            # честная страховка на границе: после честного байта опкодов
+            # осуществление по формуле OP_TERM уже вернуло False; сюда попадаем
+            # только на битом бинаре (jump обошёл TERM) или пустом потоке.
+            raise VmFault("честная граница: поток опкодов кончился на смещении "
+                          "0x%08X (файл 0x%08X байт) — OP_TERM не встретился"
+                          % (pc, len(b)))
         op = b[pc]
         self.op_count += 1
 
@@ -273,9 +304,24 @@ class CtOsVm:
                 self.outfile_n += 1
                 self.log("OP_SYSCALL[FILE_U8]: честный байт 0x%02X -> 1 байт (всего %d)"
                          % (val, self.outfile_n))
+            elif nid == 0x00000135:   # FILE_SEAL — честное контрольное слово артефакта (TKT-040)
+                if self.outfile is None:
+                    raise VmFault("FILE_SEAL до FILE_BEGIN — честный брак порядка syscall")
+                self.outfile.flush()
+                self.outfile.seek(0)
+                blob = self.outfile.read()
+                if len(blob) < HEADER_SIZE_V11:
+                    raise VmFault("FILE_SEAL: в артефакте меньше %d байт — честное "
+                                  "контрольное слово некуда вписывать" % HEADER_SIZE_V11)
+                crc = zlib.crc32(blob[HEADER_SIZE_V11:]) & 0xFFFFFFFF
+                self.outfile.seek(16)
+                self.outfile.write(struct.pack("<I", crc))
+                self.outfile.seek(0, 2)   # честный хвост: продолжаем писать в конец
+                self.log("OP_SYSCALL[FILE_SEAL]: контрольное слово артефакта 0x%08X "
+                         "(CRC-32 тела, байт %d)" % (crc, len(blob) - HEADER_SIZE_V11))
             else:
                 raise VmFault("OP_SYSCALL: NID 0x%08X — честный драйвер не зарегистрирован "
-                              "(файл-слой зарегистрирован: NID 0x00000130..0x00000134)" % nid)
+                              "(файл-слой зарегистрирован: NID 0x00000130..0x00000135)" % nid)
             self.pc = pc + 5
         elif op == OP_STORE_A:
             if pc + 5 > len(b):

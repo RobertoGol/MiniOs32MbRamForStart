@@ -69,6 +69,7 @@
 #define: FILE_U16         0x00000132 // младшие 16 бит -> 2 байта BE
 #define: FILE_END         0x00000133 // закрыть артефакт (не закрыт = честный брак)
 #define: FILE_U8          0x00000134 // 1 байт -> артефакт (TKT-047: честный байт-канал опконов)
+#define: FILE_SEAL        0x00000135 // контрольное слово артефакта CRC-32 (TKT-040 веха-1)
 
 // Честные коды брака стадии-1 (TKT-033, по образцу K-кодов):
 // позиция брака — честная ячейка Fail_Position на момент сбоя
@@ -111,23 +112,25 @@ pub entry main(cell:raw args) {
     Node_Paren_Depth = 0;
     Node_Counter = 0;
 
-    // --- 1.7 (TKT-047): честный артефакт эмитируемой программы ---
-    // Артефакт честно открывается ДО скана; честный заголовок TKT-009
-    // честно идёт первым, эмит-поток теперь честно БАЙТОВЫЙ (через FILE_U8),
-    // entry 0x10 честен: код лежит ровно за заголовком.
-    // Честная байт-карта: заголовочные поля u16/u32 читаются VM как LE,
-    // поэтому эмиттер пишет БАЙТ-ОБРАЗ поля (BE-канал выдает нужные байты).
+    // --- 1.7 (TKT-047) + TKT-040 веха-1: честный артефакт-бинарь v1.1 ---
+    // Заголовок TKT-009 v1.1 = 20 байт: прежние 16 + контрольное слово тела
+    // (crc, честно вписывается FILE_SEAL в конце). Честная байт-карта:
+    // заголовочные поля VM читает LE, эмиттер пишет БАЙТ-ОБРАЗ поля.
+    // entry 0x14: код лежит ровно за заголовком v1.1.
     sys_call(FILE_BEGIN);
     out_cell(STREAM_EMIT_CELL, 0x43544F53);  // 'CTOS' BE
     sys_call(FILE_PUT);
-    out_cell(STREAM_EMIT_CELL, 0x00000001);  // байт-образ ver-поля 00 01 (LE -> v1.0)
+    out_cell(STREAM_EMIT_CELL, 0x00000101);  // байт-образ ver-поля 01 01 (LE -> v1.1 с контролем)
     sys_call(FILE_U16);
     out_cell(STREAM_EMIT_CELL, 0x00000200);  // байт-образ таргета 02 00 (LE -> ARM32)
     sys_call(FILE_U16);
-    out_cell(STREAM_EMIT_CELL, 0x10000000);  // байт-образ entry 10 00 00 00 (LE -> 0x10)
+    out_cell(STREAM_EMIT_CELL, 0x14000000);  // байт-образ entry 14 00 00 00 (LE -> 0x14)
     sys_call(FILE_PUT);
     out_cell(STREAM_EMIT_CELL, 0xFFFFAAAA);  // байт-образ магии FF FF AA AA (LE -> 0xAAAAFFFF)
     sys_call(FILE_PUT);
+    out_cell(STREAM_EMIT_CELL, 0x00000000);  // контрольное слово: плейсхолдер, FILE_SEAL честно вписывает
+    sys_call(FILE_U16);
+    sys_call(FILE_U16);
 
     // Вызываем фоновую функцию низкоуровневой токенизации текста
     run NativeLexicalScanner();
@@ -189,6 +192,8 @@ function NativeLexicalScanner() {
     sys_call(FILE_PUT);
     log_cell(STREAM_EMIT_CELL, Fail_Position);
     sys_call(FILE_PUT);
+    // TKT-040 веха-1: честное контрольное слово — VM патчит CRC-32 тела
+    sys_call(FILE_SEAL);
     sys_call(FILE_END);
 
     // Честный отчет: токены / синтаксика / узлы / статус отказа

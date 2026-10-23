@@ -71,6 +71,7 @@
 #define: FILE_PUT         0x00000131 // слово Stream_Emit -> 4 байта BE
 #define: FILE_U16         0x00000132 // младшие 16 бит -> 2 байта BE
 #define: FILE_U8          0x00000134 // 1 байт -> артефакт (TKT-047 байт-канал)
+#define: FILE_SEAL        0x00000135 // контрольное слово артефакта CRC-32 (TKT-040 веха-1)
 #define: END_MARKER       0x000000FF // честный маркер конца эмиссии
 #define: ERR_MARKER       0x000000FE // честный маркер БРАКА: неизвестное слово
 #define: FILE_END         0x00000133 // закрыть артефакт
@@ -126,14 +127,17 @@ pub entry main(cell:raw args) {
     sys_call(FILE_BEGIN);
     out_cell(STREAM_EMIT_CELL, 0x43544F53);  // 'CTOS' BE
     sys_call(FILE_PUT);
-    out_cell(STREAM_EMIT_CELL, 0x00000001);  // честная версия 1
+    out_cell(STREAM_EMIT_CELL, 0x00000101);  // байт-образ ver 01 01 (LE -> v1.1 с контролем)
     sys_call(FILE_U16);
     out_cell(STREAM_EMIT_CELL, 0x00000200);  // байт-образ таргета 02 00 (LE -> ARM32)
     sys_call(FILE_U16);
-    out_cell(STREAM_EMIT_CELL, 0x10000000);  // байт-образ entry 10 00 00 00 (LE -> 0x10)
+    out_cell(STREAM_EMIT_CELL, 0x14000000);  // байт-образ entry 14 00 00 00 (LE -> 0x14)
     sys_call(FILE_PUT);
     out_cell(STREAM_EMIT_CELL, 0xFFFFAAAA);  // байт-образ магии FF FF AA AA (LE -> 0xAAAAFFFF)
     sys_call(FILE_PUT);
+    out_cell(STREAM_EMIT_CELL, 0x00000000);  // контрольное слово: плейсхолдер, FILE_SEAL честно вписывает
+    sys_call(FILE_U16);
+    sys_call(FILE_U16);
 
     // ---------- ФАЗА 1: валидный исходник с группами ----------
     out_cell(LOG_PORT, 0x00009001);      // LOG: Ф1 честно загружена
@@ -351,11 +355,13 @@ function Write_Artifact_Report() {
     sys_call(FILE_PUT);
     log_cell(STREAM_EMIT_CELL, Error_Flag);
     sys_call(FILE_PUT);
-    // TKT-033: 2 честных слова кода и позиции брака (артефакт = 40 байт)
+    // TKT-033: 2 честных слова кода и позиции брака
     log_cell(STREAM_EMIT_CELL, Fail_Code);
     sys_call(FILE_PUT);
     log_cell(STREAM_EMIT_CELL, Fail_Position);
     sys_call(FILE_PUT);
+    // TKT-040 веха-1: честное контрольное слово — VM патчит CRC-32 тела
+    sys_call(FILE_SEAL);
     sys_call(FILE_END);
 }
 

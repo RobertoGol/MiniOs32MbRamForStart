@@ -89,7 +89,7 @@ class KitiiCodegen:
 
     @staticmethod
     def HEADER_SIZE():
-        return 16  # 'CTOS' + 2+2 цели/версия + 4 вход + 4 магия
+        return 20  # 'CTOS' + ver2 + цель2 + вход4 + магия4 + контрольное слово тела4 (v1.1, TKT-040)
 
     # ---------- честные сбои ----------
     def fail(self, msg, node=None, code=None):
@@ -201,10 +201,15 @@ class KitiiCodegen:
             self.compile_function(func, self.text_section)
 
         header = bytearray(b"CTOS")
-        header.extend(struct.pack("<H", 0x0100))
+        header.extend(struct.pack("<H", 0x0101))
         header.extend(struct.pack("<H", target_id))
         header.extend(struct.pack("<I", self.HEADER_SIZE()))
         header.extend(struct.pack("<I", 0xAAAAFFFF))
+        # честное контрольное слово тела (TKT-040 веха-1): CRC-32 по всем байтам
+        # после заголовка (rodata + text); алгоритм — zlib.crc32 (открытая
+        # реализация из stdlib Python, метка источника честная).
+        import zlib
+        header.extend(struct.pack("<I", zlib.crc32(bytes(self.rodata_section + self.text_section)) & 0xFFFFFFFF))
         return header + self.rodata_section + self.text_section
 
     # ---------- функции и инструкции ----------
