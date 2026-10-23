@@ -71,6 +71,9 @@
 #define: FILE_PUT         0x00000131 // слово Stream_Emit -> 4 байта BE
 #define: FILE_U16         0x00000132 // младшие 16 бит -> 2 байта BE
 #define: FILE_U8          0x00000134 // 1 байт -> артефакт (TKT-047 байт-канал)
+#define: FILE_SEEK        0x00000136 // честная позиция записи в артефакте (TKT-048)
+#define: BRK_PATCH_OVERFLOW 0x00000004 // честных слотов патча больше нет (TKT-048)
+#define: HDR_BODY_SIZE      0x00000014 // честный размер заголовка v1.1 = 20 байт
 #define: FILE_SEAL        0x00000135 // контрольное слово артефакта CRC-32 (TKT-040 веха-1)
 #define: END_MARKER       0x000000FF // честный маркер конца эмиссии
 #define: ERR_MARKER       0x000000FE // честный маркер БРАКА: неизвестное слово
@@ -115,6 +118,9 @@ set static Tmp_Addr          = 0x00000000;
 set static Tmp_Word          = 0x00000000;
 set static Lit_Value         = 0x00000000; // честное ЗНАЧЕНИЕ литерала (1.4)
 set static Fail_Code         = 0x00000000; // честный код брака (TKT-033)
+set static Emitted_Bytes = 0x00000000; // честный счётчик байтов потока (TKT-048)
+set static JP_Site_1     = 0x00000000; // честный слот места патча операнда №1 (TKT-048)
+set static JP_Site_Term  = 0x00000000; // честная позиция потока байта TERM (target демо)
 set static Fail_Position     = 0x00000000; // честная позиция брака (TKT-033)
 
 pub entry main(cell:raw args) {
@@ -138,6 +144,12 @@ pub entry main(cell:raw args) {
     out_cell(STREAM_EMIT_CELL, 0x00000000);  // контрольное слово: плейсхолдер, FILE_SEAL честно вписывает
     sys_call(FILE_U16);
     sys_call(FILE_U16);
+
+    // TKT-048 веха-1: честные счётчики/слоты адресной эмиссии (поток общий
+    // на все фазы — честные позиции не сбрасываются, Reset_Scan их не трогает)
+    Emitted_Bytes = 0;
+    JP_Site_1 = 0;
+    JP_Site_Term = 0;
 
     // ---------- ФАЗА 1: валидный исходник с группами ----------
     out_cell(LOG_PORT, 0x00009001);      // LOG: Ф1 честно загружена
@@ -323,6 +335,36 @@ pub entry main(cell:raw args) {
     // --- 1.5-б честный шаг: стадия-1 сама пишет свой артефакт-файл ---
     // Финальное состояние = Ф5 (честный брак '12'): артефакт честно пишется
     // И на браке, Error_Flag в отчёте честно говорит про брак — тишины нет.
+
+    // ---------- ФАЗА 7 (TKT-048 веха-1): честная адресная эмиссия ----------
+    out_cell(LOG_PORT, 0x00009007);      // LOG: Ф7 честно загружена
+    run Load_Call_Demo();
+    run Reset_Scan();
+    run Scan_Word_Loop();
+    out_cell(LOG_PORT, 0x000090F7);      // LOG: Ф7 честный скан завершён
+
+    // честный слот операнда OP_CALL заполнен после 'fu'
+    if (JP_Site_1 == 0x00000000) {
+        out_cell(LOG_PORT, 0x00009098);  // честный брак Ф7: слот не зажёгся
+    } else {
+        out_cell(LOG_PORT, 0x00009190);  // LOG: слот патча честно зажёгся
+    }
+
+    // честный счёт байтов потока: 'fu'=5 ('03'+операнд 4Б) + 'te'=1 = 2 слова=6 Б
+    // поверх 10 Б Ф1+Ф4: 16
+    if (Emitted_Bytes == 0x00000010) {
+        out_cell(LOG_PORT, 0x00009191);  // LOG: честный счёт байтов сошёлся
+    } else {
+        out_cell(LOG_PORT, 0x00009097);
+    }
+
+    // честный target: позиция байта TERM = 15 (поток: 4+6+5+1)
+    if (JP_Site_Term == 0x0000000F) {
+        out_cell(LOG_PORT, 0x00009192);  // LOG: честная позиция TERM сошлась
+    } else {
+        out_cell(LOG_PORT, 0x00009096);
+    }
+
     run Write_Artifact_Report();
     out_cell(LOG_PORT, 0x00009170);      // LOG: артефакт стадии-1 записан честно
 
@@ -360,6 +402,17 @@ function Write_Artifact_Report() {
     sys_call(FILE_PUT);
     log_cell(STREAM_EMIT_CELL, Fail_Position);
     sys_call(FILE_PUT);
+    // TKT-048 веха-1: честная патч-фаза — адрес честного target в слоты
+    // (позиция в файле = честный поток + размер заголовка v1.1)
+    if (JP_Site_1 == 0x00000000) {
+        // честно: ни одного сайта CALL/JZ — патчить нечего
+    } else {
+        Stream_Emit = JP_Site_1 + 20;                   // честная позиция операнда в файле
+        sys_call(FILE_SEEK);
+        Stream_Emit = JP_Site_Term + 20;                // честный target: позиция байта OP_TERM
+        sys_call(FILE_PUT);
+        JP_Site_1 = 0x00000000;              // честный слот прожит
+    }
     // TKT-040 веха-1: честное контрольное слово — VM патчит CRC-32 тела
     sys_call(FILE_SEAL);
     sys_call(FILE_END);
@@ -487,6 +540,24 @@ function Load_TwoDigit_Demo() {
     store_ind(Tmp_Addr, Tmp_Word);
 }
 
+// ---------- Ф7 (TKT-048 веха-1): честная адресная эмиссия ----------
+// Слова: 'fu' (0x7566) 'te' (0x6574) .
+// Честный эмит: OP_CALL 0x03 + слот операнда BE32 (плейсхолдер) +
+// OP_TERM 0x05; патч честно вписывает позицию байта TERM в файле.
+function Load_Call_Demo() {
+    Tmp_Addr = SOURCE_CODE_BUFFER;
+    Tmp_Word = KW_FUNCTION;
+    store_ind(Tmp_Addr, Tmp_Word);
+
+    Tmp_Addr = SOURCE_CODE_BUFFER + 4;
+    Tmp_Word = KW_TERM;
+    store_ind(Tmp_Addr, Tmp_Word);
+
+    Tmp_Addr = SOURCE_CODE_BUFFER + 8;
+    Tmp_Word = CH_WORD_END;
+    store_ind(Tmp_Addr, Tmp_Word);
+}
+
 // ---------- честный лексер+стек групп (тот же алгоритм, что в компиляторе) ----------
 function Scan_Word_Loop() {
     if (Word_Index == MAX_SOURCE_WORDS) {
@@ -510,6 +581,7 @@ function Scan_Word_Loop() {
             if (Current_Char == D_WORD_PREPROC) {
                 out_cell(STREAM_EMIT_CELL, OP_INIT_CODE);
                 sys_call(FILE_U8);
+                Emitted_Bytes = Emitted_Bytes + 1;
                 Token_Counter = Token_Counter + 1;
                 Found_Flag = 0x00000001;
             }
@@ -517,6 +589,7 @@ function Scan_Word_Loop() {
             if (Current_Char == KW_SET) {
                 out_cell(STREAM_EMIT_CELL, OP_ALLOC_CODE);
                 sys_call(FILE_U8);
+                Emitted_Bytes = Emitted_Bytes + 1;
                 Token_Counter = Token_Counter + 1;
                 Found_Flag = 0x00000001;
             }
@@ -524,6 +597,7 @@ function Scan_Word_Loop() {
             if (Current_Char == KW_STATIC) {
                 out_cell(STREAM_EMIT_CELL, OP_ALLOC_CODE);
                 sys_call(FILE_U8);
+                Emitted_Bytes = Emitted_Bytes + 1;
                 Token_Counter = Token_Counter + 1;
                 Found_Flag = 0x00000001;
             }
@@ -531,6 +605,12 @@ function Scan_Word_Loop() {
             if (Current_Char == KW_FUNCTION) {
                 out_cell(STREAM_EMIT_CELL, OP_CALL_CODE);
                 sys_call(FILE_U8);
+                Emitted_Bytes = Emitted_Bytes + 1;
+                JP_Site_1 = Emitted_Bytes;      // честная позиция операнда
+                out_cell(STREAM_EMIT_CELL, 0x00000000);
+                sys_call(FILE_U16);
+                sys_call(FILE_U16);
+                Emitted_Bytes = Emitted_Bytes + 4;
                 Token_Counter = Token_Counter + 1;
                 Found_Flag = 0x00000001;
             }
@@ -538,6 +618,12 @@ function Scan_Word_Loop() {
             if (Current_Char == KW_IF) {
                 out_cell(STREAM_EMIT_CELL, OP_JZ_CODE);
                 sys_call(FILE_U8);
+                Emitted_Bytes = Emitted_Bytes + 1;
+                JP_Site_1 = Emitted_Bytes;      // честная позиция операнда
+                out_cell(STREAM_EMIT_CELL, 0x00000000);
+                sys_call(FILE_U16);
+                sys_call(FILE_U16);
+                Emitted_Bytes = Emitted_Bytes + 4;
                 Token_Counter = Token_Counter + 1;
                 Found_Flag = 0x00000001;
             }
@@ -545,6 +631,8 @@ function Scan_Word_Loop() {
             if (Current_Char == KW_TERM) {
                 out_cell(STREAM_EMIT_CELL, OP_TERM_CODE);
                 sys_call(FILE_U8);
+                Emitted_Bytes = Emitted_Bytes + 1;
+                JP_Site_Term = Emitted_Bytes - 1;  // честная позиция байта TERM
                 Token_Counter = Token_Counter + 1;
                 Found_Flag = 0x00000001;
             }
@@ -561,8 +649,10 @@ function Scan_Word_Loop() {
                 Lit_Value = Current_Char - 48;
                 out_cell(STREAM_EMIT_CELL, OP_CONST_CODE);
                 sys_call(FILE_U8);
+                Emitted_Bytes = Emitted_Bytes + 1;
                 log_cell(STREAM_EMIT_CELL, Lit_Value);
                 sys_call(FILE_PUT);
+                Emitted_Bytes = Emitted_Bytes + 4;
                 Token_Counter = Token_Counter + 1;
                 Found_Flag = 0x00000001;
             }
@@ -571,8 +661,10 @@ function Scan_Word_Loop() {
                 Lit_Value = Current_Char - 48;
                 out_cell(STREAM_EMIT_CELL, OP_CONST_CODE);
                 sys_call(FILE_U8);
+                Emitted_Bytes = Emitted_Bytes + 1;
                 log_cell(STREAM_EMIT_CELL, Lit_Value);
                 sys_call(FILE_PUT);
+                Emitted_Bytes = Emitted_Bytes + 4;
                 Token_Counter = Token_Counter + 1;
                 Found_Flag = 0x00000001;
             }
@@ -581,8 +673,10 @@ function Scan_Word_Loop() {
                 Lit_Value = Current_Char - 48;
                 out_cell(STREAM_EMIT_CELL, OP_CONST_CODE);
                 sys_call(FILE_U8);
+                Emitted_Bytes = Emitted_Bytes + 1;
                 log_cell(STREAM_EMIT_CELL, Lit_Value);
                 sys_call(FILE_PUT);
+                Emitted_Bytes = Emitted_Bytes + 4;
                 Token_Counter = Token_Counter + 1;
                 Found_Flag = 0x00000001;
             }
@@ -591,8 +685,10 @@ function Scan_Word_Loop() {
                 Lit_Value = Current_Char - 48;
                 out_cell(STREAM_EMIT_CELL, OP_CONST_CODE);
                 sys_call(FILE_U8);
+                Emitted_Bytes = Emitted_Bytes + 1;
                 log_cell(STREAM_EMIT_CELL, Lit_Value);
                 sys_call(FILE_PUT);
+                Emitted_Bytes = Emitted_Bytes + 4;
                 Token_Counter = Token_Counter + 1;
                 Found_Flag = 0x00000001;
             }
@@ -601,8 +697,10 @@ function Scan_Word_Loop() {
                 Lit_Value = Current_Char - 48;
                 out_cell(STREAM_EMIT_CELL, OP_CONST_CODE);
                 sys_call(FILE_U8);
+                Emitted_Bytes = Emitted_Bytes + 1;
                 log_cell(STREAM_EMIT_CELL, Lit_Value);
                 sys_call(FILE_PUT);
+                Emitted_Bytes = Emitted_Bytes + 4;
                 Token_Counter = Token_Counter + 1;
                 Found_Flag = 0x00000001;
             }
@@ -611,8 +709,10 @@ function Scan_Word_Loop() {
                 Lit_Value = Current_Char - 48;
                 out_cell(STREAM_EMIT_CELL, OP_CONST_CODE);
                 sys_call(FILE_U8);
+                Emitted_Bytes = Emitted_Bytes + 1;
                 log_cell(STREAM_EMIT_CELL, Lit_Value);
                 sys_call(FILE_PUT);
+                Emitted_Bytes = Emitted_Bytes + 4;
                 Token_Counter = Token_Counter + 1;
                 Found_Flag = 0x00000001;
             }
@@ -621,8 +721,10 @@ function Scan_Word_Loop() {
                 Lit_Value = Current_Char - 48;
                 out_cell(STREAM_EMIT_CELL, OP_CONST_CODE);
                 sys_call(FILE_U8);
+                Emitted_Bytes = Emitted_Bytes + 1;
                 log_cell(STREAM_EMIT_CELL, Lit_Value);
                 sys_call(FILE_PUT);
+                Emitted_Bytes = Emitted_Bytes + 4;
                 Token_Counter = Token_Counter + 1;
                 Found_Flag = 0x00000001;
             }
@@ -631,8 +733,10 @@ function Scan_Word_Loop() {
                 Lit_Value = Current_Char - 48;
                 out_cell(STREAM_EMIT_CELL, OP_CONST_CODE);
                 sys_call(FILE_U8);
+                Emitted_Bytes = Emitted_Bytes + 1;
                 log_cell(STREAM_EMIT_CELL, Lit_Value);
                 sys_call(FILE_PUT);
+                Emitted_Bytes = Emitted_Bytes + 4;
                 Token_Counter = Token_Counter + 1;
                 Found_Flag = 0x00000001;
             }
@@ -641,8 +745,10 @@ function Scan_Word_Loop() {
                 Lit_Value = Current_Char - 48;
                 out_cell(STREAM_EMIT_CELL, OP_CONST_CODE);
                 sys_call(FILE_U8);
+                Emitted_Bytes = Emitted_Bytes + 1;
                 log_cell(STREAM_EMIT_CELL, Lit_Value);
                 sys_call(FILE_PUT);
+                Emitted_Bytes = Emitted_Bytes + 4;
                 Token_Counter = Token_Counter + 1;
                 Found_Flag = 0x00000001;
             }
@@ -651,8 +757,10 @@ function Scan_Word_Loop() {
                 Lit_Value = Current_Char - 48;
                 out_cell(STREAM_EMIT_CELL, OP_CONST_CODE);
                 sys_call(FILE_U8);
+                Emitted_Bytes = Emitted_Bytes + 1;
                 log_cell(STREAM_EMIT_CELL, Lit_Value);
                 sys_call(FILE_PUT);
+                Emitted_Bytes = Emitted_Bytes + 4;
                 Token_Counter = Token_Counter + 1;
                 Found_Flag = 0x00000001;
             }

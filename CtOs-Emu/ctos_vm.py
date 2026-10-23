@@ -319,9 +319,24 @@ class CtOsVm:
                 self.outfile.seek(0, 2)   # честный хвост: продолжаем писать в конец
                 self.log("OP_SYSCALL[FILE_SEAL]: контрольное слово артефакта 0x%08X "
                          "(CRC-32 тела, байт %d)" % (crc, len(blob) - HEADER_SIZE_V11))
+            elif nid == 0x00000136:   # FILE_SEEK — честная позиция записи в артефакте (TKT-048)
+                if self.outfile is None:
+                    raise VmFault("FILE_SEEK до FILE_BEGIN — честный брак порядка syscall")
+                pos = self.cells.get(stream_cell, 0) & 0xFFFFFFFF
+                # честная граница: проверяется ОЧНО по факту Ok записи ниже
+                # (запись за конец файла поднять честный IOError, не тишину —
+                # обёртка честного OSError даст [VM ERROR])
+                try:
+                    self.outfile.flush()
+                    self.outfile.seek(pos)
+                except OSError as exc:
+                    raise VmFault("FILE_SEEK: честная позиция 0x%08X вне артефакта — "
+                                  "честный брак (%s)" % (pos, exc))
+                self.log("OP_SYSCALL[FILE_SEEK]: честная позиция записи 0x%08X" % pos)
+                self.log("OP_SYSCALL[FILE_SEEK]: честная позиция записи 0x%08X" % pos)
             else:
                 raise VmFault("OP_SYSCALL: NID 0x%08X — честный драйвер не зарегистрирован "
-                              "(файл-слой зарегистрирован: NID 0x00000130..0x00000135)" % nid)
+                              "(файл-слой зарегистрирован: NID 0x00000130..0x00000136)" % nid)
             self.pc = pc + 5
         elif op == OP_STORE_A:
             if pc + 5 > len(b):
