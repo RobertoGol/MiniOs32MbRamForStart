@@ -35,6 +35,8 @@
 #define: KW_ELSE 0x00007365 // 'es' = else; 4-символьное 'else' честно не собирается в 2-символьных пакетах
 #define: KW_RUN 0x00007572 // 'ru' = run: честный вызов последней 'fu'
 #define: KW_EQ 0x00007165 // 'eq' = сравнить acc со следующим литералом (TKT-050)
+#define: KW_GT 0x00006774 // 'gt' = сравнить acc > следующий литерал (TKT-050 веха-3)
+#define: KW_LT 0x0000746C // 'lt' = сравнить acc < следующий литерал (TKT-050 веха-3)
 #define: KW_SAVE 0x00007673 // 'sv' = save: cell[WORK_CELL] = acc (TKT-050 веха-2)
 #define: KW_VALUE 0x00007661 // 'va' = value: acc = cell[WORK_CELL] (TKT-050 веха-2)
 #define: KW_TERM          0x00006574 // 'te': terminate -> OP_TERM
@@ -114,8 +116,8 @@ set static Call_Site_3     = 0x00000000; // честный слот вызова
 set static Call_Site_4     = 0x00000000; // честный слот вызова №4 (флаг занятости)
 set static Fu_Last         = 0x00000000; // честная позиция метки последней fu
 set static Call_Count       = 0x00000000; // честный счёт занятых слотов вызовов
-set static Eq_Pending      = 0x00000000; // честный флаг: ждём литерал для сравнения
-set static Eq_Position     = 0x00000000; // честная позиция слова eq (для брака)
+set static Cmp_Pending      = 0x00000000; // честный флаг: ждём литерал для сравнения
+set static Cmp_Position     = 0x00000000; // честная позиция слова eq (для брака)
 set static If_Site_1      = 0x00000000; // честный слот операнда JZ от if
 set static Jmp_Slot_1      = 0x00000000; // честный слот операнда JMP от es
 set static Else_Join_1     = 0x00000000; // честное начало else-тела (target JZ)
@@ -148,8 +150,8 @@ pub entry main(cell:raw args) {
     Call_Site_4 = 0;
     Fu_Last = 0;         // честная метка функций пуста
     Call_Count = 0;      // честный счёт вызовов пуст
-    Eq_Pending = 0;      // честный pending сравнения пуст
-    Eq_Position = 0;     // честная позиция eq сброшена
+    Cmp_Pending = 0;      // честный pending сравнения пуст
+    Cmp_Position = 0;     // честная позиция eq сброшена
     If_Site_1 = 0;      // honestly нет if-сайтов
     If_Site_2 = 0;       // честный слот JZ №2 пуст
     Jmp_Slot_2 = 0;      // честный слот JMP №2 пуст
@@ -228,13 +230,15 @@ function NativeLexicalScanner() {
     }
 
     // TKT-050 веха-1: честная хвост-проверка 'eq' — pending остался без литерала
-    if (Eq_Pending == 0x00000001) {
+    if (Cmp_Pending == 0x00000000) {
+        // честно: несравнённых pending нет
+    } else {
         if (Error_Flag == 0x00000000) {
             Fail_Code = BRK_EQ_NO_LIT;
-            Fail_Position = Eq_Position;
+            Fail_Position = Cmp_Position;
             Error_Flag = 0x00000001;
         }
-        Eq_Pending = 0x00000000;
+        Cmp_Pending = 0x00000000;
     }
 
     // --- 1.6 (TKT-036): честный отчёт ДОПИСЫВАЕТСЯ в тот же артефакт ---
@@ -502,18 +506,55 @@ function Scan_Word_Loop() {
                 Found_Flag = 0x00000001;
             }
 
-            // 'eq' (TKT-050 веха-1): честное сравнение acc со СЛЕДУЮЩИМ литералом.
-            // Сам байта НЕ эмитит: ставит Eq_Pending, следующий литерал честно
-            // эмитит OP_LOAD[0x16] вместо CONST. 'eq' без литерала — честный
-            // брак BRK_EQ_NO_LIT (хвост-проверка после скана).
+            // 'eq'/'gt'/'lt' (TKT-050 вехи 1/3): честное сравнение acc со
+            // СЛЕДУЮЩИМ литералом. Само слово байта НЕ эмитит: ставит
+            // Cmp_Pending = честный РЕЖИМ (0x16 eq / 0x1A gt / 0x1B lt),
+            // следующий литерал честно эмитит OP_LOAD + режим вместо CONST.
+            // Сравнение без литерала — честный брак BRK_EQ_NO_LIT
+            // (хвост-проверка после скана).
+
             if (Current_Char == KW_EQ) {
-                if (Eq_Pending == 0x00000000) {
-                    Eq_Pending = 0x00000001;
-                    Eq_Position = Word_Index;
+                if (Cmp_Pending == 0x00000000) {
+                    Cmp_Pending = 0x00000016;
+                    Cmp_Position = Word_Index;
                     Token_Counter = Token_Counter + 1;
                     Found_Flag = 0x00000001;
                 } else {
                     // честный отказ: два 'eq' подряд (второй без литерала-цели)
+                    if (Error_Flag == 0x00000000) {
+                        Fail_Code = BRK_EQ_NO_LIT;
+                        Fail_Position = Word_Index;
+                        Error_Flag = 0x00000001;
+                        Word_Index = MAX_SOURCE_WORDS;
+                    }
+                }
+            }
+
+            if (Current_Char == KW_GT) {
+                if (Cmp_Pending == 0x00000000) {
+                    Cmp_Pending = 0x0000001A;
+                    Cmp_Position = Word_Index;
+                    Token_Counter = Token_Counter + 1;
+                    Found_Flag = 0x00000001;
+                } else {
+                    // честный отказ: два сравнения подряд (второе без литерала-цели)
+                    if (Error_Flag == 0x00000000) {
+                        Fail_Code = BRK_EQ_NO_LIT;
+                        Fail_Position = Word_Index;
+                        Error_Flag = 0x00000001;
+                        Word_Index = MAX_SOURCE_WORDS;
+                    }
+                }
+            }
+
+            if (Current_Char == KW_LT) {
+                if (Cmp_Pending == 0x00000000) {
+                    Cmp_Pending = 0x0000001B;
+                    Cmp_Position = Word_Index;
+                    Token_Counter = Token_Counter + 1;
+                    Found_Flag = 0x00000001;
+                } else {
+                    // честный отказ: два сравнения подряд (второе без литерала-цели)
                     if (Error_Flag == 0x00000000) {
                         Fail_Code = BRK_EQ_NO_LIT;
                         Fail_Position = Word_Index;
@@ -612,14 +653,8 @@ function Scan_Word_Loop() {
             // честно разбиваются по словам — последовательные литералы.
             if (Current_Char == LIT_D0) {
                 Lit_Value = Current_Char - 48;
-                if (Eq_Pending == 0x00000001) {
-                    // честное сравнение (TKT-050): acc = (acc == Lit_Value)
-                    // OP_LOAD 0x12 + режим 0x16 + BE32 операнд
-                    Eq_Pending = 0x00000000;
-                    out_cell(STREAM_EMIT_CELL, OP_LOAD_CODE);
-                    sys_call(FILE_U8);
-                    Emitted_Bytes = Emitted_Bytes + 1;
-                    out_cell(STREAM_EMIT_CELL, 0x00000016);
+                if (Cmp_Pending == 0x00000000) {
+                    out_cell(STREAM_EMIT_CELL, OP_CONST_CODE);
                     sys_call(FILE_U8);
                     Emitted_Bytes = Emitted_Bytes + 1;
                     log_cell(STREAM_EMIT_CELL, Lit_Value);
@@ -628,12 +663,19 @@ function Scan_Word_Loop() {
                     Token_Counter = Token_Counter + 1;
                     Found_Flag = 0x00000001;
                 } else {
-                    out_cell(STREAM_EMIT_CELL, OP_CONST_CODE);
+                    // честное сравнение (TKT-050 веха-3): acc = (acc СРАВНЕНИЕ
+                    // Lit_Value); режим честно из Cmp_Pending (0x16 eq / 0x1A gt
+                    // / 0x1B lt) — OP_LOAD 0x12 + режим + BE32 операнд
+                    out_cell(STREAM_EMIT_CELL, OP_LOAD_CODE);
+                    sys_call(FILE_U8);
+                    Emitted_Bytes = Emitted_Bytes + 1;
+                    log_cell(STREAM_EMIT_CELL, Cmp_Pending);
                     sys_call(FILE_U8);
                     Emitted_Bytes = Emitted_Bytes + 1;
                     log_cell(STREAM_EMIT_CELL, Lit_Value);
                     sys_call(FILE_PUT);
                     Emitted_Bytes = Emitted_Bytes + 4;
+                    Cmp_Pending = 0x00000000;
                     Token_Counter = Token_Counter + 1;
                     Found_Flag = 0x00000001;
                 }
@@ -641,14 +683,8 @@ function Scan_Word_Loop() {
 
             if (Current_Char == LIT_D1) {
                 Lit_Value = Current_Char - 48;
-                if (Eq_Pending == 0x00000001) {
-                    // честное сравнение (TKT-050): acc = (acc == Lit_Value)
-                    // OP_LOAD 0x12 + режим 0x16 + BE32 операнд
-                    Eq_Pending = 0x00000000;
-                    out_cell(STREAM_EMIT_CELL, OP_LOAD_CODE);
-                    sys_call(FILE_U8);
-                    Emitted_Bytes = Emitted_Bytes + 1;
-                    out_cell(STREAM_EMIT_CELL, 0x00000016);
+                if (Cmp_Pending == 0x00000000) {
+                    out_cell(STREAM_EMIT_CELL, OP_CONST_CODE);
                     sys_call(FILE_U8);
                     Emitted_Bytes = Emitted_Bytes + 1;
                     log_cell(STREAM_EMIT_CELL, Lit_Value);
@@ -657,12 +693,19 @@ function Scan_Word_Loop() {
                     Token_Counter = Token_Counter + 1;
                     Found_Flag = 0x00000001;
                 } else {
-                    out_cell(STREAM_EMIT_CELL, OP_CONST_CODE);
+                    // честное сравнение (TKT-050 веха-3): acc = (acc СРАВНЕНИЕ
+                    // Lit_Value); режим честно из Cmp_Pending (0x16 eq / 0x1A gt
+                    // / 0x1B lt) — OP_LOAD 0x12 + режим + BE32 операнд
+                    out_cell(STREAM_EMIT_CELL, OP_LOAD_CODE);
+                    sys_call(FILE_U8);
+                    Emitted_Bytes = Emitted_Bytes + 1;
+                    log_cell(STREAM_EMIT_CELL, Cmp_Pending);
                     sys_call(FILE_U8);
                     Emitted_Bytes = Emitted_Bytes + 1;
                     log_cell(STREAM_EMIT_CELL, Lit_Value);
                     sys_call(FILE_PUT);
                     Emitted_Bytes = Emitted_Bytes + 4;
+                    Cmp_Pending = 0x00000000;
                     Token_Counter = Token_Counter + 1;
                     Found_Flag = 0x00000001;
                 }
@@ -670,14 +713,8 @@ function Scan_Word_Loop() {
 
             if (Current_Char == LIT_D2) {
                 Lit_Value = Current_Char - 48;
-                if (Eq_Pending == 0x00000001) {
-                    // честное сравнение (TKT-050): acc = (acc == Lit_Value)
-                    // OP_LOAD 0x12 + режим 0x16 + BE32 операнд
-                    Eq_Pending = 0x00000000;
-                    out_cell(STREAM_EMIT_CELL, OP_LOAD_CODE);
-                    sys_call(FILE_U8);
-                    Emitted_Bytes = Emitted_Bytes + 1;
-                    out_cell(STREAM_EMIT_CELL, 0x00000016);
+                if (Cmp_Pending == 0x00000000) {
+                    out_cell(STREAM_EMIT_CELL, OP_CONST_CODE);
                     sys_call(FILE_U8);
                     Emitted_Bytes = Emitted_Bytes + 1;
                     log_cell(STREAM_EMIT_CELL, Lit_Value);
@@ -686,12 +723,19 @@ function Scan_Word_Loop() {
                     Token_Counter = Token_Counter + 1;
                     Found_Flag = 0x00000001;
                 } else {
-                    out_cell(STREAM_EMIT_CELL, OP_CONST_CODE);
+                    // честное сравнение (TKT-050 веха-3): acc = (acc СРАВНЕНИЕ
+                    // Lit_Value); режим честно из Cmp_Pending (0x16 eq / 0x1A gt
+                    // / 0x1B lt) — OP_LOAD 0x12 + режим + BE32 операнд
+                    out_cell(STREAM_EMIT_CELL, OP_LOAD_CODE);
+                    sys_call(FILE_U8);
+                    Emitted_Bytes = Emitted_Bytes + 1;
+                    log_cell(STREAM_EMIT_CELL, Cmp_Pending);
                     sys_call(FILE_U8);
                     Emitted_Bytes = Emitted_Bytes + 1;
                     log_cell(STREAM_EMIT_CELL, Lit_Value);
                     sys_call(FILE_PUT);
                     Emitted_Bytes = Emitted_Bytes + 4;
+                    Cmp_Pending = 0x00000000;
                     Token_Counter = Token_Counter + 1;
                     Found_Flag = 0x00000001;
                 }
@@ -699,14 +743,8 @@ function Scan_Word_Loop() {
 
             if (Current_Char == LIT_D3) {
                 Lit_Value = Current_Char - 48;
-                if (Eq_Pending == 0x00000001) {
-                    // честное сравнение (TKT-050): acc = (acc == Lit_Value)
-                    // OP_LOAD 0x12 + режим 0x16 + BE32 операнд
-                    Eq_Pending = 0x00000000;
-                    out_cell(STREAM_EMIT_CELL, OP_LOAD_CODE);
-                    sys_call(FILE_U8);
-                    Emitted_Bytes = Emitted_Bytes + 1;
-                    out_cell(STREAM_EMIT_CELL, 0x00000016);
+                if (Cmp_Pending == 0x00000000) {
+                    out_cell(STREAM_EMIT_CELL, OP_CONST_CODE);
                     sys_call(FILE_U8);
                     Emitted_Bytes = Emitted_Bytes + 1;
                     log_cell(STREAM_EMIT_CELL, Lit_Value);
@@ -715,12 +753,19 @@ function Scan_Word_Loop() {
                     Token_Counter = Token_Counter + 1;
                     Found_Flag = 0x00000001;
                 } else {
-                    out_cell(STREAM_EMIT_CELL, OP_CONST_CODE);
+                    // честное сравнение (TKT-050 веха-3): acc = (acc СРАВНЕНИЕ
+                    // Lit_Value); режим честно из Cmp_Pending (0x16 eq / 0x1A gt
+                    // / 0x1B lt) — OP_LOAD 0x12 + режим + BE32 операнд
+                    out_cell(STREAM_EMIT_CELL, OP_LOAD_CODE);
+                    sys_call(FILE_U8);
+                    Emitted_Bytes = Emitted_Bytes + 1;
+                    log_cell(STREAM_EMIT_CELL, Cmp_Pending);
                     sys_call(FILE_U8);
                     Emitted_Bytes = Emitted_Bytes + 1;
                     log_cell(STREAM_EMIT_CELL, Lit_Value);
                     sys_call(FILE_PUT);
                     Emitted_Bytes = Emitted_Bytes + 4;
+                    Cmp_Pending = 0x00000000;
                     Token_Counter = Token_Counter + 1;
                     Found_Flag = 0x00000001;
                 }
@@ -728,14 +773,8 @@ function Scan_Word_Loop() {
 
             if (Current_Char == LIT_D4) {
                 Lit_Value = Current_Char - 48;
-                if (Eq_Pending == 0x00000001) {
-                    // честное сравнение (TKT-050): acc = (acc == Lit_Value)
-                    // OP_LOAD 0x12 + режим 0x16 + BE32 операнд
-                    Eq_Pending = 0x00000000;
-                    out_cell(STREAM_EMIT_CELL, OP_LOAD_CODE);
-                    sys_call(FILE_U8);
-                    Emitted_Bytes = Emitted_Bytes + 1;
-                    out_cell(STREAM_EMIT_CELL, 0x00000016);
+                if (Cmp_Pending == 0x00000000) {
+                    out_cell(STREAM_EMIT_CELL, OP_CONST_CODE);
                     sys_call(FILE_U8);
                     Emitted_Bytes = Emitted_Bytes + 1;
                     log_cell(STREAM_EMIT_CELL, Lit_Value);
@@ -744,12 +783,19 @@ function Scan_Word_Loop() {
                     Token_Counter = Token_Counter + 1;
                     Found_Flag = 0x00000001;
                 } else {
-                    out_cell(STREAM_EMIT_CELL, OP_CONST_CODE);
+                    // честное сравнение (TKT-050 веха-3): acc = (acc СРАВНЕНИЕ
+                    // Lit_Value); режим честно из Cmp_Pending (0x16 eq / 0x1A gt
+                    // / 0x1B lt) — OP_LOAD 0x12 + режим + BE32 операнд
+                    out_cell(STREAM_EMIT_CELL, OP_LOAD_CODE);
+                    sys_call(FILE_U8);
+                    Emitted_Bytes = Emitted_Bytes + 1;
+                    log_cell(STREAM_EMIT_CELL, Cmp_Pending);
                     sys_call(FILE_U8);
                     Emitted_Bytes = Emitted_Bytes + 1;
                     log_cell(STREAM_EMIT_CELL, Lit_Value);
                     sys_call(FILE_PUT);
                     Emitted_Bytes = Emitted_Bytes + 4;
+                    Cmp_Pending = 0x00000000;
                     Token_Counter = Token_Counter + 1;
                     Found_Flag = 0x00000001;
                 }
@@ -757,14 +803,8 @@ function Scan_Word_Loop() {
 
             if (Current_Char == LIT_D5) {
                 Lit_Value = Current_Char - 48;
-                if (Eq_Pending == 0x00000001) {
-                    // честное сравнение (TKT-050): acc = (acc == Lit_Value)
-                    // OP_LOAD 0x12 + режим 0x16 + BE32 операнд
-                    Eq_Pending = 0x00000000;
-                    out_cell(STREAM_EMIT_CELL, OP_LOAD_CODE);
-                    sys_call(FILE_U8);
-                    Emitted_Bytes = Emitted_Bytes + 1;
-                    out_cell(STREAM_EMIT_CELL, 0x00000016);
+                if (Cmp_Pending == 0x00000000) {
+                    out_cell(STREAM_EMIT_CELL, OP_CONST_CODE);
                     sys_call(FILE_U8);
                     Emitted_Bytes = Emitted_Bytes + 1;
                     log_cell(STREAM_EMIT_CELL, Lit_Value);
@@ -773,12 +813,19 @@ function Scan_Word_Loop() {
                     Token_Counter = Token_Counter + 1;
                     Found_Flag = 0x00000001;
                 } else {
-                    out_cell(STREAM_EMIT_CELL, OP_CONST_CODE);
+                    // честное сравнение (TKT-050 веха-3): acc = (acc СРАВНЕНИЕ
+                    // Lit_Value); режим честно из Cmp_Pending (0x16 eq / 0x1A gt
+                    // / 0x1B lt) — OP_LOAD 0x12 + режим + BE32 операнд
+                    out_cell(STREAM_EMIT_CELL, OP_LOAD_CODE);
+                    sys_call(FILE_U8);
+                    Emitted_Bytes = Emitted_Bytes + 1;
+                    log_cell(STREAM_EMIT_CELL, Cmp_Pending);
                     sys_call(FILE_U8);
                     Emitted_Bytes = Emitted_Bytes + 1;
                     log_cell(STREAM_EMIT_CELL, Lit_Value);
                     sys_call(FILE_PUT);
                     Emitted_Bytes = Emitted_Bytes + 4;
+                    Cmp_Pending = 0x00000000;
                     Token_Counter = Token_Counter + 1;
                     Found_Flag = 0x00000001;
                 }
@@ -786,14 +833,8 @@ function Scan_Word_Loop() {
 
             if (Current_Char == LIT_D6) {
                 Lit_Value = Current_Char - 48;
-                if (Eq_Pending == 0x00000001) {
-                    // честное сравнение (TKT-050): acc = (acc == Lit_Value)
-                    // OP_LOAD 0x12 + режим 0x16 + BE32 операнд
-                    Eq_Pending = 0x00000000;
-                    out_cell(STREAM_EMIT_CELL, OP_LOAD_CODE);
-                    sys_call(FILE_U8);
-                    Emitted_Bytes = Emitted_Bytes + 1;
-                    out_cell(STREAM_EMIT_CELL, 0x00000016);
+                if (Cmp_Pending == 0x00000000) {
+                    out_cell(STREAM_EMIT_CELL, OP_CONST_CODE);
                     sys_call(FILE_U8);
                     Emitted_Bytes = Emitted_Bytes + 1;
                     log_cell(STREAM_EMIT_CELL, Lit_Value);
@@ -802,12 +843,19 @@ function Scan_Word_Loop() {
                     Token_Counter = Token_Counter + 1;
                     Found_Flag = 0x00000001;
                 } else {
-                    out_cell(STREAM_EMIT_CELL, OP_CONST_CODE);
+                    // честное сравнение (TKT-050 веха-3): acc = (acc СРАВНЕНИЕ
+                    // Lit_Value); режим честно из Cmp_Pending (0x16 eq / 0x1A gt
+                    // / 0x1B lt) — OP_LOAD 0x12 + режим + BE32 операнд
+                    out_cell(STREAM_EMIT_CELL, OP_LOAD_CODE);
+                    sys_call(FILE_U8);
+                    Emitted_Bytes = Emitted_Bytes + 1;
+                    log_cell(STREAM_EMIT_CELL, Cmp_Pending);
                     sys_call(FILE_U8);
                     Emitted_Bytes = Emitted_Bytes + 1;
                     log_cell(STREAM_EMIT_CELL, Lit_Value);
                     sys_call(FILE_PUT);
                     Emitted_Bytes = Emitted_Bytes + 4;
+                    Cmp_Pending = 0x00000000;
                     Token_Counter = Token_Counter + 1;
                     Found_Flag = 0x00000001;
                 }
@@ -815,14 +863,8 @@ function Scan_Word_Loop() {
 
             if (Current_Char == LIT_D7) {
                 Lit_Value = Current_Char - 48;
-                if (Eq_Pending == 0x00000001) {
-                    // честное сравнение (TKT-050): acc = (acc == Lit_Value)
-                    // OP_LOAD 0x12 + режим 0x16 + BE32 операнд
-                    Eq_Pending = 0x00000000;
-                    out_cell(STREAM_EMIT_CELL, OP_LOAD_CODE);
-                    sys_call(FILE_U8);
-                    Emitted_Bytes = Emitted_Bytes + 1;
-                    out_cell(STREAM_EMIT_CELL, 0x00000016);
+                if (Cmp_Pending == 0x00000000) {
+                    out_cell(STREAM_EMIT_CELL, OP_CONST_CODE);
                     sys_call(FILE_U8);
                     Emitted_Bytes = Emitted_Bytes + 1;
                     log_cell(STREAM_EMIT_CELL, Lit_Value);
@@ -831,12 +873,19 @@ function Scan_Word_Loop() {
                     Token_Counter = Token_Counter + 1;
                     Found_Flag = 0x00000001;
                 } else {
-                    out_cell(STREAM_EMIT_CELL, OP_CONST_CODE);
+                    // честное сравнение (TKT-050 веха-3): acc = (acc СРАВНЕНИЕ
+                    // Lit_Value); режим честно из Cmp_Pending (0x16 eq / 0x1A gt
+                    // / 0x1B lt) — OP_LOAD 0x12 + режим + BE32 операнд
+                    out_cell(STREAM_EMIT_CELL, OP_LOAD_CODE);
+                    sys_call(FILE_U8);
+                    Emitted_Bytes = Emitted_Bytes + 1;
+                    log_cell(STREAM_EMIT_CELL, Cmp_Pending);
                     sys_call(FILE_U8);
                     Emitted_Bytes = Emitted_Bytes + 1;
                     log_cell(STREAM_EMIT_CELL, Lit_Value);
                     sys_call(FILE_PUT);
                     Emitted_Bytes = Emitted_Bytes + 4;
+                    Cmp_Pending = 0x00000000;
                     Token_Counter = Token_Counter + 1;
                     Found_Flag = 0x00000001;
                 }
@@ -844,14 +893,8 @@ function Scan_Word_Loop() {
 
             if (Current_Char == LIT_D8) {
                 Lit_Value = Current_Char - 48;
-                if (Eq_Pending == 0x00000001) {
-                    // честное сравнение (TKT-050): acc = (acc == Lit_Value)
-                    // OP_LOAD 0x12 + режим 0x16 + BE32 операнд
-                    Eq_Pending = 0x00000000;
-                    out_cell(STREAM_EMIT_CELL, OP_LOAD_CODE);
-                    sys_call(FILE_U8);
-                    Emitted_Bytes = Emitted_Bytes + 1;
-                    out_cell(STREAM_EMIT_CELL, 0x00000016);
+                if (Cmp_Pending == 0x00000000) {
+                    out_cell(STREAM_EMIT_CELL, OP_CONST_CODE);
                     sys_call(FILE_U8);
                     Emitted_Bytes = Emitted_Bytes + 1;
                     log_cell(STREAM_EMIT_CELL, Lit_Value);
@@ -860,12 +903,19 @@ function Scan_Word_Loop() {
                     Token_Counter = Token_Counter + 1;
                     Found_Flag = 0x00000001;
                 } else {
-                    out_cell(STREAM_EMIT_CELL, OP_CONST_CODE);
+                    // честное сравнение (TKT-050 веха-3): acc = (acc СРАВНЕНИЕ
+                    // Lit_Value); режим честно из Cmp_Pending (0x16 eq / 0x1A gt
+                    // / 0x1B lt) — OP_LOAD 0x12 + режим + BE32 операнд
+                    out_cell(STREAM_EMIT_CELL, OP_LOAD_CODE);
+                    sys_call(FILE_U8);
+                    Emitted_Bytes = Emitted_Bytes + 1;
+                    log_cell(STREAM_EMIT_CELL, Cmp_Pending);
                     sys_call(FILE_U8);
                     Emitted_Bytes = Emitted_Bytes + 1;
                     log_cell(STREAM_EMIT_CELL, Lit_Value);
                     sys_call(FILE_PUT);
                     Emitted_Bytes = Emitted_Bytes + 4;
+                    Cmp_Pending = 0x00000000;
                     Token_Counter = Token_Counter + 1;
                     Found_Flag = 0x00000001;
                 }
@@ -873,14 +923,8 @@ function Scan_Word_Loop() {
 
             if (Current_Char == LIT_D9) {
                 Lit_Value = Current_Char - 48;
-                if (Eq_Pending == 0x00000001) {
-                    // честное сравнение (TKT-050): acc = (acc == Lit_Value)
-                    // OP_LOAD 0x12 + режим 0x16 + BE32 операнд
-                    Eq_Pending = 0x00000000;
-                    out_cell(STREAM_EMIT_CELL, OP_LOAD_CODE);
-                    sys_call(FILE_U8);
-                    Emitted_Bytes = Emitted_Bytes + 1;
-                    out_cell(STREAM_EMIT_CELL, 0x00000016);
+                if (Cmp_Pending == 0x00000000) {
+                    out_cell(STREAM_EMIT_CELL, OP_CONST_CODE);
                     sys_call(FILE_U8);
                     Emitted_Bytes = Emitted_Bytes + 1;
                     log_cell(STREAM_EMIT_CELL, Lit_Value);
@@ -889,12 +933,19 @@ function Scan_Word_Loop() {
                     Token_Counter = Token_Counter + 1;
                     Found_Flag = 0x00000001;
                 } else {
-                    out_cell(STREAM_EMIT_CELL, OP_CONST_CODE);
+                    // честное сравнение (TKT-050 веха-3): acc = (acc СРАВНЕНИЕ
+                    // Lit_Value); режим честно из Cmp_Pending (0x16 eq / 0x1A gt
+                    // / 0x1B lt) — OP_LOAD 0x12 + режим + BE32 операнд
+                    out_cell(STREAM_EMIT_CELL, OP_LOAD_CODE);
+                    sys_call(FILE_U8);
+                    Emitted_Bytes = Emitted_Bytes + 1;
+                    log_cell(STREAM_EMIT_CELL, Cmp_Pending);
                     sys_call(FILE_U8);
                     Emitted_Bytes = Emitted_Bytes + 1;
                     log_cell(STREAM_EMIT_CELL, Lit_Value);
                     sys_call(FILE_PUT);
                     Emitted_Bytes = Emitted_Bytes + 4;
+                    Cmp_Pending = 0x00000000;
                     Token_Counter = Token_Counter + 1;
                     Found_Flag = 0x00000001;
                 }

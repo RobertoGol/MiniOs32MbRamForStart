@@ -230,6 +230,10 @@ class CtOsVm:
                 self._acc = 1 if getattr(self, "_acc", 0) == self.cells.get(arg, 0) else 0
             elif mode == 0x19:    # честная загрузка ЯЧЕЙКИ: acc = cell[arg] (TKT-050 веха-2)
                 self._acc = self.cells.get(arg, 0)
+            elif mode == 0x1A:    # честное сравнение «больше»: acc = (acc > arg) (TKT-050 веха-3)
+                self._acc = 1 if getattr(self, "_acc", 0) > arg else 0
+            elif mode == 0x1B:    # честное сравнение «меньше»: acc = (acc < arg) (TKT-050 веха-3)
+                self._acc = 1 if getattr(self, "_acc", 0) < arg else 0
             else:
                 raise VmFault("OP_LOAD: недокументированный режим 0x%02X" % mode)
             self.log("OP_LOAD[0x%02X]: acc = 0x%08X" % (mode, self._acc))
