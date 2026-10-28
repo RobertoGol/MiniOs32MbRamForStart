@@ -33,6 +33,7 @@
 #define: KW_FUNCTION      0x00007566 // 'fu': function/pub entry -> OP_CALL
 #define: KW_IF            0x00006669 // 'if': if -> OP_JZ
 #define: KW_ELSE 0x00007365 // 'es' = else; 4-символьное 'else' честно не собирается в 2-символьных пакетах
+#define: KW_RUN 0x00007572 // 'ru' = run: честный вызов последней 'fu'
 #define: KW_TERM          0x00006574 // 'te': terminate -> OP_TERM
 #define: SYM_BRACE_OPEN   0x0000007B // '{'  -> синтаксис, байт НЕ эмитится
 #define: SYM_BRACE_CLOSE  0x0000007D // '}'  -> синтаксис, байт НЕ эмитится
@@ -80,6 +81,7 @@
 #define: BRK_STRAY_CLOSE  0x00000002 // K-S2: '}' или ')' при пустом честном стеке
 #define: BRK_UNCLOSED     0x00000003 // K-S3: незакрытая честная группа в финале
 #define: BRK_PATCH_OVERFLOW 0x00000004 // честных слотов патча больше нет (TKT-048 честный лимит)
+#define: BRK_NO_FUNC 0x00000005 // 'ru' до любой 'fu' — честный брак (TKT-048 веха-3)
 #define: HDR_BODY_SIZE    0x00000014 // честный размер заголовка v1.1 = 20 байт
 
 // Объявляем глобальные статические ячейки памяти ядра (регистры компилятора)
@@ -99,7 +101,12 @@ set static Lit_Value         = 0x00000000; // Честное ЗНАЧЕНИЕ л
 set static Fail_Code         = 0x00000000; // Честный код брака (0 = успеха нет сбоя)
 set static Fail_Position     = 0x00000000; // Честная позиция слова на момент брака
 set static Emitted_Bytes     = 0x00000000; // Честный счётчик байтов потока (TKT-048)
-set static JP_Site_Call         = 0x00000000; // Честный слот места патча операнда №1
+set static Call_Site_1         = 0x00000000; // Честный слот места патча операнда №1
+set static Call_Site_2     = 0x00000000; // честный слот вызова №2 (флаг занятости)
+set static Call_Site_3     = 0x00000000; // честный слот вызова №3 (флаг занятости)
+set static Call_Site_4     = 0x00000000; // честный слот вызова №4 (флаг занятости)
+set static Fu_Last         = 0x00000000; // честная позиция метки последней fu
+set static Call_Count       = 0x00000000; // честный счёт занятых слотов вызовов
 set static JP_Site_If      = 0x00000000; // честный слот операнда JZ от if
 set static JP_Site_Jmp      = 0x00000000; // честный слот операнда JMP от es
 set static JP_Else_Join     = 0x00000000; // честное начало else-тела (target JZ)
@@ -121,7 +128,12 @@ pub entry main(cell:raw args) {
     Fail_Code = 0;        // честный код брака: успех = 0 (TKT-033)
     Fail_Position = 0;    // честная позиция брака: успех = 0 (TKT-033)
     Emitted_Bytes = 0;    // честный счётчик байтов потока (TKT-048)
-    JP_Site_Call = 0;    // честные слоты патча пусты (TKT-048)
+    Call_Site_1 = 0;     // честные слоты вызовов пусты (веха-3)
+    Call_Site_2 = 0;
+    Call_Site_3 = 0;
+    Call_Site_4 = 0;
+    Fu_Last = 0;         // честная метка функций пуста
+    Call_Count = 0;      // честный счёт вызовов пуст
     JP_Site_If = 0;      // honestly нет if-сайтов
     JP_Site_Jmp = 0;     // honestly нет es-сайтов
     JP_Else_Join = 0;    // honestly нет else-сращений
@@ -212,14 +224,42 @@ function NativeLexicalScanner() {
     sys_call(FILE_PUT);
     // TKT-048 веха-1: честная патч-фаза — адрес честного target в слоты
     // (позиция в файле = честный поток + размер заголовка v1.1)
-        if (JP_Site_Call == 0x00000000) {
-        // честно: вызовов не было
+        // честные вызовы: цель = позиция метки последней fu (словарь целей вехи-3)
+    if (Call_Site_1 == 0x00000000) {
+        // честно: вызова №1 не было
     } else {
-        Stream_Emit = JP_Site_Call + 20;     // честная позиция операнда CALL в файле
+        Stream_Emit = Call_Site_1 + 20;
         sys_call(FILE_SEEK);
-        Stream_Emit = JP_Site_Term + 20;     // честный target: позиция байта OP_TERM
+        Stream_Emit = Fu_Last + 20;
         sys_call(FILE_PUT);
-        JP_Site_Call = 0x00000000;
+        Call_Site_1 = 0x00000000;
+    }
+    if (Call_Site_2 == 0x00000000) {
+        // честно: вызова №2 не было
+    } else {
+        Stream_Emit = Call_Site_2 + 20;
+        sys_call(FILE_SEEK);
+        Stream_Emit = Fu_Last + 20;
+        sys_call(FILE_PUT);
+        Call_Site_2 = 0x00000000;
+    }
+    if (Call_Site_3 == 0x00000000) {
+        // честно: вызова №3 не было
+    } else {
+        Stream_Emit = Call_Site_3 + 20;
+        sys_call(FILE_SEEK);
+        Stream_Emit = Fu_Last + 20;
+        sys_call(FILE_PUT);
+        Call_Site_3 = 0x00000000;
+    }
+    if (Call_Site_4 == 0x00000000) {
+        // честно: вызова №4 не было
+    } else {
+        Stream_Emit = Call_Site_4 + 20;
+        sys_call(FILE_SEEK);
+        Stream_Emit = Fu_Last + 20;
+        sys_call(FILE_PUT);
+        Call_Site_4 = 0x00000000;
     }
     if (JP_Site_If == 0x00000000) {
         // честно: if-ветвлений не было
@@ -312,19 +352,65 @@ function Scan_Word_Loop() {
             }
 
             // 'fu' -> function/pub entry -> OP_CALL (0x03) + честный слот:
-            // операнд BE32 запоминается у JP_Site_Call (позиция = после байта
+            // операнд BE32 запоминается у Call_Site_1 (позиция = после байта
             // опкода), честный плейсхолдер 00000000 — патч в вердиктной фазе
+            // 'fu' -> честная МЕТКА функции (TKT-048 веха-3): байт не эмитится,
+            // запоминается позиция потока = начало следующего эмита; 'ru' прыгает
+            // на последнюю объявленную 'fu' (честный словарь целей стадии-1)
             if (Current_Char == KW_FUNCTION) {
-                out_cell(STREAM_EMIT_CELL, OP_CALL_CODE);
-                sys_call(FILE_U8);
-                Emitted_Bytes = Emitted_Bytes + 1;
-                JP_Site_Call = Emitted_Bytes;      // честная позиция операнда
-                out_cell(STREAM_EMIT_CELL, 0x00000000);
-                sys_call(FILE_U16);
-                sys_call(FILE_U16);
-                Emitted_Bytes = Emitted_Bytes + 4;
+                Fu_Last = Emitted_Bytes;           // честная позиция метки
                 Token_Counter = Token_Counter + 1;
                 Found_Flag = 0x00000001;
+            }
+
+            // 'ru' -> run -> OP_CALL (0x03) + плейсхолдер BE32 + первый свободный
+            // слот из Call_Site_1..4; честные отказы: 'ru' до любой 'fu' —
+            // BRK_NO_FUNC (0x05); все 4 слота заняты — BRK_PATCH_OVERFLOW (0x04)
+            if (Current_Char == KW_RUN) {
+                if (Fu_Last == 0x00000000) {
+                    // честный отказ ДО эмиссии: 'ru' без любой 'fu' (ноль эмиссий)
+                    if (Error_Flag == 0x00000000) {
+                        Fail_Code = BRK_NO_FUNC;
+                        Fail_Position = Word_Index;
+                        Error_Flag = 0x00000001;
+                        Word_Index = MAX_SOURCE_WORDS;
+                    }
+                } else {
+                    if (Call_Count == 0x00000004) {
+                        // честный отказ ДО эмиссии: все 4 слота заняты
+                        if (Error_Flag == 0x00000000) {
+                            Fail_Code = BRK_PATCH_OVERFLOW;
+                            Fail_Position = Word_Index;
+                            Error_Flag = 0x00000001;
+                            Word_Index = MAX_SOURCE_WORDS;
+                        }
+                    } else {
+                        out_cell(STREAM_EMIT_CELL, OP_CALL_CODE);
+                        sys_call(FILE_U8);
+                        Emitted_Bytes = Emitted_Bytes + 1;
+                        // честный слот = позиция операнда (сразу после байта опкода)
+                        if (Call_Count == 0x00000000) {
+                            Call_Site_1 = Emitted_Bytes;
+                        } else {
+                            if (Call_Count == 0x00000001) {
+                                Call_Site_2 = Emitted_Bytes;
+                            } else {
+                                if (Call_Count == 0x00000002) {
+                                    Call_Site_3 = Emitted_Bytes;
+                                } else {
+                                    Call_Site_4 = Emitted_Bytes;
+                                }
+                            }
+                        }
+                        Call_Count = Call_Count + 1;
+                        out_cell(STREAM_EMIT_CELL, 0x00000000);
+                        sys_call(FILE_U16);
+                        sys_call(FILE_U16);
+                        Emitted_Bytes = Emitted_Bytes + 4;
+                        Token_Counter = Token_Counter + 1;
+                        Found_Flag = 0x00000001;
+                    }
+                }
             }
 
             // 'if' -> if -> OP_JZ (0x06) + честный слот (тот же честный механизм)
