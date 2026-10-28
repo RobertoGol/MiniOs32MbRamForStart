@@ -56,6 +56,7 @@
 #define: KW_STATIC      0x00007473
 #define: KW_FUNCTION    0x00007566
 #define: KW_IF          0x00006669
+#define: KW_ELSE 0x00007365 // 'es' = else; 4-символьное 'else' честно не собирается в 2-символьных пакетах
 #define: KW_TERM        0x00006574
 #define: SYM_BRACE_OPEN 0x0000007B
 #define: SYM_BRACE_CLOSE 0x0000007D
@@ -89,6 +90,7 @@
 #define: OP_CALL_CODE   0x00000003
 #define: OP_TERM_CODE   0x00000005
 #define: OP_JZ_CODE     0x00000006
+#define: OP_JMP_CODE 0x00000007 // честный безусловный переход (VM OP_JMP)
 #define: OP_ALLOC_CODE  0x00000010
 #define: OP_CONST_CODE  0x00000015 // 0x15 OP_CONST (стадия-1.4)
 #define: SYM_LIT_BASE   0x00000030 // база честного литерального ряда
@@ -119,7 +121,11 @@ set static Tmp_Word          = 0x00000000;
 set static Lit_Value         = 0x00000000; // честное ЗНАЧЕНИЕ литерала (1.4)
 set static Fail_Code         = 0x00000000; // честный код брака (TKT-033)
 set static Emitted_Bytes = 0x00000000; // честный счётчик байтов потока (TKT-048)
-set static JP_Site_1     = 0x00000000; // честный слот места патча операнда №1 (TKT-048)
+set static JP_Site_Call     = 0x00000000; // честный слот места патча операнда №1 (TKT-048)
+set static JP_Site_If      = 0x00000000; // честный слот операнда JZ от if
+set static JP_Site_Jmp      = 0x00000000; // честный слот операнда JMP от es
+set static JP_Else_Join     = 0x00000000; // честное начало else-тела (target JZ)
+set static Patch_Target     = 0x00000000; // честный target патча JZ
 set static JP_Site_Term  = 0x00000000; // честная позиция потока байта TERM (target демо)
 set static Fail_Position     = 0x00000000; // честная позиция брака (TKT-033)
 
@@ -148,7 +154,10 @@ pub entry main(cell:raw args) {
     // TKT-048 веха-1: честные счётчики/слоты адресной эмиссии (поток общий
     // на все фазы — честные позиции не сбрасываются, Reset_Scan их не трогает)
     Emitted_Bytes = 0;
-    JP_Site_1 = 0;
+    JP_Site_Call = 0;    // честный слот CALL-патча пуст (TKT-048)
+    JP_Site_If = 0;      // честный слот if-патча пуст
+    JP_Site_Jmp = 0;     // честный слот es-патча пуст
+    JP_Else_Join = 0;    // честный else-сопряжён пуст
     JP_Site_Term = 0;
 
     // ---------- ФАЗА 1: валидный исходник с группами ----------
@@ -332,10 +341,6 @@ pub entry main(cell:raw args) {
         out_cell(LOG_PORT, 0x00009099);
     }
 
-    // --- 1.5-б честный шаг: стадия-1 сама пишет свой артефакт-файл ---
-    // Финальное состояние = Ф5 (честный брак '12'): артефакт честно пишется
-    // И на браке, Error_Flag в отчёте честно говорит про брак — тишины нет.
-
     // ---------- ФАЗА 7 (TKT-048 веха-1): честная адресная эмиссия ----------
     out_cell(LOG_PORT, 0x00009007);      // LOG: Ф7 честно загружена
     run Load_Call_Demo();
@@ -344,7 +349,7 @@ pub entry main(cell:raw args) {
     out_cell(LOG_PORT, 0x000090F7);      // LOG: Ф7 честный скан завершён
 
     // честный слот операнда OP_CALL заполнен после 'fu'
-    if (JP_Site_1 == 0x00000000) {
+    if (JP_Site_Call == 0x00000000) {
         out_cell(LOG_PORT, 0x00009098);  // честный брак Ф7: слот не зажёгся
     } else {
         out_cell(LOG_PORT, 0x00009190);  // LOG: слот патча честно зажёгся
@@ -365,7 +370,70 @@ pub entry main(cell:raw args) {
         out_cell(LOG_PORT, 0x00009096);
     }
 
+    // ---------- ФАЗА 8 (TKT-048 веха-2): честный if/else ----------
+    out_cell(LOG_PORT, 0x00009008);      // LOG: Ф8 честно загружена
+    run Load_IfElse_Demo();
+    run Reset_Scan();
+    run Scan_Word_Loop();
+    out_cell(LOG_PORT, 0x000090F8);      // LOG: Ф8 честный скан завершён
+
+    // честный счёт: был поток 16 + (5+5+5+5+1) = 37 = 0x25
+    if (Emitted_Bytes == 0x00000025) {
+        out_cell(LOG_PORT, 0x00009193);  // LOG: Ф8 счёт байтов сошёлся
+    } else {
+        out_cell(LOG_PORT, 0x00009099);
+    }
+
+    // честный JZ target: начало else-тела = позиция после JMP = 36 = 0x24
+    if (JP_Else_Join == 0x00000024) {
+        out_cell(LOG_PORT, 0x00009194);  // LOG: Ф8 else-сращение на месте
+    } else {
+        out_cell(LOG_PORT, 0x00009098);
+    }
+
+    // честные слоты: JZ-операнд = 22 = 0x16, JMP-операнд = 32 = 0x20
+    if (JP_Site_If == 0x00000016) {
+        if (JP_Site_Jmp == 0x00000020) {
+            out_cell(LOG_PORT, 0x00009195); // LOG: Ф8 слоты if/es на месте
+        } else {
+            out_cell(LOG_PORT, 0x00009097);
+        }
+    } else {
+        out_cell(LOG_PORT, 0x00009096);
+    }
+
+    // ---------- ФАЗА 9 (TKT-048 веха-2): честный отказ двух if ----------
+    out_cell(LOG_PORT, 0x00009009);      // LOG: Ф9 честно загружена
+    run Load_TwoIf_Demo();
+    run Reset_Scan();
+    run Scan_Word_Loop();
+    out_cell(LOG_PORT, 0x000090F9);      // LOG: Ф9 честный скан завершён
+
+    // честный код брака = BRK_PATCH_OVERFLOW (0x04), Error_Flag = 1
+    if (Fail_Code == BRK_PATCH_OVERFLOW) {
+        if (Error_Flag == 0x00000001) {
+            out_cell(LOG_PORT, 0x00009196); // LOG: честный отказ второго if
+        } else {
+            out_cell(LOG_PORT, 0x00009099);
+        }
+    } else {
+        out_cell(LOG_PORT, 0x00009096);
+    }
+
+    // честная позиция отказа: слот if занят Ф8 — честный отказ на ПЕРВОМ же
+    // if (слово 0); честный лимит стенда: один CALL/один JZ/один JMP на артефакт
+    if (Fail_Position == 0x00000000) {
+        out_cell(LOG_PORT, 0x00009197);  // LOG: честная позиция 1 сошлась
+    } else {
+        out_cell(LOG_PORT, 0x00009096);
+    }
+
     run Write_Artifact_Report();
+
+    // --- 1.5-б честный шаг: стадия-1 сама пишет свой артефакт-файл ---
+    // Финальное состояние = Ф5 (честный брак '12'): артефакт честно пишется
+    // И на браке, Error_Flag в отчёте честно говорит про брак — тишины нет.
+
     out_cell(LOG_PORT, 0x00009170);      // LOG: артефакт стадии-1 записан честно
 
     // честный финальный отчёт значениями
@@ -404,14 +472,39 @@ function Write_Artifact_Report() {
     sys_call(FILE_PUT);
     // TKT-048 веха-1: честная патч-фаза — адрес честного target в слоты
     // (позиция в файле = честный поток + размер заголовка v1.1)
-    if (JP_Site_1 == 0x00000000) {
-        // честно: ни одного сайта CALL/JZ — патчить нечего
+        // TKT-048 веха-2: честная патч-фаза — адреса честных target в три слота
+    if (JP_Site_Call == 0x00000000) {
+        // честно: вызовов не было
     } else {
-        Stream_Emit = JP_Site_1 + 20;                   // честная позиция операнда в файле
+        Stream_Emit = JP_Site_Call + 20;     // честная позиция операнда CALL в файле
         sys_call(FILE_SEEK);
-        Stream_Emit = JP_Site_Term + 20;                // честный target: позиция байта OP_TERM
+        Stream_Emit = JP_Site_Term + 20;     // честный target: позиция байта OP_TERM
         sys_call(FILE_PUT);
-        JP_Site_1 = 0x00000000;              // честный слот прожит
+        JP_Site_Call = 0x00000000;
+    }
+    if (JP_Site_If == 0x00000000) {
+        // честно: if-ветвлений не было
+    } else {
+        if (JP_Else_Join == 0x00000000) {
+            Patch_Target = JP_Site_Term;     // честно без else: обход до TERM
+        } else {
+            Patch_Target = JP_Else_Join;     // честно с else: вход в else-тело
+        }
+        Stream_Emit = JP_Site_If + 20;
+        sys_call(FILE_SEEK);
+        Stream_Emit = Patch_Target + 20;
+        sys_call(FILE_PUT);
+        JP_Site_If = 0x00000000;
+        JP_Else_Join = 0x00000000;
+    }
+    if (JP_Site_Jmp == 0x00000000) {
+        // честно: else-переходов не было
+    } else {
+        Stream_Emit = JP_Site_Jmp + 20;
+        sys_call(FILE_SEEK);
+        Stream_Emit = JP_Site_Term + 20;     // честное схождение ветвей: TERM
+        sys_call(FILE_PUT);
+        JP_Site_Jmp = 0x00000000;
     }
     // TKT-040 веха-1: честное контрольное слово — VM патчит CRC-32 тела
     sys_call(FILE_SEAL);
@@ -528,6 +621,60 @@ function Load_Lit_Demo() {
     store_ind(Tmp_Addr, Tmp_Word);
 }
 
+// ---------- Ф8 (TKT-048 веха-2): честный if/else ----------
+// Слова: '0' (LIT_D0) 'if' '7' (LIT_D7) 'es' 'te' .
+// Честный эмит: CONST 0 (acc=0 - условие ложно) -> JZ (слот) -> CONST 7 (тело
+// if, честно прыгается) -> JMP (слот) -> TERM; патч: JZ -> начало else-тела,
+// JMP -> TERM (честное схождение ветвей).
+function Load_IfElse_Demo() {
+    Tmp_Addr = SOURCE_CODE_BUFFER;
+    Tmp_Word = LIT_D0;
+    store_ind(Tmp_Addr, Tmp_Word);
+
+    Tmp_Addr = SOURCE_CODE_BUFFER + 4;
+    Tmp_Word = KW_IF;
+    store_ind(Tmp_Addr, Tmp_Word);
+
+    Tmp_Addr = SOURCE_CODE_BUFFER + 8;
+    Tmp_Word = LIT_D7;
+    store_ind(Tmp_Addr, Tmp_Word);
+
+    Tmp_Addr = SOURCE_CODE_BUFFER + 12;
+    Tmp_Word = KW_ELSE;
+    store_ind(Tmp_Addr, Tmp_Word);
+
+    Tmp_Addr = SOURCE_CODE_BUFFER + 16;
+    Tmp_Word = KW_TERM;
+    store_ind(Tmp_Addr, Tmp_Word);
+
+    Tmp_Addr = SOURCE_CODE_BUFFER + 20;
+    Tmp_Word = CH_WORD_END;
+    store_ind(Tmp_Addr, Tmp_Word);
+}
+
+// ---------- Ф9 (TKT-048 веха-2): честный отказ двух if ----------
+// Слова: 'if' 'if' 'te' . — второй if честно бракуется BRK_PATCH_OVERFLOW
+// (слот занят; fail-fast, правило первый-сбой). Слот Ф8 при этом честно
+// затирается Ф9-байтом — его плейсхолдер останется неспаченным, что честно
+// отмечено в отчёте артефакта (брак вместо тишины).
+function Load_TwoIf_Demo() {
+    Tmp_Addr = SOURCE_CODE_BUFFER;
+    Tmp_Word = KW_IF;
+    store_ind(Tmp_Addr, Tmp_Word);
+
+    Tmp_Addr = SOURCE_CODE_BUFFER + 4;
+    Tmp_Word = KW_IF;
+    store_ind(Tmp_Addr, Tmp_Word);
+
+    Tmp_Addr = SOURCE_CODE_BUFFER + 8;
+    Tmp_Word = KW_TERM;
+    store_ind(Tmp_Addr, Tmp_Word);
+
+    Tmp_Addr = SOURCE_CODE_BUFFER + 12;
+    Tmp_Word = CH_WORD_END;
+    store_ind(Tmp_Addr, Tmp_Word);
+}
+
 // ---------- честная загрузка Ф5 (стадия-1.4): честный отказ '12' ----------
 // Слова: '12' (0x3232) .
 function Load_TwoDigit_Demo() {
@@ -606,7 +753,7 @@ function Scan_Word_Loop() {
                 out_cell(STREAM_EMIT_CELL, OP_CALL_CODE);
                 sys_call(FILE_U8);
                 Emitted_Bytes = Emitted_Bytes + 1;
-                JP_Site_1 = Emitted_Bytes;      // честная позиция операнда
+                JP_Site_Call = Emitted_Bytes;      // честная позиция операнда
                 out_cell(STREAM_EMIT_CELL, 0x00000000);
                 sys_call(FILE_U16);
                 sys_call(FILE_U16);
@@ -615,15 +762,42 @@ function Scan_Word_Loop() {
                 Found_Flag = 0x00000001;
             }
 
+            // 'if' -> OP_JZ (0x06) + честный слот JP_Site_If; второй 'if' —
+            // честный брак BRK_PATCH_OVERFLOW (fail-fast, правило первый-сбой)
             if (Current_Char == KW_IF) {
-                out_cell(STREAM_EMIT_CELL, OP_JZ_CODE);
+                if (JP_Site_If == 0x00000000) {
+                    out_cell(STREAM_EMIT_CELL, OP_JZ_CODE);
+                    sys_call(FILE_U8);
+                    Emitted_Bytes = Emitted_Bytes + 1;
+                    JP_Site_If = Emitted_Bytes;      // честная позиция операнда
+                    out_cell(STREAM_EMIT_CELL, 0x00000000);
+                    sys_call(FILE_U16);
+                    sys_call(FILE_U16);
+                    Emitted_Bytes = Emitted_Bytes + 4;
+                    Token_Counter = Token_Counter + 1;
+                    Found_Flag = 0x00000001;
+                } else {
+                    if (Error_Flag == 0x00000000) {
+                        Fail_Code = BRK_PATCH_OVERFLOW;
+                        Fail_Position = Word_Index;
+                        Error_Flag = 0x00000001;
+                        Word_Index = MAX_SOURCE_WORDS;
+                    }
+                }
+            }
+
+            // 'es' -> else -> OP_JMP (0x07) + честный слот JP_Site_Jmp;
+            // честное начало else-тела = позиция после операнда (туда прыгнет JZ)
+            if (Current_Char == KW_ELSE) {
+                out_cell(STREAM_EMIT_CELL, OP_JMP_CODE);
                 sys_call(FILE_U8);
                 Emitted_Bytes = Emitted_Bytes + 1;
-                JP_Site_1 = Emitted_Bytes;      // честная позиция операнда
+                JP_Site_Jmp = Emitted_Bytes;     // честная позиция операнда
                 out_cell(STREAM_EMIT_CELL, 0x00000000);
                 sys_call(FILE_U16);
                 sys_call(FILE_U16);
                 Emitted_Bytes = Emitted_Bytes + 4;
+                JP_Else_Join = Emitted_Bytes;    // честное начало else-тела
                 Token_Counter = Token_Counter + 1;
                 Found_Flag = 0x00000001;
             }

@@ -32,6 +32,7 @@
 #define: KW_STATIC        0x00007473 // 'st': static -> OP_ALLOC_ST
 #define: KW_FUNCTION      0x00007566 // 'fu': function/pub entry -> OP_CALL
 #define: KW_IF            0x00006669 // 'if': if -> OP_JZ
+#define: KW_ELSE 0x00007365 // 'es' = else; 4-символьное 'else' честно не собирается в 2-символьных пакетах
 #define: KW_TERM          0x00006574 // 'te': terminate -> OP_TERM
 #define: SYM_BRACE_OPEN   0x0000007B // '{'  -> синтаксис, байт НЕ эмитится
 #define: SYM_BRACE_CLOSE  0x0000007D // '}'  -> синтаксис, байт НЕ эмитится
@@ -45,6 +46,7 @@
 #define: OP_CALL_CODE  0x00000003 // 0x03 OP_CALL
 #define: OP_TERM_CODE  0x00000005 // 0x05 OP_TERM
 #define: OP_JZ_CODE    0x00000006 // 0x06 OP_JZ
+#define: OP_JMP_CODE 0x00000007 // честный безусловный переход (VM OP_JMP)
 #define: OP_ALLOC_CODE 0x00000010 // 0x10 OP_ALLOC_ST
 #define: OP_CONST_CODE 0x00000015 // 0x15 OP_CONST «константа на акк»
 #define: SYM_LIT_BASE  0x00000030 // '0': база честного литерального ряда '0'..'9'
@@ -97,7 +99,11 @@ set static Lit_Value         = 0x00000000; // Честное ЗНАЧЕНИЕ л
 set static Fail_Code         = 0x00000000; // Честный код брака (0 = успеха нет сбоя)
 set static Fail_Position     = 0x00000000; // Честная позиция слова на момент брака
 set static Emitted_Bytes     = 0x00000000; // Честный счётчик байтов потока (TKT-048)
-set static JP_Site_1         = 0x00000000; // Честный слот места патча операнда №1
+set static JP_Site_Call         = 0x00000000; // Честный слот места патча операнда №1
+set static JP_Site_If      = 0x00000000; // честный слот операнда JZ от if
+set static JP_Site_Jmp      = 0x00000000; // честный слот операнда JMP от es
+set static JP_Else_Join     = 0x00000000; // честное начало else-тела (target JZ)
+set static Patch_Target     = 0x00000000; // честный target патча JZ (pereklich корней)
 set static JP_Site_Term      = 0x00000000; // Честная позиция потока байта 'te' (target демо)
 
 // Главная точка входа нативного компилятора (Entry Point)
@@ -115,7 +121,10 @@ pub entry main(cell:raw args) {
     Fail_Code = 0;        // честный код брака: успех = 0 (TKT-033)
     Fail_Position = 0;    // честная позиция брака: успех = 0 (TKT-033)
     Emitted_Bytes = 0;    // честный счётчик байтов потока (TKT-048)
-    JP_Site_1 = 0;        // честные слоты патча пусты (TKT-048)
+    JP_Site_Call = 0;    // честные слоты патча пусты (TKT-048)
+    JP_Site_If = 0;      // honestly нет if-сайтов
+    JP_Site_Jmp = 0;     // honestly нет es-сайтов
+    JP_Else_Join = 0;    // honestly нет else-сращений
     JP_Site_Term = 0;     // честная позиция байта TERM пуста
     Node_Brace_Depth = 0;
     Node_Paren_Depth = 0;
@@ -203,15 +212,40 @@ function NativeLexicalScanner() {
     sys_call(FILE_PUT);
     // TKT-048 веха-1: честная патч-фаза — адрес честного target в слоты
     // (позиция в файле = честный поток + размер заголовка v1.1)
-    if (JP_Site_1 == 0x00000000) {
-        // честно: ни одного сайта CALL/JZ — патчить нечего
+        if (JP_Site_Call == 0x00000000) {
+        // честно: вызовов не было
     } else {
-        Stream_Emit = JP_Site_1 + 20;        // честная позиция операнда в файле (define в арифметике запрещён — TKT-036)
+        Stream_Emit = JP_Site_Call + 20;     // честная позиция операнда CALL в файле
         sys_call(FILE_SEEK);
         Stream_Emit = JP_Site_Term + 20;     // честный target: позиция байта OP_TERM
         sys_call(FILE_PUT);
-        JP_Site_1 = 0x00000000;              // честный слот прожит
+        JP_Site_Call = 0x00000000;
     }
+    if (JP_Site_If == 0x00000000) {
+        // честно: if-ветвлений не было
+    } else {
+        if (JP_Else_Join == 0x00000000) {
+            Patch_Target = JP_Site_Term;     // честно без else: обход до TERM
+        } else {
+            Patch_Target = JP_Else_Join;     // честно с else: вход в else-тело
+        }
+        Stream_Emit = JP_Site_If + 20;
+        sys_call(FILE_SEEK);
+        Stream_Emit = Patch_Target + 20;
+        sys_call(FILE_PUT);
+        JP_Site_If = 0x00000000;
+        JP_Else_Join = 0x00000000;
+    }
+    if (JP_Site_Jmp == 0x00000000) {
+        // честно: else-переходов не было
+    } else {
+        Stream_Emit = JP_Site_Jmp + 20;
+        sys_call(FILE_SEEK);
+        Stream_Emit = JP_Site_Term + 20;     // честное схождение ветвей: TERM
+        sys_call(FILE_PUT);
+        JP_Site_Jmp = 0x00000000;
+    }
+
     // TKT-040 веха-1: честное контрольное слово — VM патчит CRC-32 тела
     sys_call(FILE_SEAL);
     sys_call(FILE_END);
@@ -278,13 +312,13 @@ function Scan_Word_Loop() {
             }
 
             // 'fu' -> function/pub entry -> OP_CALL (0x03) + честный слот:
-            // операнд BE32 запоминается у JP_Site_1 (позиция = после байта
+            // операнд BE32 запоминается у JP_Site_Call (позиция = после байта
             // опкода), честный плейсхолдер 00000000 — патч в вердиктной фазе
             if (Current_Char == KW_FUNCTION) {
                 out_cell(STREAM_EMIT_CELL, OP_CALL_CODE);
                 sys_call(FILE_U8);
                 Emitted_Bytes = Emitted_Bytes + 1;
-                JP_Site_1 = Emitted_Bytes;      // честная позиция операнда
+                JP_Site_Call = Emitted_Bytes;      // честная позиция операнда
                 out_cell(STREAM_EMIT_CELL, 0x00000000);
                 sys_call(FILE_U16);
                 sys_call(FILE_U16);
@@ -294,15 +328,42 @@ function Scan_Word_Loop() {
             }
 
             // 'if' -> if -> OP_JZ (0x06) + честный слот (тот же честный механизм)
+            // 'if' -> OP_JZ (0x06) + честный слот JP_Site_If; второй 'if' —
+            // честный брак BRK_PATCH_OVERFLOW (fail-fast, правило первый-сбой)
             if (Current_Char == KW_IF) {
-                out_cell(STREAM_EMIT_CELL, OP_JZ_CODE);
+                if (JP_Site_If == 0x00000000) {
+                    out_cell(STREAM_EMIT_CELL, OP_JZ_CODE);
+                    sys_call(FILE_U8);
+                    Emitted_Bytes = Emitted_Bytes + 1;
+                    JP_Site_If = Emitted_Bytes;      // честная позиция операнда
+                    out_cell(STREAM_EMIT_CELL, 0x00000000);
+                    sys_call(FILE_U16);
+                    sys_call(FILE_U16);
+                    Emitted_Bytes = Emitted_Bytes + 4;
+                    Token_Counter = Token_Counter + 1;
+                    Found_Flag = 0x00000001;
+                } else {
+                    if (Error_Flag == 0x00000000) {
+                        Fail_Code = BRK_PATCH_OVERFLOW;
+                        Fail_Position = Word_Index;
+                        Error_Flag = 0x00000001;
+                        Word_Index = MAX_SOURCE_WORDS;
+                    }
+                }
+            }
+
+            // 'es' -> else -> OP_JMP (0x07) + честный слот JP_Site_Jmp;
+            // честное начало else-тела = позиция после операнда (туда прыгнет JZ)
+            if (Current_Char == KW_ELSE) {
+                out_cell(STREAM_EMIT_CELL, OP_JMP_CODE);
                 sys_call(FILE_U8);
                 Emitted_Bytes = Emitted_Bytes + 1;
-                JP_Site_1 = Emitted_Bytes;      // честная позиция операнда
+                JP_Site_Jmp = Emitted_Bytes;     // честная позиция операнда
                 out_cell(STREAM_EMIT_CELL, 0x00000000);
                 sys_call(FILE_U16);
                 sys_call(FILE_U16);
                 Emitted_Bytes = Emitted_Bytes + 4;
+                JP_Else_Join = Emitted_Bytes;    // честное начало else-тела
                 Token_Counter = Token_Counter + 1;
                 Found_Flag = 0x00000001;
             }
