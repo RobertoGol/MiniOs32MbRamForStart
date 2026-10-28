@@ -39,6 +39,7 @@
 #define: KW_LT 0x0000746C // 'lt' = сравнить acc < следующий литерал (TKT-050 веха-3)
 #define: KW_SAVE 0x00007673 // 'sv' = save: cell[WORK_CELL] = acc (TKT-050 веха-2)
 #define: KW_VALUE 0x00007661 // 'va' = value: acc = cell[WORK_CELL] (TKT-050 веха-2)
+#define: KW_RET 0x00007265 // 're' = return: честный выход из функции (TKT-051)
 #define: KW_TERM          0x00006574 // 'te': terminate -> OP_TERM
 #define: SYM_BRACE_OPEN   0x0000007B // '{'  -> синтаксис, байт НЕ эмитится
 #define: SYM_BRACE_CLOSE  0x0000007D // '}'  -> синтаксис, байт НЕ эмитится
@@ -51,6 +52,7 @@
 #define: OP_INIT_CODE  0x00000001 // 0x01 OP_INIT
 #define: OP_CALL_CODE  0x00000003 // 0x03 OP_CALL
 #define: OP_TERM_CODE  0x00000005 // 0x05 OP_TERM
+#define: OP_RET_CODE   0x00000004 // 0x04 OP_RET — возврат по стеку вызовов VM (TKT-051)
 #define: OP_JZ_CODE    0x00000006 // 0x06 OP_JZ
 #define: OP_JMP_CODE 0x00000007 // честный безусловный переход (VM OP_JMP)
 #define: OP_ALLOC_CODE 0x00000010 // 0x10 OP_ALLOC_ST
@@ -502,6 +504,17 @@ function Scan_Word_Loop() {
                 out_cell(STREAM_EMIT_CELL, WORK_CELL);
                 sys_call(FILE_PUT);
                 Emitted_Bytes = Emitted_Bytes + 4;
+                Token_Counter = Token_Counter + 1;
+                Found_Flag = 0x00000001;
+            }
+
+            // 're' (TKT-051 веха-1): честный возврат из функции — OP_RET 0x04
+            // (1 байт, без операнда); VM честно поднимает pc со стека вызовов.
+            // 're' вне вызова — VM честно бракует (стек пуст, живая проба).
+            if (Current_Char == KW_RET) {
+                out_cell(STREAM_EMIT_CELL, OP_RET_CODE);
+                sys_call(FILE_U8);
+                Emitted_Bytes = Emitted_Bytes + 1;
                 Token_Counter = Token_Counter + 1;
                 Found_Flag = 0x00000001;
             }

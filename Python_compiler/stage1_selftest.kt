@@ -63,6 +63,7 @@
 #define: KW_LT 0x0000746C // 'lt' = сравнить acc < следующий литерал (TKT-050 веха-3)
 #define: KW_SAVE 0x00007673 // 'sv' = save: cell[WORK_CELL] = acc (TKT-050 веха-2)
 #define: KW_VALUE 0x00007661 // 'va' = value: acc = cell[WORK_CELL] (TKT-050 веха-2)
+#define: KW_RET 0x00007265 // 're' = return: честный выход из функции (TKT-051)
 #define: KW_TERM        0x00006574
 #define: SYM_BRACE_OPEN 0x0000007B
 #define: SYM_BRACE_CLOSE 0x0000007D
@@ -98,6 +99,7 @@
 #define: OP_INIT_CODE   0x00000001
 #define: OP_CALL_CODE   0x00000003
 #define: OP_TERM_CODE   0x00000005
+#define: OP_RET_CODE   0x00000004 // 0x04 OP_RET — возврат по стеку вызовов VM (TKT-051)
 #define: OP_JZ_CODE     0x00000006
 #define: OP_JMP_CODE 0x00000007 // честный безусловный переход (VM OP_JMP)
 #define: OP_ALLOC_CODE  0x00000010
@@ -579,6 +581,21 @@ pub entry main(cell:raw args) {
         out_cell(LOG_PORT, 0x00009099);
     }
 
+    // ---------- ФАЗА 11 (TKT-051 веха-1): честная функция с возвратом ----------
+    out_cell(LOG_PORT, 0x0000900F);      // LOG: Ф11 честно загружена
+    run Load_RetCall_Demo();
+    run Reset_Scan();
+    run Scan_Word_Loop();
+    out_cell(LOG_PORT, 0x000090FF);      // LOG: Ф11 честный скан завершён
+
+    // честный счёт: поток 111 (после Ф10в) + (CONST 5 + STORE_AT 5 + CALL 5
+    // + LOAD[0x19] 6 + RET 1 + TERM 1) = 134 = 0x86
+    if (Emitted_Bytes == 0x00000086) {
+        out_cell(LOG_PORT, 0x000091A2);  // LOG: Ф11 счёт байтов сошёлся
+    } else {
+        out_cell(LOG_PORT, 0x00009099);
+    }
+
     run Write_Artifact_Report();
 
     // --- 1.5-б честный шаг: стадия-1 сама пишет свой артефакт-файл ---
@@ -892,6 +909,44 @@ function Load_TwoIf_Demo() {
     store_ind(Tmp_Addr, Tmp_Word);
 }
 
+// ---------- Ф11 (TKT-051 веха-1): честная функция с телом и возвратом ----------
+// Слова: '5' 'sv' 'ru' 'fu' 'va' 're' 'te' . — главный поток: CONST 5; sv
+// (cell[W]=5); ru: CALL на метку fu; тело fu: va (acc=cell[W]=5); re: RET
+// (честный возврат по стеку); te: TERM.
+function Load_RetCall_Demo() {
+    Tmp_Addr = SOURCE_CODE_BUFFER;
+    Tmp_Word = LIT_D5;
+    store_ind(Tmp_Addr, Tmp_Word);
+
+    Tmp_Addr = SOURCE_CODE_BUFFER + 4;
+    Tmp_Word = KW_SAVE;
+    store_ind(Tmp_Addr, Tmp_Word);
+
+    Tmp_Addr = SOURCE_CODE_BUFFER + 8;
+    Tmp_Word = KW_RUN;
+    store_ind(Tmp_Addr, Tmp_Word);
+
+    Tmp_Addr = SOURCE_CODE_BUFFER + 12;
+    Tmp_Word = KW_FUNCTION;
+    store_ind(Tmp_Addr, Tmp_Word);
+
+    Tmp_Addr = SOURCE_CODE_BUFFER + 16;
+    Tmp_Word = KW_VALUE;
+    store_ind(Tmp_Addr, Tmp_Word);
+
+    Tmp_Addr = SOURCE_CODE_BUFFER + 20;
+    Tmp_Word = KW_RET;
+    store_ind(Tmp_Addr, Tmp_Word);
+
+    Tmp_Addr = SOURCE_CODE_BUFFER + 24;
+    Tmp_Word = KW_TERM;
+    store_ind(Tmp_Addr, Tmp_Word);
+
+    Tmp_Addr = SOURCE_CODE_BUFFER + 28;
+    Tmp_Word = CH_WORD_END;
+    store_ind(Tmp_Addr, Tmp_Word);
+}
+
 // ---------- Ф10в (TKT-050 веха-3): честное сравнение gt ----------
 // Слова: '7' 'gt' '5' 'te' . — CONST 7; gt ставит pending 0x1A;
 // '5' эмитит OP_LOAD[0x1A] 5 -> acc=(7>5)=1 (честно ИСТИНА); te: TERM.
@@ -1199,6 +1254,17 @@ function Scan_Word_Loop() {
                 out_cell(STREAM_EMIT_CELL, WORK_CELL);
                 sys_call(FILE_PUT);
                 Emitted_Bytes = Emitted_Bytes + 4;
+                Token_Counter = Token_Counter + 1;
+                Found_Flag = 0x00000001;
+            }
+
+            // 're' (TKT-051 веха-1): честный возврат из функции — OP_RET 0x04
+            // (1 байт, без операнда); VM честно поднимает pc со стека вызовов.
+            // 're' вне вызова — VM честно бракует (стек пуст, живая проба).
+            if (Current_Char == KW_RET) {
+                out_cell(STREAM_EMIT_CELL, OP_RET_CODE);
+                sys_call(FILE_U8);
+                Emitted_Bytes = Emitted_Bytes + 1;
                 Token_Counter = Token_Counter + 1;
                 Found_Flag = 0x00000001;
             }
