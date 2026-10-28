@@ -596,6 +596,21 @@ pub entry main(cell:raw args) {
         out_cell(LOG_PORT, 0x00009099);
     }
 
+    // ---------- ФАЗА 12 (TKT-051 веха-2): честный аргумент функции ----------
+    out_cell(LOG_PORT, 0x00009010);      // LOG: Ф12 честно загружена
+    run Load_Arg_Demo();
+    run Reset_Scan();
+    run Scan_Word_Loop();
+    out_cell(LOG_PORT, 0x000090F1);      // LOG: Ф12 честный скан завершён
+
+    // честный счёт: поток 134 (после Ф11) + (CONST 5 + STORE_AT 5 + CALL 5
+    // + LOAD[0x19] 6 + LOAD[0x1A] 6 + STORE_AT 5 + RET 1) = 167 = 0xA7
+    if (Emitted_Bytes == 0x000000A7) {
+        out_cell(LOG_PORT, 0x000091A3);  // LOG: Ф12 счёт байтов сошёлся
+    } else {
+        out_cell(LOG_PORT, 0x00009099);
+    }
+
     run Write_Artifact_Report();
 
     // --- 1.5-б честный шаг: стадия-1 сама пишет свой артефакт-файл ---
@@ -905,6 +920,52 @@ function Load_TwoIf_Demo() {
     store_ind(Tmp_Addr, Tmp_Word);
 
     Tmp_Addr = SOURCE_CODE_BUFFER + 12;
+    Tmp_Word = CH_WORD_END;
+    store_ind(Tmp_Addr, Tmp_Word);
+}
+
+// ---------- Ф12 (TKT-051 веха-2): честный аргумент функции ----------
+// Слова: '5' 'sv' 'ru' 'fu' 'va' 'gt' '8' 'sv' 're' . — главный: CONST 5;
+// sv (аргумент в память); ru: CALL fu; тело fu: va (acc=арг 5); gt pending;
+// '8': LOAD[0x1A] 8 -> acc=(5>8)=0 (честно); sv (результат в память); re: RET.
+function Load_Arg_Demo() {
+    Tmp_Addr = SOURCE_CODE_BUFFER;
+    Tmp_Word = LIT_D5;
+    store_ind(Tmp_Addr, Tmp_Word);
+
+    Tmp_Addr = SOURCE_CODE_BUFFER + 4;
+    Tmp_Word = KW_SAVE;
+    store_ind(Tmp_Addr, Tmp_Word);
+
+    Tmp_Addr = SOURCE_CODE_BUFFER + 8;
+    Tmp_Word = KW_RUN;
+    store_ind(Tmp_Addr, Tmp_Word);
+
+    Tmp_Addr = SOURCE_CODE_BUFFER + 12;
+    Tmp_Word = KW_FUNCTION;
+    store_ind(Tmp_Addr, Tmp_Word);
+
+    Tmp_Addr = SOURCE_CODE_BUFFER + 16;
+    Tmp_Word = KW_VALUE;
+    store_ind(Tmp_Addr, Tmp_Word);
+
+    Tmp_Addr = SOURCE_CODE_BUFFER + 20;
+    Tmp_Word = KW_GT;
+    store_ind(Tmp_Addr, Tmp_Word);
+
+    Tmp_Addr = SOURCE_CODE_BUFFER + 24;
+    Tmp_Word = LIT_D8;
+    store_ind(Tmp_Addr, Tmp_Word);
+
+    Tmp_Addr = SOURCE_CODE_BUFFER + 28;
+    Tmp_Word = KW_SAVE;
+    store_ind(Tmp_Addr, Tmp_Word);
+
+    Tmp_Addr = SOURCE_CODE_BUFFER + 32;
+    Tmp_Word = KW_RET;
+    store_ind(Tmp_Addr, Tmp_Word);
+
+    Tmp_Addr = SOURCE_CODE_BUFFER + 36;
     Tmp_Word = CH_WORD_END;
     store_ind(Tmp_Addr, Tmp_Word);
 }
