@@ -54,7 +54,8 @@ OP_INCELL    = 0x50
 OP_OUTCELL   = 0x51
 OP_INCELL_IND = 0x52
 OP_STORE_IND  = 0x53   # запись acc в cell[cell[arg]] — по адресу-указателю из ячейки
-OP_OUTCELL_V  = 0x54   # вывод ЗНАЧЕНИЯ ячейки (cell[arg]) в порт — честный log_cell
+OP_OUTCELL_V  = 0x54
+OP_STORE_AT  = 0x55   # запись acc в cell[arg] — честная память по адресу (TKT-050 веха-2)   # вывод ЗНАЧЕНИЯ ячейки (cell[arg]) в порт — честный log_cell
 OP_ASMBLOCK  = 0x60
 OP_JZ        = 0x06
 OP_JMP       = 0x07
@@ -227,6 +228,8 @@ class CtOsVm:
                 self._acc = 1 if getattr(self, "_acc", 0) == arg else 0
             elif mode == 0x18:    # сравнение с ЯЧЕЙКОЙ: acc = (acc == cell[arg])
                 self._acc = 1 if getattr(self, "_acc", 0) == self.cells.get(arg, 0) else 0
+            elif mode == 0x19:    # честная загрузка ЯЧЕЙКИ: acc = cell[arg] (TKT-050 веха-2)
+                self._acc = self.cells.get(arg, 0)
             else:
                 raise VmFault("OP_LOAD: недокументированный режим 0x%02X" % mode)
             self.log("OP_LOAD[0x%02X]: acc = 0x%08X" % (mode, self._acc))
@@ -378,6 +381,16 @@ class CtOsVm:
             self.log("OP_OUTCELL_V: порт 0x%08X <- cell[0x%08X] = 0x%08X"
                      % (port, var_addr, val))
             self.pc = pc + 9
+        elif op == OP_STORE_AT:
+            # TKT-050 веха-2: честная память стадии-1 — cell[arg] = acc,
+            # адрес берётся из честного операнда BE32 (не заглушка pc)
+            if pc + 5 > len(b):
+                raise VmFault("OP_STORE_AT обрезан в конце файла")
+            arg = struct.unpack_from(C1, b, pc + 1)[0]
+            self.cells[arg] = getattr(self, "_acc", 0)
+            self.log("OP_STORE_AT: cell[0x%08X] <- acc = 0x%08X"
+                     % (arg, self._acc))
+            self.pc = pc + 5
         elif op == OP_ASMBLOCK:
             if pc + 5 > len(b):
                 raise VmFault("OP_ASMBLOCK обрезан в конце файла")

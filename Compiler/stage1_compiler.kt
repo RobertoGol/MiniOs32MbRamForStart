@@ -35,6 +35,8 @@
 #define: KW_ELSE 0x00007365 // 'es' = else; 4-символьное 'else' честно не собирается в 2-символьных пакетах
 #define: KW_RUN 0x00007572 // 'ru' = run: честный вызов последней 'fu'
 #define: KW_EQ 0x00007165 // 'eq' = сравнить acc со следующим литералом (TKT-050)
+#define: KW_SAVE 0x00007673 // 'sv' = save: cell[WORK_CELL] = acc (TKT-050 веха-2)
+#define: KW_VALUE 0x00007661 // 'va' = value: acc = cell[WORK_CELL] (TKT-050 веха-2)
 #define: KW_TERM          0x00006574 // 'te': terminate -> OP_TERM
 #define: SYM_BRACE_OPEN   0x0000007B // '{'  -> синтаксис, байт НЕ эмитится
 #define: SYM_BRACE_CLOSE  0x0000007D // '}'  -> синтаксис, байт НЕ эмитится
@@ -52,6 +54,7 @@
 #define: OP_ALLOC_CODE 0x00000010 // 0x10 OP_ALLOC_ST
 #define: OP_CONST_CODE 0x00000015 // 0x15 OP_CONST «константа на акк»
 #define: OP_LOAD_CODE 0x00000012 // 0x12 OP_LOAD (режимы: 0x14 add, 0x16 eq, 0x17 sub)
+#define: OP_STORE_AT_CODE 0x00000055 // 0x55 OP_STORE_AT cell[arg] = acc (TKT-050 веха-2)
 #define: SYM_LIT_BASE  0x00000030 // '0': база честного литерального ряда '0'..'9'
 #define: LIT_D0        0x00000030 // '0' — слово однозначного литерала (сим2==0)
 #define: LIT_D1        0x00000031 // '1'
@@ -69,6 +72,7 @@
 // Честный syscall-файл-слой (1.5-б, opcodes.core OP_SYSCALL 0x13):
 // стадия-1 честно собирает СВОЙ артефакт-файл (заголовок TKT-009 + отчёт).
 #define: STREAM_EMIT_CELL 0x00F00FF0 // честная ячейка-аргумент syscall (Stream_Emit)
+#define: WORK_CELL 0x00F00FF1 // честная рабочая ячейка памяти стадии-1 (TKT-009 зона +1)
 #define: FILE_BEGIN       0x00000130 // открыть артефакт
 #define: FILE_PUT         0x00000131 // слово Stream_Emit -> 4 байта BE
 #define: FILE_U16         0x00000132 // младшие 16 бит -> 2 байта BE
@@ -469,6 +473,35 @@ function Scan_Word_Loop() {
             // 'if' -> if -> OP_JZ (0x06) + честный слот (тот же честный механизм)
             // 'if' -> OP_JZ (0x06) + честный слот If_Site_1; второй 'if' —
             // честный брак BRK_PATCH_OVERFLOW (fail-fast, правило первый-сбой)
+            // 'sv' (TKT-050 веха-2): честная запись памяти — OP_STORE_AT 0x55
+            // + BE32(WORK_CELL): cell[WORK_CELL] = acc. 5 байт.
+            if (Current_Char == KW_SAVE) {
+                out_cell(STREAM_EMIT_CELL, OP_STORE_AT_CODE);
+                sys_call(FILE_U8);
+                Emitted_Bytes = Emitted_Bytes + 1;
+                out_cell(STREAM_EMIT_CELL, WORK_CELL);
+                sys_call(FILE_PUT);
+                Emitted_Bytes = Emitted_Bytes + 4;
+                Token_Counter = Token_Counter + 1;
+                Found_Flag = 0x00000001;
+            }
+
+            // 'va' (TKT-050 веха-2): честная загрузка памяти — OP_LOAD 0x12
+            // + режим 0x19 (acc = cell[arg]) + BE32(WORK_CELL). 6 байт.
+            if (Current_Char == KW_VALUE) {
+                out_cell(STREAM_EMIT_CELL, OP_LOAD_CODE);
+                sys_call(FILE_U8);
+                Emitted_Bytes = Emitted_Bytes + 1;
+                out_cell(STREAM_EMIT_CELL, 0x00000019);
+                sys_call(FILE_U8);
+                Emitted_Bytes = Emitted_Bytes + 1;
+                out_cell(STREAM_EMIT_CELL, WORK_CELL);
+                sys_call(FILE_PUT);
+                Emitted_Bytes = Emitted_Bytes + 4;
+                Token_Counter = Token_Counter + 1;
+                Found_Flag = 0x00000001;
+            }
+
             // 'eq' (TKT-050 веха-1): честное сравнение acc со СЛЕДУЮЩИМ литералом.
             // Сам байта НЕ эмитит: ставит Eq_Pending, следующий литерал честно
             // эмитит OP_LOAD[0x16] вместо CONST. 'eq' без литерала — честный
