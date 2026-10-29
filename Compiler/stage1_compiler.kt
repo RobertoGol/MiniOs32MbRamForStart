@@ -84,6 +84,8 @@
 #define: FILE_U8          0x00000134 // 1 байт -> артефакт (TKT-047: честный байт-канал опконов)
 #define: FILE_SEAL        0x00000135 // контрольное слово артефакта CRC-32 (TKT-040 веха-1)
 #define: FILE_SEEK        0x00000136 // честная позиция записи в артефакте (TKT-048)
+#define: FILE_GET        0x00000137 // честное чтение: 4 байта BE исходника -> Stream_Emit (TKT-052 веха-2)
+#define: FILE_EOF_CELL   0x00F00FF2 // честная ячейка статуса EOF syscall-чтения (0 = слово есть, 1 = конец)
 
 // Честные коды брака стадии-1 (TKT-033, по образцу K-кодов):
 // позиция брака — честная ячейка Fail_Position на момент сбоя
@@ -93,6 +95,7 @@
 #define: BRK_PATCH_OVERFLOW 0x00000004 // честных слотов патча больше нет (TKT-048 честный лимит)
 #define: BRK_NO_FUNC 0x00000005 // 'ru' до любой 'fu' — честный брак (TKT-048 веха-3)
 #define: BRK_EQ_NO_LIT 0x00000006 // 'eq' без следующего литерала — честный брак (TKT-050)
+#define: BRK_SRC_OVERFLOW 0x00000007 // исходник длиннее честного буфера 16 слов (TKT-052 веха-2)
 #define: HDR_BODY_SIZE    0x00000014 // честный размер заголовка v1.1 = 20 байт
 
 // Объявляем глобальные статические ячейки памяти ядра (регистры компилятора)
@@ -142,6 +145,44 @@ set static If_Count       = 0x00000000; // честный счёт if-слото
 set static Jmp_Count      = 0x00000000; // честный счёт else-слотов
 set static Patch_Target     = 0x00000000; // честный target патча JZ (pereklich корней)
 set static JP_Site_Term      = 0x00000000; // Честная позиция потока байта 'te' (target демо)
+set static Boot_Ptr          = 0x00000000; // честный указатель записи в буфер исходника (TKT-052 веха-2)
+set static Boot_Eof          = 0x00000000; // честный статус конца исходника
+set static Boot_Count        = 0x00000000; // честный счётчик прочитанных слов
+set static Boot_Word         = 0x00000000; // честное прочитанное слово
+set static Boot_Emit_Ptr     = 0x00000000; // честный указатель на ячейку результата syscall (Stream_Emit)
+set static Boot_Eof_Ptr      = 0x00000000; // честный указатель на ячейку статуса EOF
+
+// ---------- честный загрузчик исходника (TKT-052 веха-2) ----------
+// Компилятор сам читает свой вход: syscall FILE_GET кладёт 4 байта BE в
+// ячейку Stream_Emit (0x00F00FF0), статус конца — в FILE_EOF_CELL
+// (0x00F00FF2: 0 = слово есть, 1 = честный конец). Слова честно пишутся
+// в буфер исходника store_ind'ом — тот же контракт буфера, что и у сканера.
+// Рекурсивный проход как у Scan_Word_Loop: одно слово за один вызов.
+// Граница честная — MAX_SOURCE_WORDS слов (та же, что у сканера); если
+// к границе EOF не пришёл — исходник длиннее буфера, честный брак
+// BRK_SRC_OVERFLOW (позиция = сколько слов влезло). Без исходника поток
+// честно пуст: первый же FILE_GET даст EOF, скан честно отвергнет слово 0.
+function Boot_Load_Loop() {
+    if (Boot_Eof == 0x00000000) {
+        sys_call(FILE_GET);
+        Boot_Eof = in_cell(Boot_Eof_Ptr);
+        if (Boot_Eof == 0x00000000) {
+            Boot_Word = in_cell(Boot_Emit_Ptr);
+            store_ind(Boot_Ptr, Boot_Word);
+            Boot_Ptr = Boot_Ptr + 4;
+            Boot_Count = Boot_Count + 1;
+            if (Boot_Count == MAX_SOURCE_WORDS) {
+                if (Error_Flag == 0x00000000) {
+                    Fail_Code = BRK_SRC_OVERFLOW;
+                    Fail_Position = Boot_Count;
+                    Error_Flag = 0x00000001;
+                }
+            } else {
+                run Boot_Load_Loop();
+            }
+        }
+    }
+}
 
 // Главная точка входа нативного компилятора (Entry Point)
 pub entry main(cell:raw args) {
@@ -190,6 +231,16 @@ pub entry main(cell:raw args) {
     Node_Brace_Depth = 0;
     Node_Paren_Depth = 0;
     Node_Counter = 0;
+
+    // --- TKT-052 веха-2: честный загрузчик исходника ---
+    // Компилятор сам читает свой вход через syscall FILE_GET (до создания
+    // артефакта — fail-fast: брак исходника виден в отчёте артефакта).
+    Boot_Ptr = SOURCE_CODE_BUFFER;
+    Boot_Eof = 0;
+    Boot_Count = 0;
+    Boot_Emit_Ptr = STREAM_EMIT_CELL;
+    Boot_Eof_Ptr = FILE_EOF_CELL;
+    run Boot_Load_Loop();
 
     // --- 1.7 (TKT-047) + TKT-040 веха-1: честный артефакт-бинарь v1.1 ---
     // Заголовок TKT-009 v1.1 = 20 байт: прежние 16 + контрольное слово тела

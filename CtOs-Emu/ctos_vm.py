@@ -19,14 +19,15 @@ ctos_vm.py — хост-исполнитель бинарников CtOs (.ctos)
     python ctos_vm.py <файл.ctos> [файл2.ctos ...] [--quiet]
       [--steps N]       честный лимит шагов VM (по умолчанию 10 млн)
       [--trace FILE]    честная трасса в файл (консоль остаётся чистой)
-      [--source FILE]   честный загрузчик исходника слово-языка стадии-1
-                        (самосборка, TKT-052): слова через пробел, максимум
-                        2 символа ASCII на слово ('5' -> 0x35, 'sv' -> 0x7673,
-                        где второй символ в старшем байте); терминатор '.'
-                        дописывается честно; слова кладутся в ячейки буфера
-                        исходника 0x00A00000 (контракт TKT-009) с той же
-                        честной границей 16 слов (MAX_SOURCE_WORDS), что и
-                        в компиляторе стадии-1
+      [--source FILE]   честный поток исходника слово-языка стадии-1 для
+                        сисколла FILE_GET 0x137 (самосборка, TKT-052 веха-2):
+                        слова через пробел, максимум 2 символа ASCII на
+                        слово ('5' -> 0x35, 'sv' -> 0x7673, где второй символ
+                        в старшем байте); терминатор '.' дописывается честно;
+                        СЛОВА В БУФЕР 0x00A00000 КЛАДЁТ САМ КОМПИЛЯТОР через
+                        FILE_GET + store_ind (честная граница 16 слов —
+                        MAX_SOURCE_WORDS, контракт TKT-009); без --source
+                        поток честно пуст (первый FILE_GET = EOF)
 
 Флаги честно совместимы со старым поведением: без флагов — как раньше.
 
@@ -83,7 +84,7 @@ class VmFault(Exception):
 
 class CtOsVm:
     def __init__(self, binary, path, trace=True, clock_scale=1,
-                 trace_file=None, max_steps=10_000_000):
+                 trace_file=None, max_steps=10_000_000, source_words=None):
         self.b = binary
         self.path = path
         self.trace = trace
@@ -99,6 +100,10 @@ class CtOsVm:
         self.outfile = None    # честный файл-воркер (стадия-1.5, syscall-слой)
         self.outfile_n = 0     # честный счётчик записанных байт
         self.last_out = None   # честный след: последний вывод в порт (где брак, TKT-035)
+        # честный поток исходника для FILE_GET (TKT-052 веха-2): список слов,
+        # упакованных из текста инструментом; без --source честно пуст
+        self.src_words = list(source_words) if source_words else []
+        self.src_pos = 0       # честная позиция чтения потока исходника
 
     # ---------- лог ----------
     def log(self, line):
@@ -348,10 +353,25 @@ class CtOsVm:
                     raise VmFault("FILE_SEEK: честная позиция 0x%08X вне артефакта — "
                                   "честный брак (%s)" % (pos, exc))
                 self.log("OP_SYSCALL[FILE_SEEK]: честная позиция записи 0x%08X" % pos)
-                self.log("OP_SYSCALL[FILE_SEEK]: честная позиция записи 0x%08X" % pos)
+            elif nid == 0x00000137:   # FILE_GET — честное чтение слова исходника
+                # (TKT-052 веха-2): 4 байта BE из потока исходника -> ячейка
+                # Stream_Emit 0x00F00FF0; статус конца — в File_Eof 0x00F00FF2
+                # (0 = слово есть, 1 = честный конец). Без --source поток
+                # честно пуст: первый же FILE_GET даст EOF, тишины нет.
+                if self.src_pos < len(self.src_words):
+                    val = self.src_words[self.src_pos] & 0xFFFFFFFF
+                    self.src_pos += 1
+                    self.cells[stream_cell] = val
+                    self.cells[0x00F00FF2] = 0
+                    self.log("OP_SYSCALL[FILE_GET]: честное слово 0x%08X <- "
+                             "исходник (%d из %d)" % (val, self.src_pos,
+                                                      len(self.src_words)))
+                else:
+                    self.cells[0x00F00FF2] = 1
+                    self.log("OP_SYSCALL[FILE_GET]: честный конец исходника (EOF)")
             else:
                 raise VmFault("OP_SYSCALL: NID 0x%08X — честный драйвер не зарегистрирован "
-                              "(файл-слой зарегистрирован: NID 0x00000130..0x00000136)" % nid)
+                              "(файл-слой зарегистрирован: NID 0x00000130..0x00000137)" % nid)
             self.pc = pc + 5
         elif op == OP_STORE_A:
             if pc + 5 > len(b):
@@ -494,26 +514,26 @@ def honest_flags(args_in):
     return quiet, steps, trace_path, source_path, files
 
 
-# ---------- честный загрузчик исходника слово-языка (TKT-052 веха-1) ----------
-SOURCE_BUFFER_ADDR = 0x00A00000  # буфер исходника стадии-1 (контракт TKT-009)
-MAX_SOURCE_WORDS = 0x10          # честная граница компилятора стадии-1 (16 слов)
+# ---------- честный поток исходника для FILE_GET (TKT-052 веха-2) ----------
+# Границу длины (MAX_SOURCE_WORDS = 16 слов) честно держит сам компилятор
+# (брак BRK_SRC_OVERFLOW в отчёте артефакта) — инструмент только упаковывает.
 
 
-def load_source_words(vm, path):
-    """Честная упаковка текстового исходника в ячейки буфера стадии-1.
+def build_source_words(path):
+    """Честная упаковка текстового исходника в поток слов для FILE_GET
+    (TKT-052 веха-2; в вехе-1 --source прекэргружал ячейки буфера — с вехи-2
+    честно кормит сисколл чтения, а слова в буфер кладёт САМ компилятор).
 
     Текст = слова через пробел; слово максимум 2 символа ASCII:
       1 символ  -> слово = ord(c)                ('5' -> 0x35, '.' -> 0x2E)
       2 символа -> слово = ord(c1) | ord(c2)<<8  ('sv' -> 0x7673: второй
                    символ честно в старшем байте — тот же порядок, что у
                    загрузчиков стенда и констант KW_* компилятора)
-    Терминатор '.' (CH_WORD_END 0x2E) дописывается честно в конец. Слова
-    пишутся в ячейки 0x00A00000, 0x00A00004, ... — компилятор стадии-1
-    честно читает свой вход оттуда (in_cell по 4-байтовым словам).
-    Граница честная: максимум 16 слов С терминатором (MAX_SOURCE_WORDS
-    компилятора — один и тот же честный лимит с двух сторон).
-    Длиннее 2 символов / не-ASCII / пустой файл / переполнение границы —
-    честный отказ загрузчика, тишины нет.
+    Терминатор '.' (CH_WORD_END 0x2E) дописывается честно в конец потока.
+    Границу длины честно держит САМ компилятор (MAX_SOURCE_WORDS, брак
+    BRK_SRC_OVERFLOW в отчёте артефакта) — инструмент только упаковывает.
+    Длиннее 2 символов / не-ASCII / пустой файл — честный отказ
+    инструмента, тишины нет.
     """
     try:
         with open(path, "r", encoding="utf-8") as f:
@@ -537,14 +557,7 @@ def load_source_words(vm, path):
         w = codes[0] if len(codes) == 1 else (codes[0] | (codes[1] << 8))
         words.append(w & 0xFFFFFFFF)
     words.append(0x2E)  # честный терминатор '.' (CH_WORD_END)
-    if len(words) > MAX_SOURCE_WORDS:
-        raise SystemExit("[VM SOURCE]: %d слов (с терминатором) больше "
-                         "честной границы %d (MAX_SOURCE_WORDS компилятора)"
-                         % (len(words), MAX_SOURCE_WORDS))
-    for i, w in enumerate(words):
-        vm.cells[SOURCE_BUFFER_ADDR + 4 * i] = w
-    vm.log("[VM SOURCE]: '%s' -> %d слов(о) в буфер 0x%08X (терминатор "
-           "включён)" % (path, len(words), SOURCE_BUFFER_ADDR))
+    return words
 
 
 def main(argv):
@@ -563,12 +576,12 @@ def main(argv):
                 fh = open(trace_path, "w", encoding="utf-8")
             with open(path, "rb") as f:
                 binary = f.read()
+            # честный поток исходника (TKT-052 веха-2): слова кормятся
+            # сисколлом FILE_GET, в буфер их кладёт САМ компилятор
+            src_words = build_source_words(source_path) \
+                if source_path is not None else None
             vm = CtOsVm(binary, path, trace=trace, trace_file=fh,
-                        max_steps=steps)
-            if source_path is not None:
-                # честный загрузчик исходника (TKT-052): слова в буфер
-                # стадии-1 ДО исполнения — компилятор честно читает вход
-                load_source_words(vm, source_path)
+                        max_steps=steps, source_words=src_words)
             try:
                 vm.run()
             finally:
