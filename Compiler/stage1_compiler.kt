@@ -35,11 +35,11 @@
 #define: KW_ELSE 0x00007365 // 'es' = else; 4-символьное 'else' честно не собирается в 2-символьных пакетах
 #define: KW_RUN 0x00007572 // 'ru' = run: честный вызов последней 'fu'
 #define: KW_EQ 0x00007165 // 'eq' = сравнить acc со следующим литералом (TKT-050)
-#define: KW_GT 0x00006774 // 'gt' = сравнить acc > следующий литерал (TKT-050 веха-3)
+#define: KW_GT 0x00007467 // 'gt' = сравнить acc > следующий литерал (TKT-050 веха-3)
 #define: KW_LT 0x0000746C // 'lt' = сравнить acc < следующий литерал (TKT-050 веха-3)
 #define: KW_SAVE 0x00007673 // 'sv' = save: cell[WORK_CELL] = acc (TKT-050 веха-2)
-#define: KW_VALUE 0x00007661 // 'va' = value: acc = cell[WORK_CELL] (TKT-050 веха-2)
-#define: KW_RET 0x00007265 // 're' = return: честный выход из функции (TKT-051)
+#define: KW_VALUE 0x00006176 // 'va' = value: acc = cell[WORK_CELL] (TKT-050 веха-2)
+#define: KW_RET 0x00006572 // 're' = return: честный выход из функции (TKT-051)
 #define: KW_TERM          0x00006574 // 'te': terminate -> OP_TERM
 #define: SYM_BRACE_OPEN   0x0000007B // '{'  -> синтаксис, байт НЕ эмитится
 #define: SYM_BRACE_CLOSE  0x0000007D // '}'  -> синтаксис, байт НЕ эмитится

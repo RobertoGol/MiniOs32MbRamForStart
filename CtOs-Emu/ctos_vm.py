@@ -19,6 +19,14 @@ ctos_vm.py — хост-исполнитель бинарников CtOs (.ctos)
     python ctos_vm.py <файл.ctos> [файл2.ctos ...] [--quiet]
       [--steps N]       честный лимит шагов VM (по умолчанию 10 млн)
       [--trace FILE]    честная трасса в файл (консоль остаётся чистой)
+      [--source FILE]   честный загрузчик исходника слово-языка стадии-1
+                        (самосборка, TKT-052): слова через пробел, максимум
+                        2 символа ASCII на слово ('5' -> 0x35, 'sv' -> 0x7673,
+                        где второй символ в старшем байте); терминатор '.'
+                        дописывается честно; слова кладутся в ячейки буфера
+                        исходника 0x00A00000 (контракт TKT-009) с той же
+                        честной границей 16 слов (MAX_SOURCE_WORDS), что и
+                        в компиляторе стадии-1
 
 Флаги честно совместимы со старым поведением: без флагов — как раньше.
 
@@ -85,7 +93,7 @@ class CtOsVm:
         self.static_set = {}  # статические ячейки компилятора (OP_ALLOC_ST)
         self.pc = None
         self.op_count = 0
-        self._t0 = None
+        self._t0 = time.perf_counter()  # честная точка отсчёта лога: и до run() (TKT-052)
         self._acc = 0    # аккумулятор арифметики стадий-0
         self.rts = []    # стек возвратов для OP_CALL / OP_RET
         self.outfile = None    # честный файл-воркер (стадия-1.5, syscall-слой)
@@ -441,6 +449,7 @@ def honest_flags(args_in):
     quiet = False
     steps = 10_000_000
     trace_path = None
+    source_path = None
     files = []
     i = 0
     while i < len(args_in):
@@ -466,21 +475,80 @@ def honest_flags(args_in):
                 raise SystemExit("[VM FLAGS]: --trace требует честный путь "
                                  "к файлу трассы (например --trace out.log)")
             trace_path = args_in[i]
+        elif a == "--source":
+            i += 1
+            if i >= len(args_in):
+                raise SystemExit("[VM FLAGS]: --source требует честный путь "
+                                 "к файлу исходника слово-языка (TKT-052)")
+            source_path = args_in[i]
         elif a.startswith("--"):
             raise SystemExit("[VM FLAGS]: неизвестный флаг '%s' (честные "
-                             "флаги VM: --quiet / --steps N / --trace FILE)"
-                             % a)
+                             "флаги VM: --quiet / --steps N / --trace FILE / "
+                             "--source FILE)" % a)
         else:
             files.append(a)
         i += 1
     if quiet and trace_path is not None:
         raise SystemExit("[VM FLAGS]: конфликт честных флагов: --quiet глушит "
                          "трассу, а --trace FILE её пишет; выбери один")
-    return quiet, steps, trace_path, files
+    return quiet, steps, trace_path, source_path, files
+
+
+# ---------- честный загрузчик исходника слово-языка (TKT-052 веха-1) ----------
+SOURCE_BUFFER_ADDR = 0x00A00000  # буфер исходника стадии-1 (контракт TKT-009)
+MAX_SOURCE_WORDS = 0x10          # честная граница компилятора стадии-1 (16 слов)
+
+
+def load_source_words(vm, path):
+    """Честная упаковка текстового исходника в ячейки буфера стадии-1.
+
+    Текст = слова через пробел; слово максимум 2 символа ASCII:
+      1 символ  -> слово = ord(c)                ('5' -> 0x35, '.' -> 0x2E)
+      2 символа -> слово = ord(c1) | ord(c2)<<8  ('sv' -> 0x7673: второй
+                   символ честно в старшем байте — тот же порядок, что у
+                   загрузчиков стенда и констант KW_* компилятора)
+    Терминатор '.' (CH_WORD_END 0x2E) дописывается честно в конец. Слова
+    пишутся в ячейки 0x00A00000, 0x00A00004, ... — компилятор стадии-1
+    честно читает свой вход оттуда (in_cell по 4-байтовым словам).
+    Граница честная: максимум 16 слов С терминатором (MAX_SOURCE_WORDS
+    компилятора — один и тот же честный лимит с двух сторон).
+    Длиннее 2 символов / не-ASCII / пустой файл / переполнение границы —
+    честный отказ загрузчика, тишины нет.
+    """
+    try:
+        with open(path, "r", encoding="utf-8") as f:
+            text = f.read()
+    except OSError as e:
+        raise SystemExit("[VM SOURCE]: исходник не открыт — %s" % e)
+    tokens = text.split()
+    if not tokens:
+        raise SystemExit("[VM SOURCE]: файл '%s' пуст — компилировать "
+                         "нечего (честный отказ)" % path)
+    words = []
+    for tok in tokens:
+        if len(tok) > 2:
+            raise SystemExit("[VM SOURCE]: токен '%s' длиннее 2 символов — "
+                             "слово-язык стадии-1 честно двухсимвольный"
+                             % tok)
+        codes = [ord(ch) for ch in tok]
+        if any(c > 0xFF for c in codes):
+            raise SystemExit("[VM SOURCE]: токен '%s' не ASCII — честный "
+                             "отказ упаковки" % tok)
+        w = codes[0] if len(codes) == 1 else (codes[0] | (codes[1] << 8))
+        words.append(w & 0xFFFFFFFF)
+    words.append(0x2E)  # честный терминатор '.' (CH_WORD_END)
+    if len(words) > MAX_SOURCE_WORDS:
+        raise SystemExit("[VM SOURCE]: %d слов (с терминатором) больше "
+                         "честной границы %d (MAX_SOURCE_WORDS компилятора)"
+                         % (len(words), MAX_SOURCE_WORDS))
+    for i, w in enumerate(words):
+        vm.cells[SOURCE_BUFFER_ADDR + 4 * i] = w
+    vm.log("[VM SOURCE]: '%s' -> %d слов(о) в буфер 0x%08X (терминатор "
+           "включён)" % (path, len(words), SOURCE_BUFFER_ADDR))
 
 
 def main(argv):
-    quiet, steps, trace_path, args = honest_flags(argv[1:])
+    quiet, steps, trace_path, source_path, args = honest_flags(argv[1:])
     trace = not quiet
     if not args:
         print(__doc__)
@@ -497,6 +565,10 @@ def main(argv):
                 binary = f.read()
             vm = CtOsVm(binary, path, trace=trace, trace_file=fh,
                         max_steps=steps)
+            if source_path is not None:
+                # честный загрузчик исходника (TKT-052): слова в буфер
+                # стадии-1 ДО исполнения — компилятор честно читает вход
+                load_source_words(vm, source_path)
             try:
                 vm.run()
             finally:
