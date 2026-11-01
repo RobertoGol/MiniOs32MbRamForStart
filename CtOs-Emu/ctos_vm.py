@@ -15,6 +15,11 @@ ctos_vm.py — хост-исполнитель бинарников CtOs (.ctos)
           порча файлов ловится честным KERNEL PANIC на загрузке.
   Дальше — поток опкодов (формат аргументов смотри в __init__).
 
+ЧЕСТНОЕ СЛОВО (B-13, 2026-11-01): память и арифметика стадии-0 — строго
+32 бита. Результат `+`/`-` и любая запись в ячейку маскируются `& 0xFFFFFFFF`
+(перенос за 32 бита теряется, как на настоящем железе); раньше VM могла
+положить в ячейку 36-битное значение — нарушение контракта TKT-009.
+
 Запуск:
     python ctos_vm.py <файл.ctos> [файл2.ctos ...] [--quiet]
       [--steps N]       честный лимит шагов VM (по умолчанию 10 млн)
@@ -223,7 +228,7 @@ class CtOsVm:
             # поэтому «ячейка» временно адресуется смещением опкода в файле.
             # Когда стадия-0 начнёт писать адрес (OP_ALLOC_ST + привязка),
             # эта строка будет читать по настоящему адресу из компилятора.
-            self.cells[pc] = getattr(self, "_acc", 0)
+            self.cells[pc] = getattr(self, "_acc", 0) & 0xFFFFFFFF
             self.log("OP_STORE: acc -> ячейка@0x%08X (стадия-0: адрес-заглушка)"
                      % pc)
             self.pc = pc + 1
@@ -232,11 +237,11 @@ class CtOsVm:
                 raise VmFault("OP_LOAD обрезан в конце файла")
             mode, arg = b[pc + 1], struct.unpack_from(C1, b, pc + 2)[0]
             if mode == 0x14:      # склейка «прибавить»
-                self._acc = getattr(self, "_acc", 0) + arg
+                self._acc = (getattr(self, "_acc", 0) + arg) & 0xFFFFFFFF
             elif mode == 0x15:    # прибавить ЗНАЧЕНИЕ ячейки: acc += cell[arg]
-                self._acc = getattr(self, "_acc", 0) + self.cells.get(arg, 0)
+                self._acc = (getattr(self, "_acc", 0) + self.cells.get(arg, 0)) & 0xFFFFFFFF
             elif mode == 0x17:    # честное вычитание константы
-                self._acc = getattr(self, "_acc", 0) - arg
+                self._acc = (getattr(self, "_acc", 0) - arg) & 0xFFFFFFFF
             elif mode == 0x16:    # сравнение «равно?»
                 self._acc = 1 if getattr(self, "_acc", 0) == arg else 0
             elif mode == 0x18:    # сравнение с ЯЧЕЙКОЙ: acc = (acc == cell[arg])
@@ -263,7 +268,7 @@ class CtOsVm:
                 raise VmFault("OP_OUTCELL обрезан в конце файла")
             port = struct.unpack_from(C1, b, pc + 1)[0]
             val = struct.unpack_from(C1, b, pc + 5)[0]
-            self.cells[port] = val
+            self.cells[port] = val & 0xFFFFFFFF
             self.last_out = (self.pc, "OP_OUTCELL", port, val)
             self.log("OP_OUTCELL: порт 0x%08X <- 0x%08X" % (port, val))
             self.pc = pc + 9
@@ -377,7 +382,7 @@ class CtOsVm:
             if pc + 5 > len(b):
                 raise VmFault("OP_STORE_A обрезан в конце файла")
             addr = struct.unpack_from(C1, b, pc + 1)[0]
-            self.cells[addr] = self._acc
+            self.cells[addr] = self._acc & 0xFFFFFFFF
             self.log("OP_STORE_A: cell[0x%08X] = 0x%08X" % (addr, self._acc))
             self.pc = pc + 5
         elif op == OP_INCELL_IND:
@@ -398,7 +403,7 @@ class CtOsVm:
             if addr == 0:
                 raise VmFault("OP_STORE_IND: запись по адресу 0 из ячейки "
                               "0x%08X — указатель не инициализирован" % holder)
-            self.cells[addr] = self._acc
+            self.cells[addr] = self._acc & 0xFFFFFFFF
             self.log("OP_STORE_IND: cell[cell[0x%08X]=0x%08X] = 0x%08X"
                      % (holder, addr, self._acc))
             self.pc = pc + 5
@@ -408,7 +413,7 @@ class CtOsVm:
             port = struct.unpack_from(C1, b, pc + 1)[0]
             var_addr = struct.unpack_from(C1, b, pc + 5)[0]
             val = self.cells.get(var_addr, 0)
-            self.cells[port] = val
+            self.cells[port] = val & 0xFFFFFFFF
             self.last_out = (pc, "OP_OUTCELL_V", port, val)
             self.log("OP_OUTCELL_V: порт 0x%08X <- cell[0x%08X] = 0x%08X"
                      % (port, var_addr, val))
@@ -419,7 +424,7 @@ class CtOsVm:
             if pc + 5 > len(b):
                 raise VmFault("OP_STORE_AT обрезан в конце файла")
             arg = struct.unpack_from(C1, b, pc + 1)[0]
-            self.cells[arg] = getattr(self, "_acc", 0)
+            self.cells[arg] = getattr(self, "_acc", 0) & 0xFFFFFFFF
             self.log("OP_STORE_AT: cell[0x%08X] <- acc = 0x%08X"
                      % (arg, self._acc))
             self.pc = pc + 5
