@@ -42,6 +42,7 @@
 #define: KW_SAVE 0x00007673 // 'sv' = save: cell[WORK_CELL] = acc (TKT-050 веха-2)
 #define: KW_VALUE 0x00006176 // 'va' = value: acc = cell[WORK_CELL] (TKT-050 веха-2)
 #define: KW_RET 0x00006572 // 're' = return: честный выход из функции (TKT-051)
+#define: KW_PR 0x00007270 // 'pr' = print: честный вывод — OP_OUTCELL_V + порт + WORK_CELL (TKT-052 веха-4)
 #define: KW_TERM          0x00006574 // 'te': terminate -> OP_TERM
 #define: SYM_BRACE_OPEN   0x0000007B // '{'  -> синтаксис, байт НЕ эмитится
 #define: SYM_BRACE_CLOSE  0x0000007D // '}'  -> синтаксис, байт НЕ эмитится
@@ -61,6 +62,7 @@
 #define: OP_CONST_CODE 0x00000015 // 0x15 OP_CONST «константа на акк»
 #define: OP_LOAD_CODE 0x00000012 // 0x12 OP_LOAD (режимы: 0x14 add, 0x16 eq, 0x17 sub)
 #define: OP_STORE_AT_CODE 0x00000055 // 0x55 OP_STORE_AT cell[arg] = acc (TKT-050 веха-2)
+#define: OP_OUTCELL_V_CODE 0x00000054 // 0x54 OP_OUTCELL_V — вывод ЗНАЧЕНИЯ ячейки в порт (TKT-052 веха-4 'pr')
 #define: SYM_LIT_BASE  0x00000030 // '0': база честного литерального ряда '0'..'9'
 #define: LIT_D0        0x00000030 // '0' — слово однозначного литерала (сим2==0)
 #define: LIT_D1        0x00000031 // '1'
@@ -254,7 +256,7 @@ pub entry main(cell:raw args) {
     sys_call(FILE_PUT);
     out_cell(STREAM_EMIT_CELL, 0x00000101);  // байт-образ ver-поля 01 01 (LE -> v1.1 с контролем)
     sys_call(FILE_U16);
-    out_cell(STREAM_EMIT_CELL, 0x00000200);  // байт-образ таргета 02 00 (LE -> ARM32)
+    out_cell(STREAM_EMIT_CELL, 0x00000100);  // байт-образ таргета 01 00 (LE -> 0x0001 = ARM32)
     sys_call(FILE_U16);
     out_cell(STREAM_EMIT_CELL, 0x14000000);  // байт-образ entry 14 00 00 00 (LE -> 0x14)
     sys_call(FILE_PUT);
@@ -767,6 +769,24 @@ function Scan_Word_Loop() {
                 out_cell(STREAM_EMIT_CELL, OP_RET_CODE);
                 sys_call(FILE_U8);
                 Emitted_Bytes = Emitted_Bytes + 1;
+                Token_Counter = Token_Counter + 1;
+                Found_Flag = 0x00000001;
+            }
+
+            // 'pr' (TKT-052 веха-4): честный вывод результата — OP_OUTCELL_V
+            // 0x54 + BE32(порт) + BE32(WORK_CELL) = 9 байт; порт честно
+            // покажет значение ячейки W. Слово-программы отныне видят
+            // свой результат не только в трассе VM.
+            if (Current_Char == KW_PR) {
+                out_cell(STREAM_EMIT_CELL, OP_OUTCELL_V_CODE);
+                sys_call(FILE_U8);
+                Emitted_Bytes = Emitted_Bytes + 1;
+                out_cell(STREAM_EMIT_CELL, OUTPUT_BINARY_PORT);
+                sys_call(FILE_PUT);
+                Emitted_Bytes = Emitted_Bytes + 4;
+                out_cell(STREAM_EMIT_CELL, WORK_CELL);
+                sys_call(FILE_PUT);
+                Emitted_Bytes = Emitted_Bytes + 4;
                 Token_Counter = Token_Counter + 1;
                 Found_Flag = 0x00000001;
             }

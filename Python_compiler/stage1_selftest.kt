@@ -27,6 +27,9 @@
 //        counter 2 | error 0 | Lit_Value сверено == 7
 //   Ф5: '12' .                      -> честный отказ (error 1),
 //        честный НОЛЬ эмиссий (компилятор не добавляет от себя ни байта)
+//   Ф14 (TKT-052 веха-4): '7' 'ad' '2' 'sv' 'pr' 'te' .
+//        -> эмиссии 5+6+5+9+1 = 26 Б: CONST 7, LOAD[0x14] 2, STORE_AT W,
+//        OUTCELL_V(порт, W) + TERM; counter 5 | error 0 | Emitted 0xD4
 //
 // Лог честный (серия 0x91xx + фазы):
 //   0x9000 START      0x9001 Ф1 загружена   0x90F0 Ф1 скан завершён
@@ -40,6 +43,8 @@
 //   0x9135 counter==2 0x9150 Lit_Value==7 (честная эмиссия в трассе)
 //   0x9005 Ф5 загружена 0x90F4 Ф5 скан завершён
 //   0x9160 error==1   0x9161 ноль эмиссий (honest fail-fast)
+//   0x9012 Ф14 загружена 0x90F6 Ф14 скан завершён
+//   0x91A6 Ф14 Emitted==0xD4 0x91A7 Ф14 честный TERM==0xD3
 //   отказы: 0x9095/0x9096/0x9097/0x9098/0x9099
 // ===================================================================
 
@@ -66,6 +71,7 @@
 #define: KW_SAVE 0x00007673 // 'sv' = save: cell[WORK_CELL] = acc (TKT-050 веха-2)
 #define: KW_VALUE 0x00006176 // 'va' = value: acc = cell[WORK_CELL] (TKT-050 веха-2)
 #define: KW_RET 0x00006572 // 're' = return: честный выход из функции (TKT-051)
+#define: KW_PR 0x00007270 // 'pr' = print: честный вывод — OP_OUTCELL_V + порт + WORK_CELL (TKT-052 веха-4)
 #define: KW_TERM        0x00006574
 #define: SYM_BRACE_OPEN 0x0000007B
 #define: SYM_BRACE_CLOSE 0x0000007D
@@ -108,6 +114,7 @@
 #define: OP_CONST_CODE  0x00000015 // 0x15 OP_CONST (стадия-1.4)
 #define: OP_LOAD_CODE 0x00000012 // 0x12 OP_LOAD (режимы: 0x14 add, 0x16 eq, 0x17 sub)
 #define: OP_STORE_AT_CODE 0x00000055 // 0x55 OP_STORE_AT cell[arg] = acc (TKT-050 веха-2)
+#define: OP_OUTCELL_V_CODE 0x00000054 // 0x54 OP_OUTCELL_V — вывод ЗНАЧЕНИЯ ячейки в порт (TKT-052 веха-4 'pr')
 #define: SYM_LIT_BASE   0x00000030 // база честного литерального ряда
 #define: LIT_D0         0x00000030 // '0' (сим2==0, односимвольное слово)
 #define: LIT_D1         0x00000031 // '1'
@@ -202,6 +209,41 @@ function Load_Arith_Demo() {
     store_ind(Tmp_Addr, Tmp_Word);
 }
 
+// ---------- Ф14 (TKT-052 веха-4): честный вывод 'pr' ----------
+// Слова: '7' 'ad' '2' 'sv' 'pr' 'te' .
+// Честный эмит: CONST 7 (5Б) -> LOAD[0x14] 2 (6Б, acc=9) -> STORE_AT (5Б,
+// cell[W]=9) -> OUTCELL_V (9Б: 0x54 + BE32(порт) + BE32(WORK_CELL)) ->
+// TERM (1Б) = 26 байт
+function Load_Pr_Demo() {
+    Tmp_Addr = SOURCE_CODE_BUFFER;
+    Tmp_Word = LIT_D7;
+    store_ind(Tmp_Addr, Tmp_Word);
+
+    Tmp_Addr = SOURCE_CODE_BUFFER + 4;
+    Tmp_Word = KW_ADD;
+    store_ind(Tmp_Addr, Tmp_Word);
+
+    Tmp_Addr = SOURCE_CODE_BUFFER + 8;
+    Tmp_Word = LIT_D2;
+    store_ind(Tmp_Addr, Tmp_Word);
+
+    Tmp_Addr = SOURCE_CODE_BUFFER + 12;
+    Tmp_Word = KW_SAVE;
+    store_ind(Tmp_Addr, Tmp_Word);
+
+    Tmp_Addr = SOURCE_CODE_BUFFER + 16;
+    Tmp_Word = KW_PR;
+    store_ind(Tmp_Addr, Tmp_Word);
+
+    Tmp_Addr = SOURCE_CODE_BUFFER + 20;
+    Tmp_Word = KW_TERM;
+    store_ind(Tmp_Addr, Tmp_Word);
+
+    Tmp_Addr = SOURCE_CODE_BUFFER + 24;
+    Tmp_Word = CH_WORD_END;
+    store_ind(Tmp_Addr, Tmp_Word);
+}
+
 pub entry main(cell:raw args) {
     out_cell(LOG_PORT, 0x00009000);      // LOG: стадия-1.3 стенд START
 
@@ -214,7 +256,7 @@ pub entry main(cell:raw args) {
     sys_call(FILE_PUT);
     out_cell(STREAM_EMIT_CELL, 0x00000101);  // байт-образ ver 01 01 (LE -> v1.1 с контролем)
     sys_call(FILE_U16);
-    out_cell(STREAM_EMIT_CELL, 0x00000200);  // байт-образ таргета 02 00 (LE -> ARM32)
+    out_cell(STREAM_EMIT_CELL, 0x00000100);  // байт-образ таргета 01 00 (LE -> 0x0001 = ARM32)
     sys_call(FILE_U16);
     out_cell(STREAM_EMIT_CELL, 0x14000000);  // байт-образ entry 14 00 00 00 (LE -> 0x14)
     sys_call(FILE_PUT);
@@ -691,6 +733,29 @@ pub entry main(cell:raw args) {
         out_cell(LOG_PORT, 0x000091A5);  // LOG: pending чист
     } else {
         out_cell(LOG_PORT, 0x00009099);
+    }
+
+    // ---------- ФАЗА 14 (TKT-052 веха-4): честный вывод 'pr' ----------
+    // Слова: '7' 'ad' '2' 'sv' 'pr' 'te' .  -> честные эмиссии 26 Б:
+    // CONST 7 + LOAD[0x14] 2 + STORE_AT W + OUTCELL_V(порт, W) + TERM
+    out_cell(LOG_PORT, 0x00009012);      // LOG: Ф14 честно загружена
+    run Load_Pr_Demo();
+    run Reset_Scan();
+    run Scan_Word_Loop();
+    out_cell(LOG_PORT, 0x000090F6);      // LOG: Ф14 честный скан завершён
+
+    // честный счёт: поток 186 (после Ф13) + 26 = 212 = 0xD4
+    if (Emitted_Bytes == 0x000000D4) {
+        out_cell(LOG_PORT, 0x000091A6);  // LOG: Ф14 счёт байтов сошёлся
+    } else {
+        out_cell(LOG_PORT, 0x00009099);
+    }
+
+    // честная позиция TERM: последний байт потока = 211 = 0xD3
+    if (JP_Site_Term == 0x000000D3) {
+        out_cell(LOG_PORT, 0x000091A7);  // LOG: Ф14 honest TERM на месте
+    } else {
+        out_cell(LOG_PORT, 0x00009097);
     }
 
     run Write_Artifact_Report();
@@ -1616,6 +1681,23 @@ function Scan_Word_Loop() {
                 out_cell(STREAM_EMIT_CELL, OP_RET_CODE);
                 sys_call(FILE_U8);
                 Emitted_Bytes = Emitted_Bytes + 1;
+                Token_Counter = Token_Counter + 1;
+                Found_Flag = 0x00000001;
+            }
+
+            // 'pr' (TKT-052 веха-4): честный вывод результата — OP_OUTCELL_V
+            // 0x54 + BE32(порт) + BE32(WORK_CELL) = 9 байт; зеркало сайта
+            // компилятора (урок 1.3: сайт живёт в обеих копиях).
+            if (Current_Char == KW_PR) {
+                out_cell(STREAM_EMIT_CELL, OP_OUTCELL_V_CODE);
+                sys_call(FILE_U8);
+                Emitted_Bytes = Emitted_Bytes + 1;
+                out_cell(STREAM_EMIT_CELL, LOG_PORT);
+                sys_call(FILE_PUT);
+                Emitted_Bytes = Emitted_Bytes + 4;
+                out_cell(STREAM_EMIT_CELL, WORK_CELL);
+                sys_call(FILE_PUT);
+                Emitted_Bytes = Emitted_Bytes + 4;
                 Token_Counter = Token_Counter + 1;
                 Found_Flag = 0x00000001;
             }
