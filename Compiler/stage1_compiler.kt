@@ -9,6 +9,18 @@
 // распознавание по первому символу. Здесь его заменяет честная
 // двухсимвольная сигнатура — set/static честно различаются.
 //
+// Веха-5 (TKT-052, 2026-11-03): честные именованные рабочие слоты.
+// Слово 'wc' + следующий литерал d (0..5) честно выбирает слот
+// W2..W7 (0x00F00FF3..0x00F00FF8 — честно свободны по чек-скану репо,
+// соседние с WORK_CELL 0x00F00FF1); 'sv'/'va'/'pr' честно работают
+// с ТЕКУЩИМ слотом (W_Current, default = WORK_CELL, честный завод в
+// main — стадия-0 не пишет инициализаторы статиков в ячейки).
+// Честные отказы BRK_WC_NO_LIT 0x08: второй 'wc' подряд; номер слота
+// вне 0..5 (сайты D6..D9 честно ЗНАЮТ свою цифру по сигнатуре;
+// стадия-0 честно НЕ поддерживает '<=' (код честного брака D025),
+// поэтому диапазон не сравнивается вовсе); 'wc' без номера к концу
+// честная хвост-проверка в вердиктной фазе (позиция = W_Position).
+//
 // Компилятор не добавляет от себя ни байта:
 //   * структурные слова { } ( ) ; НЕ эмитят байт (синтаксис, а не
 //     байткод) — только честный подсчёт Syntax_Counter;
@@ -43,6 +55,8 @@
 #define: KW_VALUE 0x00006176 // 'va' = value: acc = cell[WORK_CELL] (TKT-050 веха-2)
 #define: KW_RET 0x00006572 // 're' = return: честный выход из функции (TKT-051)
 #define: KW_PR 0x00007270 // 'pr' = print: честный вывод — OP_OUTCELL_V + порт + WORK_CELL (TKT-052 веха-4)
+#define: KW_WC 0x00006377 // 'wc' = work cell select: следующий литерал d (0..5) честно выбирает расширенный слот (TKT-052 веха-5)
+#define: WC_BASE 0x00F00FF3 // честная база расширенных рабочих слотов W2..W7 (0x00F00FF3..0x00F00FF8 — соседние с WORK_CELL 0x00F00FF1, по чек-скану репо свободны)
 #define: KW_TERM          0x00006574 // 'te': terminate -> OP_TERM
 #define: SYM_BRACE_OPEN   0x0000007B // '{'  -> синтаксис, байт НЕ эмитится
 #define: SYM_BRACE_CLOSE  0x0000007D // '}'  -> синтаксис, байт НЕ эмитится
@@ -100,6 +114,7 @@
 #define: BRK_NO_FUNC 0x00000005 // 'ru' до любой 'fu' — честный брак (TKT-048 веха-3)
 #define: BRK_EQ_NO_LIT 0x00000006 // 'eq' без следующего литерала — честный брак (TKT-050)
 #define: BRK_SRC_OVERFLOW 0x00000007 // исходник длиннее честного буфера 16 слов (TKT-052 веха-2)
+#define: BRK_WC_NO_LIT 0x00000008 // 'wc' без следующего литерала-номера слота — честный брак (TKT-052 веха-5)
 #define: HDR_BODY_SIZE    0x00000014 // честный размер заголовка v1.1 = 20 байт
 
 // Объявляем глобальные статические ячейки памяти ядра (регистры компилятора)
@@ -139,6 +154,9 @@ set static Is_Digit        = 0x00000000; // честный признак циф
 set static Call_Count       = 0x00000000; // честный счёт занятых слотов вызовов
 set static Op_Pending      = 0x00000000; // честный флаг: ждём литерал для сравнения
 set static Op_Position     = 0x00000000; // честная позиция слова eq (для брака)
+set static W_Current       = 0x00F00FF1; // честный текущий рабочий слот, default = WORK_CELL (TKT-052 веха-5)
+set static W_Pending       = 0x00000000; // честный флаг: 'wc' ждёт литерал 0..5 (TKT-052 веха-5)
+set static W_Position      = 0x00000000; // честная позиция слова wc (для брака) (TKT-052 веха-5)
 set static If_Site_1      = 0x00000000; // честный слот операнда JZ от if
 set static Jmp_Slot_1      = 0x00000000; // честный слот операнда JMP от es
 set static Else_Join_1     = 0x00000000; // честное начало else-тела (target JZ)
@@ -235,6 +253,11 @@ pub entry main(cell:raw args) {
     Node_Brace_Depth = 0;
     Node_Paren_Depth = 0;
     Node_Counter = 0;
+    W_Current = WORK_CELL; // честный завод текущего слота (TKT-052 веха-5):
+                           // стадия-0 честно НЕ пишет инициализаторы статиков
+                           // в ячейки памяти — default = WORK_CELL
+    W_Pending = 0;         // честный pending выбора слота пуст (веха-5)
+    W_Position = 0;        // честная позиция слова wc сброшена (веха-5)
 
     // --- TKT-052 веха-2: честный загрузчик исходника ---
     // Компилятор сам читает свой вход через syscall FILE_GET (до создания
@@ -332,6 +355,20 @@ function NativeLexicalScanner() {
             Error_Flag = 0x00000001;
         }
         Run_Pending = 0x00000000;
+    }
+
+    // TKT-052 веха-5: честная хвост-проверка 'wc' — pending остался
+    // без литерала слота: честный брак BRK_WC_NO_LIT, честная
+    // позиция = W_Position (слово 'wc' само байта не эмитит)
+    if (W_Pending == 0x00000000) {
+        // честно: выборов слота без номера нет
+    } else {
+        if (Error_Flag == 0x00000000) {
+            Fail_Code = BRK_WC_NO_LIT;
+            Fail_Position = W_Position;
+            Error_Flag = 0x00000001;
+        }
+        W_Pending = 0x00000000;
     }
 
     // --- 1.6 (TKT-036): честный отчёт ДОПИСЫВАЕТСЯ в тот же артефакт ---
@@ -730,16 +767,34 @@ function Scan_Word_Loop() {
                 }
             }
 
-            // 'if' -> if -> OP_JZ (0x06) + честный слот (тот же честный механизм)
-            // 'if' -> OP_JZ (0x06) + честный слот If_Site_1; второй 'if' —
-            // честный брак BRK_PATCH_OVERFLOW (fail-fast, правило первый-сбой)
+            // Слово байта НЕ эмитит: ставит W_Pending = 1, следующий
+            // литерал d (0..5) честно переключает W_Current (сайт цифр).
+            // 'wc' при активном ожидании — честный брак BRK_WC_NO_LIT.
+            if (Current_Char == KW_WC) {
+                if (W_Pending == 0x00000000) {
+                    W_Pending = 0x00000001;
+                    W_Position = Word_Index;
+                    Token_Counter = Token_Counter + 1;
+                    Found_Flag = 0x00000001;
+                } else {
+                    // честный отказ: второй 'wc' подряд (первый без номера)
+                    if (Error_Flag == 0x00000000) {
+                        Fail_Code = BRK_WC_NO_LIT;
+                        Fail_Position = Word_Index;
+                        Error_Flag = 0x00000001;
+                        Word_Index = MAX_SOURCE_WORDS;
+                    }
+                }
+            }
+
             // 'sv' (TKT-050 веха-2): честная запись памяти — OP_STORE_AT 0x55
-            // + BE32(WORK_CELL): cell[WORK_CELL] = acc. 5 байт.
+            // + BE32(W_Current): cell[текущий слот] = acc. 5 байт.
+            // Веха-5: слот честно выбирается 'wc d' (default WORK_CELL).
             if (Current_Char == KW_SAVE) {
                 out_cell(STREAM_EMIT_CELL, OP_STORE_AT_CODE);
                 sys_call(FILE_U8);
                 Emitted_Bytes = Emitted_Bytes + 1;
-                out_cell(STREAM_EMIT_CELL, WORK_CELL);
+                log_cell(STREAM_EMIT_CELL, W_Current);
                 sys_call(FILE_PUT);
                 Emitted_Bytes = Emitted_Bytes + 4;
                 Token_Counter = Token_Counter + 1;
@@ -747,7 +802,7 @@ function Scan_Word_Loop() {
             }
 
             // 'va' (TKT-050 веха-2): честная загрузка памяти — OP_LOAD 0x12
-            // + режим 0x19 (acc = cell[arg]) + BE32(WORK_CELL). 6 байт.
+            // + режим 0x19 (acc = cell[arg]) + BE32(W_Current). 6 байт.
             if (Current_Char == KW_VALUE) {
                 out_cell(STREAM_EMIT_CELL, OP_LOAD_CODE);
                 sys_call(FILE_U8);
@@ -755,7 +810,7 @@ function Scan_Word_Loop() {
                 out_cell(STREAM_EMIT_CELL, 0x00000019);
                 sys_call(FILE_U8);
                 Emitted_Bytes = Emitted_Bytes + 1;
-                out_cell(STREAM_EMIT_CELL, WORK_CELL);
+                log_cell(STREAM_EMIT_CELL, W_Current);
                 sys_call(FILE_PUT);
                 Emitted_Bytes = Emitted_Bytes + 4;
                 Token_Counter = Token_Counter + 1;
@@ -774,9 +829,9 @@ function Scan_Word_Loop() {
             }
 
             // 'pr' (TKT-052 веха-4): честный вывод результата — OP_OUTCELL_V
-            // 0x54 + BE32(порт) + BE32(WORK_CELL) = 9 байт; порт честно
-            // покажет значение ячейки W. Слово-программы отныне видят
-            // свой результат не только в трассе VM.
+            // 0x54 + BE32(порт) + BE32(W_Current) = 9 байт; порт честно
+            // покажет значение ТЕКУЩЕГО рабочего слота. Слово-программы
+            // отныне видят свой результат не только в трассе VM.
             if (Current_Char == KW_PR) {
                 out_cell(STREAM_EMIT_CELL, OP_OUTCELL_V_CODE);
                 sys_call(FILE_U8);
@@ -784,7 +839,7 @@ function Scan_Word_Loop() {
                 out_cell(STREAM_EMIT_CELL, OUTPUT_BINARY_PORT);
                 sys_call(FILE_PUT);
                 Emitted_Bytes = Emitted_Bytes + 4;
-                out_cell(STREAM_EMIT_CELL, WORK_CELL);
+                log_cell(STREAM_EMIT_CELL, W_Current);
                 sys_call(FILE_PUT);
                 Emitted_Bytes = Emitted_Bytes + 4;
                 Token_Counter = Token_Counter + 1;
@@ -888,6 +943,9 @@ function Scan_Word_Loop() {
                 }
             }
 
+            // 'if' -> if -> OP_JZ (0x06) + честный слот (тот же честный механизм)
+            // 'if' -> OP_JZ (0x06) + честный слот If_Site_1; второй 'if' —
+            // честный брак BRK_PATCH_OVERFLOW (fail-fast, правило первый-сбой)
             if (Current_Char == KW_IF) {
                 if (If_Count == 0x00000002) {
                     // честный отказ ДО эмиссии: оба if-слота заняты (TKT-050)
@@ -977,1001 +1035,1125 @@ function Scan_Word_Loop() {
             // честно разбиваются по словам — последовательные литералы.
             if (Current_Char == LIT_D0) {
                 Lit_Value = Current_Char - 48;
-                if (Run_Pending == 0x00000001) {
-                    // честный вызов по номеру (TKT-051 веха-3): номер 1..4
-                    Run_Pending = 0x00000000;
-                    if (Lit_Value == 0x00000001) {
-                        Fn_OK = 0x00000001;
-                    } else {
-                        if (Lit_Value == 0x00000002) {
+                if (W_Pending == 0x00000001) {
+                    // 'wc d' (TKT-052 веха-5): сайт D0 честно ЗНАЕТ свою цифру
+                    // по сигнатуре (значение = 0) — она по построению в диапазоне
+                    // 0..5, проверка диапазона не нужна: слот = WC_BASE + d = W2
+                    Tmp_Addr = WC_BASE;
+                    Tmp_Addr = Tmp_Addr + Lit_Value;
+                    W_Current = Tmp_Addr;
+                    W_Pending = 0x00000000;
+                    Token_Counter = Token_Counter + 1;
+                    Found_Flag = 0x00000001;
+                } else {
+                    if (Run_Pending == 0x00000001) {
+                        // честный вызов по номеру (TKT-051 веха-3): номер 1..4
+                        Run_Pending = 0x00000000;
+                        if (Lit_Value == 0x00000001) {
                             Fn_OK = 0x00000001;
                         } else {
-                            if (Lit_Value == 0x00000003) {
+                            if (Lit_Value == 0x00000002) {
                                 Fn_OK = 0x00000001;
                             } else {
-                                if (Lit_Value == 0x00000004) {
+                                if (Lit_Value == 0x00000003) {
                                     Fn_OK = 0x00000001;
                                 } else {
-                                    Fn_OK = 0x00000000;
+                                    if (Lit_Value == 0x00000004) {
+                                        Fn_OK = 0x00000001;
+                                    } else {
+                                        Fn_OK = 0x00000000;
+                                    }
                                 }
                             }
                         }
-                    }
-                    if (Fn_OK == 0x00000001) {
-                        if (Call_Count == 0x00000004) {
-                            // честный отказ ДО эмиссии: все 4 слота заняты
+                        if (Fn_OK == 0x00000001) {
+                            if (Call_Count == 0x00000004) {
+                                // честный отказ ДО эмиссии: все 4 слота заняты
+                                if (Error_Flag == 0x00000000) {
+                                    Fail_Code = BRK_PATCH_OVERFLOW;
+                                    Fail_Position = Word_Index;
+                                    Error_Flag = 0x00000001;
+                                    Word_Index = MAX_SOURCE_WORDS;
+                                }
+                            } else {
+                                out_cell(STREAM_EMIT_CELL, OP_CALL_CODE);
+                                sys_call(FILE_U8);
+                                Emitted_Bytes = Emitted_Bytes + 1;
+                                // честный слот = позиция операнда + номер функции
+                                if (Call_Count == 0x00000000) {
+                                    Call_Site_1 = Emitted_Bytes;
+                                    Call_Fn_1 = Lit_Value;
+                                } else {
+                                    if (Call_Count == 0x00000001) {
+                                        Call_Site_2 = Emitted_Bytes;
+                                        Call_Fn_2 = Lit_Value;
+                                    } else {
+                                        if (Call_Count == 0x00000002) {
+                                            Call_Site_3 = Emitted_Bytes;
+                                            Call_Fn_3 = Lit_Value;
+                                        } else {
+                                            Call_Site_4 = Emitted_Bytes;
+                                            Call_Fn_4 = Lit_Value;
+                                        }
+                                    }
+                                }
+                                Call_Count = Call_Count + 1;
+                                out_cell(STREAM_EMIT_CELL, 0x00000000);
+                                sys_call(FILE_U16);
+                                sys_call(FILE_U16);
+                                Emitted_Bytes = Emitted_Bytes + 4;
+                                Token_Counter = Token_Counter + 1;
+                                Found_Flag = 0x00000001;
+                            }
+                        } else {
+                            // честный отказ ДО эмиссии: номера функции нет (вне 1..4)
                             if (Error_Flag == 0x00000000) {
-                                Fail_Code = BRK_PATCH_OVERFLOW;
+                                Fail_Code = BRK_NO_FUNC;
                                 Fail_Position = Word_Index;
                                 Error_Flag = 0x00000001;
                                 Word_Index = MAX_SOURCE_WORDS;
                             }
-                        } else {
-                            out_cell(STREAM_EMIT_CELL, OP_CALL_CODE);
-                            sys_call(FILE_U8);
-                            Emitted_Bytes = Emitted_Bytes + 1;
-                            // честный слот = позиция операнда + номер функции
-                            if (Call_Count == 0x00000000) {
-                                Call_Site_1 = Emitted_Bytes;
-                                Call_Fn_1 = Lit_Value;
-                            } else {
-                                if (Call_Count == 0x00000001) {
-                                    Call_Site_2 = Emitted_Bytes;
-                                    Call_Fn_2 = Lit_Value;
-                                } else {
-                                    if (Call_Count == 0x00000002) {
-                                        Call_Site_3 = Emitted_Bytes;
-                                        Call_Fn_3 = Lit_Value;
-                                    } else {
-                                        Call_Site_4 = Emitted_Bytes;
-                                        Call_Fn_4 = Lit_Value;
-                                    }
-                                }
-                            }
-                            Call_Count = Call_Count + 1;
-                            out_cell(STREAM_EMIT_CELL, 0x00000000);
-                            sys_call(FILE_U16);
-                            sys_call(FILE_U16);
-                            Emitted_Bytes = Emitted_Bytes + 4;
-                            Token_Counter = Token_Counter + 1;
-                            Found_Flag = 0x00000001;
                         }
                     } else {
-                        // честный отказ ДО эмиссии: номера функции нет (вне 1..4)
-                        if (Error_Flag == 0x00000000) {
-                            Fail_Code = BRK_NO_FUNC;
-                            Fail_Position = Word_Index;
-                            Error_Flag = 0x00000001;
-                            Word_Index = MAX_SOURCE_WORDS;
+                        if (Op_Pending == 0x00000000) {
+                        out_cell(STREAM_EMIT_CELL, OP_CONST_CODE);
+                        sys_call(FILE_U8);
+                        Emitted_Bytes = Emitted_Bytes + 1;
+                        log_cell(STREAM_EMIT_CELL, Lit_Value);
+                        sys_call(FILE_PUT);
+                        Emitted_Bytes = Emitted_Bytes + 4;
+                        Token_Counter = Token_Counter + 1;
+                        Found_Flag = 0x00000001;
+                        } else {
+                        // честная операция (TKT-050 + TKT-052 веха-3): acc = (acc ОП
+                        // Lit_Value); режим честно из Op_Pending (0x14 ad / 0x16 eq /
+                        // 0x17 su / 0x1A gt / 0x1B lt) — OP_LOAD 0x12 + режим + BE32
+                        out_cell(STREAM_EMIT_CELL, OP_LOAD_CODE);
+                        sys_call(FILE_U8);
+                        Emitted_Bytes = Emitted_Bytes + 1;
+                        log_cell(STREAM_EMIT_CELL, Op_Pending);
+                        sys_call(FILE_U8);
+                        Emitted_Bytes = Emitted_Bytes + 1;
+                        log_cell(STREAM_EMIT_CELL, Lit_Value);
+                        sys_call(FILE_PUT);
+                        Emitted_Bytes = Emitted_Bytes + 4;
+                        Op_Pending = 0x00000000;
+                        Token_Counter = Token_Counter + 1;
+                        Found_Flag = 0x00000001;
                         }
                     }
-                } else {
-                if (Op_Pending == 0x00000000) {
-                    out_cell(STREAM_EMIT_CELL, OP_CONST_CODE);
-                    sys_call(FILE_U8);
-                    Emitted_Bytes = Emitted_Bytes + 1;
-                    log_cell(STREAM_EMIT_CELL, Lit_Value);
-                    sys_call(FILE_PUT);
-                    Emitted_Bytes = Emitted_Bytes + 4;
-                    Token_Counter = Token_Counter + 1;
-                    Found_Flag = 0x00000001;
-                } else {
-                    // честная операция (TKT-050 + TKT-052 веха-3): acc = (acc ОП
-                    // Lit_Value); режим честно из Op_Pending (0x14 ad / 0x16 eq /
-                    // 0x17 su / 0x1A gt / 0x1B lt) — OP_LOAD 0x12 + режим + BE32
-                    out_cell(STREAM_EMIT_CELL, OP_LOAD_CODE);
-                    sys_call(FILE_U8);
-                    Emitted_Bytes = Emitted_Bytes + 1;
-                    log_cell(STREAM_EMIT_CELL, Op_Pending);
-                    sys_call(FILE_U8);
-                    Emitted_Bytes = Emitted_Bytes + 1;
-                    log_cell(STREAM_EMIT_CELL, Lit_Value);
-                    sys_call(FILE_PUT);
-                    Emitted_Bytes = Emitted_Bytes + 4;
-                    Op_Pending = 0x00000000;
-                    Token_Counter = Token_Counter + 1;
-                    Found_Flag = 0x00000001;
-                }
                 }
             }
 
             if (Current_Char == LIT_D1) {
                 Lit_Value = Current_Char - 48;
-                if (Run_Pending == 0x00000001) {
-                    // честный вызов по номеру (TKT-051 веха-3): номер 1..4
-                    Run_Pending = 0x00000000;
-                    if (Lit_Value == 0x00000001) {
-                        Fn_OK = 0x00000001;
-                    } else {
-                        if (Lit_Value == 0x00000002) {
+                if (W_Pending == 0x00000001) {
+                    // 'wc d' (TKT-052 веха-5): сайт D1 честно ЗНАЕТ свою цифру
+                    // по сигнатуре (значение = 1) — она по построению в диапазоне
+                    // 0..5, проверка диапазона не нужна: слот = WC_BASE + d = W3
+                    Tmp_Addr = WC_BASE;
+                    Tmp_Addr = Tmp_Addr + Lit_Value;
+                    W_Current = Tmp_Addr;
+                    W_Pending = 0x00000000;
+                    Token_Counter = Token_Counter + 1;
+                    Found_Flag = 0x00000001;
+                } else {
+                    if (Run_Pending == 0x00000001) {
+                        // честный вызов по номеру (TKT-051 веха-3): номер 1..4
+                        Run_Pending = 0x00000000;
+                        if (Lit_Value == 0x00000001) {
                             Fn_OK = 0x00000001;
                         } else {
-                            if (Lit_Value == 0x00000003) {
+                            if (Lit_Value == 0x00000002) {
                                 Fn_OK = 0x00000001;
                             } else {
-                                if (Lit_Value == 0x00000004) {
+                                if (Lit_Value == 0x00000003) {
                                     Fn_OK = 0x00000001;
                                 } else {
-                                    Fn_OK = 0x00000000;
+                                    if (Lit_Value == 0x00000004) {
+                                        Fn_OK = 0x00000001;
+                                    } else {
+                                        Fn_OK = 0x00000000;
+                                    }
                                 }
                             }
                         }
-                    }
-                    if (Fn_OK == 0x00000001) {
-                        if (Call_Count == 0x00000004) {
-                            // честный отказ ДО эмиссии: все 4 слота заняты
+                        if (Fn_OK == 0x00000001) {
+                            if (Call_Count == 0x00000004) {
+                                // честный отказ ДО эмиссии: все 4 слота заняты
+                                if (Error_Flag == 0x00000000) {
+                                    Fail_Code = BRK_PATCH_OVERFLOW;
+                                    Fail_Position = Word_Index;
+                                    Error_Flag = 0x00000001;
+                                    Word_Index = MAX_SOURCE_WORDS;
+                                }
+                            } else {
+                                out_cell(STREAM_EMIT_CELL, OP_CALL_CODE);
+                                sys_call(FILE_U8);
+                                Emitted_Bytes = Emitted_Bytes + 1;
+                                // честный слот = позиция операнда + номер функции
+                                if (Call_Count == 0x00000000) {
+                                    Call_Site_1 = Emitted_Bytes;
+                                    Call_Fn_1 = Lit_Value;
+                                } else {
+                                    if (Call_Count == 0x00000001) {
+                                        Call_Site_2 = Emitted_Bytes;
+                                        Call_Fn_2 = Lit_Value;
+                                    } else {
+                                        if (Call_Count == 0x00000002) {
+                                            Call_Site_3 = Emitted_Bytes;
+                                            Call_Fn_3 = Lit_Value;
+                                        } else {
+                                            Call_Site_4 = Emitted_Bytes;
+                                            Call_Fn_4 = Lit_Value;
+                                        }
+                                    }
+                                }
+                                Call_Count = Call_Count + 1;
+                                out_cell(STREAM_EMIT_CELL, 0x00000000);
+                                sys_call(FILE_U16);
+                                sys_call(FILE_U16);
+                                Emitted_Bytes = Emitted_Bytes + 4;
+                                Token_Counter = Token_Counter + 1;
+                                Found_Flag = 0x00000001;
+                            }
+                        } else {
+                            // честный отказ ДО эмиссии: номера функции нет (вне 1..4)
                             if (Error_Flag == 0x00000000) {
-                                Fail_Code = BRK_PATCH_OVERFLOW;
+                                Fail_Code = BRK_NO_FUNC;
                                 Fail_Position = Word_Index;
                                 Error_Flag = 0x00000001;
                                 Word_Index = MAX_SOURCE_WORDS;
                             }
-                        } else {
-                            out_cell(STREAM_EMIT_CELL, OP_CALL_CODE);
-                            sys_call(FILE_U8);
-                            Emitted_Bytes = Emitted_Bytes + 1;
-                            // честный слот = позиция операнда + номер функции
-                            if (Call_Count == 0x00000000) {
-                                Call_Site_1 = Emitted_Bytes;
-                                Call_Fn_1 = Lit_Value;
-                            } else {
-                                if (Call_Count == 0x00000001) {
-                                    Call_Site_2 = Emitted_Bytes;
-                                    Call_Fn_2 = Lit_Value;
-                                } else {
-                                    if (Call_Count == 0x00000002) {
-                                        Call_Site_3 = Emitted_Bytes;
-                                        Call_Fn_3 = Lit_Value;
-                                    } else {
-                                        Call_Site_4 = Emitted_Bytes;
-                                        Call_Fn_4 = Lit_Value;
-                                    }
-                                }
-                            }
-                            Call_Count = Call_Count + 1;
-                            out_cell(STREAM_EMIT_CELL, 0x00000000);
-                            sys_call(FILE_U16);
-                            sys_call(FILE_U16);
-                            Emitted_Bytes = Emitted_Bytes + 4;
-                            Token_Counter = Token_Counter + 1;
-                            Found_Flag = 0x00000001;
                         }
                     } else {
-                        // честный отказ ДО эмиссии: номера функции нет (вне 1..4)
-                        if (Error_Flag == 0x00000000) {
-                            Fail_Code = BRK_NO_FUNC;
-                            Fail_Position = Word_Index;
-                            Error_Flag = 0x00000001;
-                            Word_Index = MAX_SOURCE_WORDS;
+                        if (Op_Pending == 0x00000000) {
+                        out_cell(STREAM_EMIT_CELL, OP_CONST_CODE);
+                        sys_call(FILE_U8);
+                        Emitted_Bytes = Emitted_Bytes + 1;
+                        log_cell(STREAM_EMIT_CELL, Lit_Value);
+                        sys_call(FILE_PUT);
+                        Emitted_Bytes = Emitted_Bytes + 4;
+                        Token_Counter = Token_Counter + 1;
+                        Found_Flag = 0x00000001;
+                        } else {
+                        // честная операция (TKT-050 + TKT-052 веха-3): acc = (acc ОП
+                        // Lit_Value); режим честно из Op_Pending (0x14 ad / 0x16 eq /
+                        // 0x17 su / 0x1A gt / 0x1B lt) — OP_LOAD 0x12 + режим + BE32
+                        out_cell(STREAM_EMIT_CELL, OP_LOAD_CODE);
+                        sys_call(FILE_U8);
+                        Emitted_Bytes = Emitted_Bytes + 1;
+                        log_cell(STREAM_EMIT_CELL, Op_Pending);
+                        sys_call(FILE_U8);
+                        Emitted_Bytes = Emitted_Bytes + 1;
+                        log_cell(STREAM_EMIT_CELL, Lit_Value);
+                        sys_call(FILE_PUT);
+                        Emitted_Bytes = Emitted_Bytes + 4;
+                        Op_Pending = 0x00000000;
+                        Token_Counter = Token_Counter + 1;
+                        Found_Flag = 0x00000001;
                         }
                     }
-                } else {
-                if (Op_Pending == 0x00000000) {
-                    out_cell(STREAM_EMIT_CELL, OP_CONST_CODE);
-                    sys_call(FILE_U8);
-                    Emitted_Bytes = Emitted_Bytes + 1;
-                    log_cell(STREAM_EMIT_CELL, Lit_Value);
-                    sys_call(FILE_PUT);
-                    Emitted_Bytes = Emitted_Bytes + 4;
-                    Token_Counter = Token_Counter + 1;
-                    Found_Flag = 0x00000001;
-                } else {
-                    // честная операция (TKT-050 + TKT-052 веха-3): acc = (acc ОП
-                    // Lit_Value); режим честно из Op_Pending (0x14 ad / 0x16 eq /
-                    // 0x17 su / 0x1A gt / 0x1B lt) — OP_LOAD 0x12 + режим + BE32
-                    out_cell(STREAM_EMIT_CELL, OP_LOAD_CODE);
-                    sys_call(FILE_U8);
-                    Emitted_Bytes = Emitted_Bytes + 1;
-                    log_cell(STREAM_EMIT_CELL, Op_Pending);
-                    sys_call(FILE_U8);
-                    Emitted_Bytes = Emitted_Bytes + 1;
-                    log_cell(STREAM_EMIT_CELL, Lit_Value);
-                    sys_call(FILE_PUT);
-                    Emitted_Bytes = Emitted_Bytes + 4;
-                    Op_Pending = 0x00000000;
-                    Token_Counter = Token_Counter + 1;
-                    Found_Flag = 0x00000001;
-                }
                 }
             }
 
             if (Current_Char == LIT_D2) {
                 Lit_Value = Current_Char - 48;
-                if (Run_Pending == 0x00000001) {
-                    // честный вызов по номеру (TKT-051 веха-3): номер 1..4
-                    Run_Pending = 0x00000000;
-                    if (Lit_Value == 0x00000001) {
-                        Fn_OK = 0x00000001;
-                    } else {
-                        if (Lit_Value == 0x00000002) {
+                if (W_Pending == 0x00000001) {
+                    // 'wc d' (TKT-052 веха-5): сайт D2 честно ЗНАЕТ свою цифру
+                    // по сигнатуре (значение = 2) — она по построению в диапазоне
+                    // 0..5, проверка диапазона не нужна: слот = WC_BASE + d = W4
+                    Tmp_Addr = WC_BASE;
+                    Tmp_Addr = Tmp_Addr + Lit_Value;
+                    W_Current = Tmp_Addr;
+                    W_Pending = 0x00000000;
+                    Token_Counter = Token_Counter + 1;
+                    Found_Flag = 0x00000001;
+                } else {
+                    if (Run_Pending == 0x00000001) {
+                        // честный вызов по номеру (TKT-051 веха-3): номер 1..4
+                        Run_Pending = 0x00000000;
+                        if (Lit_Value == 0x00000001) {
                             Fn_OK = 0x00000001;
                         } else {
-                            if (Lit_Value == 0x00000003) {
+                            if (Lit_Value == 0x00000002) {
                                 Fn_OK = 0x00000001;
                             } else {
-                                if (Lit_Value == 0x00000004) {
+                                if (Lit_Value == 0x00000003) {
                                     Fn_OK = 0x00000001;
                                 } else {
-                                    Fn_OK = 0x00000000;
+                                    if (Lit_Value == 0x00000004) {
+                                        Fn_OK = 0x00000001;
+                                    } else {
+                                        Fn_OK = 0x00000000;
+                                    }
                                 }
                             }
                         }
-                    }
-                    if (Fn_OK == 0x00000001) {
-                        if (Call_Count == 0x00000004) {
-                            // честный отказ ДО эмиссии: все 4 слота заняты
+                        if (Fn_OK == 0x00000001) {
+                            if (Call_Count == 0x00000004) {
+                                // честный отказ ДО эмиссии: все 4 слота заняты
+                                if (Error_Flag == 0x00000000) {
+                                    Fail_Code = BRK_PATCH_OVERFLOW;
+                                    Fail_Position = Word_Index;
+                                    Error_Flag = 0x00000001;
+                                    Word_Index = MAX_SOURCE_WORDS;
+                                }
+                            } else {
+                                out_cell(STREAM_EMIT_CELL, OP_CALL_CODE);
+                                sys_call(FILE_U8);
+                                Emitted_Bytes = Emitted_Bytes + 1;
+                                // честный слот = позиция операнда + номер функции
+                                if (Call_Count == 0x00000000) {
+                                    Call_Site_1 = Emitted_Bytes;
+                                    Call_Fn_1 = Lit_Value;
+                                } else {
+                                    if (Call_Count == 0x00000001) {
+                                        Call_Site_2 = Emitted_Bytes;
+                                        Call_Fn_2 = Lit_Value;
+                                    } else {
+                                        if (Call_Count == 0x00000002) {
+                                            Call_Site_3 = Emitted_Bytes;
+                                            Call_Fn_3 = Lit_Value;
+                                        } else {
+                                            Call_Site_4 = Emitted_Bytes;
+                                            Call_Fn_4 = Lit_Value;
+                                        }
+                                    }
+                                }
+                                Call_Count = Call_Count + 1;
+                                out_cell(STREAM_EMIT_CELL, 0x00000000);
+                                sys_call(FILE_U16);
+                                sys_call(FILE_U16);
+                                Emitted_Bytes = Emitted_Bytes + 4;
+                                Token_Counter = Token_Counter + 1;
+                                Found_Flag = 0x00000001;
+                            }
+                        } else {
+                            // честный отказ ДО эмиссии: номера функции нет (вне 1..4)
                             if (Error_Flag == 0x00000000) {
-                                Fail_Code = BRK_PATCH_OVERFLOW;
+                                Fail_Code = BRK_NO_FUNC;
                                 Fail_Position = Word_Index;
                                 Error_Flag = 0x00000001;
                                 Word_Index = MAX_SOURCE_WORDS;
                             }
-                        } else {
-                            out_cell(STREAM_EMIT_CELL, OP_CALL_CODE);
-                            sys_call(FILE_U8);
-                            Emitted_Bytes = Emitted_Bytes + 1;
-                            // честный слот = позиция операнда + номер функции
-                            if (Call_Count == 0x00000000) {
-                                Call_Site_1 = Emitted_Bytes;
-                                Call_Fn_1 = Lit_Value;
-                            } else {
-                                if (Call_Count == 0x00000001) {
-                                    Call_Site_2 = Emitted_Bytes;
-                                    Call_Fn_2 = Lit_Value;
-                                } else {
-                                    if (Call_Count == 0x00000002) {
-                                        Call_Site_3 = Emitted_Bytes;
-                                        Call_Fn_3 = Lit_Value;
-                                    } else {
-                                        Call_Site_4 = Emitted_Bytes;
-                                        Call_Fn_4 = Lit_Value;
-                                    }
-                                }
-                            }
-                            Call_Count = Call_Count + 1;
-                            out_cell(STREAM_EMIT_CELL, 0x00000000);
-                            sys_call(FILE_U16);
-                            sys_call(FILE_U16);
-                            Emitted_Bytes = Emitted_Bytes + 4;
-                            Token_Counter = Token_Counter + 1;
-                            Found_Flag = 0x00000001;
                         }
                     } else {
-                        // честный отказ ДО эмиссии: номера функции нет (вне 1..4)
-                        if (Error_Flag == 0x00000000) {
-                            Fail_Code = BRK_NO_FUNC;
-                            Fail_Position = Word_Index;
-                            Error_Flag = 0x00000001;
-                            Word_Index = MAX_SOURCE_WORDS;
+                        if (Op_Pending == 0x00000000) {
+                        out_cell(STREAM_EMIT_CELL, OP_CONST_CODE);
+                        sys_call(FILE_U8);
+                        Emitted_Bytes = Emitted_Bytes + 1;
+                        log_cell(STREAM_EMIT_CELL, Lit_Value);
+                        sys_call(FILE_PUT);
+                        Emitted_Bytes = Emitted_Bytes + 4;
+                        Token_Counter = Token_Counter + 1;
+                        Found_Flag = 0x00000001;
+                        } else {
+                        // честная операция (TKT-050 + TKT-052 веха-3): acc = (acc ОП
+                        // Lit_Value); режим честно из Op_Pending (0x14 ad / 0x16 eq /
+                        // 0x17 su / 0x1A gt / 0x1B lt) — OP_LOAD 0x12 + режим + BE32
+                        out_cell(STREAM_EMIT_CELL, OP_LOAD_CODE);
+                        sys_call(FILE_U8);
+                        Emitted_Bytes = Emitted_Bytes + 1;
+                        log_cell(STREAM_EMIT_CELL, Op_Pending);
+                        sys_call(FILE_U8);
+                        Emitted_Bytes = Emitted_Bytes + 1;
+                        log_cell(STREAM_EMIT_CELL, Lit_Value);
+                        sys_call(FILE_PUT);
+                        Emitted_Bytes = Emitted_Bytes + 4;
+                        Op_Pending = 0x00000000;
+                        Token_Counter = Token_Counter + 1;
+                        Found_Flag = 0x00000001;
                         }
                     }
-                } else {
-                if (Op_Pending == 0x00000000) {
-                    out_cell(STREAM_EMIT_CELL, OP_CONST_CODE);
-                    sys_call(FILE_U8);
-                    Emitted_Bytes = Emitted_Bytes + 1;
-                    log_cell(STREAM_EMIT_CELL, Lit_Value);
-                    sys_call(FILE_PUT);
-                    Emitted_Bytes = Emitted_Bytes + 4;
-                    Token_Counter = Token_Counter + 1;
-                    Found_Flag = 0x00000001;
-                } else {
-                    // честная операция (TKT-050 + TKT-052 веха-3): acc = (acc ОП
-                    // Lit_Value); режим честно из Op_Pending (0x14 ad / 0x16 eq /
-                    // 0x17 su / 0x1A gt / 0x1B lt) — OP_LOAD 0x12 + режим + BE32
-                    out_cell(STREAM_EMIT_CELL, OP_LOAD_CODE);
-                    sys_call(FILE_U8);
-                    Emitted_Bytes = Emitted_Bytes + 1;
-                    log_cell(STREAM_EMIT_CELL, Op_Pending);
-                    sys_call(FILE_U8);
-                    Emitted_Bytes = Emitted_Bytes + 1;
-                    log_cell(STREAM_EMIT_CELL, Lit_Value);
-                    sys_call(FILE_PUT);
-                    Emitted_Bytes = Emitted_Bytes + 4;
-                    Op_Pending = 0x00000000;
-                    Token_Counter = Token_Counter + 1;
-                    Found_Flag = 0x00000001;
-                }
                 }
             }
 
             if (Current_Char == LIT_D3) {
                 Lit_Value = Current_Char - 48;
-                if (Run_Pending == 0x00000001) {
-                    // честный вызов по номеру (TKT-051 веха-3): номер 1..4
-                    Run_Pending = 0x00000000;
-                    if (Lit_Value == 0x00000001) {
-                        Fn_OK = 0x00000001;
-                    } else {
-                        if (Lit_Value == 0x00000002) {
+                if (W_Pending == 0x00000001) {
+                    // 'wc d' (TKT-052 веха-5): сайт D3 честно ЗНАЕТ свою цифру
+                    // по сигнатуре (значение = 3) — она по построению в диапазоне
+                    // 0..5, проверка диапазона не нужна: слот = WC_BASE + d = W5
+                    Tmp_Addr = WC_BASE;
+                    Tmp_Addr = Tmp_Addr + Lit_Value;
+                    W_Current = Tmp_Addr;
+                    W_Pending = 0x00000000;
+                    Token_Counter = Token_Counter + 1;
+                    Found_Flag = 0x00000001;
+                } else {
+                    if (Run_Pending == 0x00000001) {
+                        // честный вызов по номеру (TKT-051 веха-3): номер 1..4
+                        Run_Pending = 0x00000000;
+                        if (Lit_Value == 0x00000001) {
                             Fn_OK = 0x00000001;
                         } else {
-                            if (Lit_Value == 0x00000003) {
+                            if (Lit_Value == 0x00000002) {
                                 Fn_OK = 0x00000001;
                             } else {
-                                if (Lit_Value == 0x00000004) {
+                                if (Lit_Value == 0x00000003) {
                                     Fn_OK = 0x00000001;
                                 } else {
-                                    Fn_OK = 0x00000000;
+                                    if (Lit_Value == 0x00000004) {
+                                        Fn_OK = 0x00000001;
+                                    } else {
+                                        Fn_OK = 0x00000000;
+                                    }
                                 }
                             }
                         }
-                    }
-                    if (Fn_OK == 0x00000001) {
-                        if (Call_Count == 0x00000004) {
-                            // честный отказ ДО эмиссии: все 4 слота заняты
+                        if (Fn_OK == 0x00000001) {
+                            if (Call_Count == 0x00000004) {
+                                // честный отказ ДО эмиссии: все 4 слота заняты
+                                if (Error_Flag == 0x00000000) {
+                                    Fail_Code = BRK_PATCH_OVERFLOW;
+                                    Fail_Position = Word_Index;
+                                    Error_Flag = 0x00000001;
+                                    Word_Index = MAX_SOURCE_WORDS;
+                                }
+                            } else {
+                                out_cell(STREAM_EMIT_CELL, OP_CALL_CODE);
+                                sys_call(FILE_U8);
+                                Emitted_Bytes = Emitted_Bytes + 1;
+                                // честный слот = позиция операнда + номер функции
+                                if (Call_Count == 0x00000000) {
+                                    Call_Site_1 = Emitted_Bytes;
+                                    Call_Fn_1 = Lit_Value;
+                                } else {
+                                    if (Call_Count == 0x00000001) {
+                                        Call_Site_2 = Emitted_Bytes;
+                                        Call_Fn_2 = Lit_Value;
+                                    } else {
+                                        if (Call_Count == 0x00000002) {
+                                            Call_Site_3 = Emitted_Bytes;
+                                            Call_Fn_3 = Lit_Value;
+                                        } else {
+                                            Call_Site_4 = Emitted_Bytes;
+                                            Call_Fn_4 = Lit_Value;
+                                        }
+                                    }
+                                }
+                                Call_Count = Call_Count + 1;
+                                out_cell(STREAM_EMIT_CELL, 0x00000000);
+                                sys_call(FILE_U16);
+                                sys_call(FILE_U16);
+                                Emitted_Bytes = Emitted_Bytes + 4;
+                                Token_Counter = Token_Counter + 1;
+                                Found_Flag = 0x00000001;
+                            }
+                        } else {
+                            // честный отказ ДО эмиссии: номера функции нет (вне 1..4)
                             if (Error_Flag == 0x00000000) {
-                                Fail_Code = BRK_PATCH_OVERFLOW;
+                                Fail_Code = BRK_NO_FUNC;
                                 Fail_Position = Word_Index;
                                 Error_Flag = 0x00000001;
                                 Word_Index = MAX_SOURCE_WORDS;
                             }
-                        } else {
-                            out_cell(STREAM_EMIT_CELL, OP_CALL_CODE);
-                            sys_call(FILE_U8);
-                            Emitted_Bytes = Emitted_Bytes + 1;
-                            // честный слот = позиция операнда + номер функции
-                            if (Call_Count == 0x00000000) {
-                                Call_Site_1 = Emitted_Bytes;
-                                Call_Fn_1 = Lit_Value;
-                            } else {
-                                if (Call_Count == 0x00000001) {
-                                    Call_Site_2 = Emitted_Bytes;
-                                    Call_Fn_2 = Lit_Value;
-                                } else {
-                                    if (Call_Count == 0x00000002) {
-                                        Call_Site_3 = Emitted_Bytes;
-                                        Call_Fn_3 = Lit_Value;
-                                    } else {
-                                        Call_Site_4 = Emitted_Bytes;
-                                        Call_Fn_4 = Lit_Value;
-                                    }
-                                }
-                            }
-                            Call_Count = Call_Count + 1;
-                            out_cell(STREAM_EMIT_CELL, 0x00000000);
-                            sys_call(FILE_U16);
-                            sys_call(FILE_U16);
-                            Emitted_Bytes = Emitted_Bytes + 4;
-                            Token_Counter = Token_Counter + 1;
-                            Found_Flag = 0x00000001;
                         }
                     } else {
-                        // честный отказ ДО эмиссии: номера функции нет (вне 1..4)
-                        if (Error_Flag == 0x00000000) {
-                            Fail_Code = BRK_NO_FUNC;
-                            Fail_Position = Word_Index;
-                            Error_Flag = 0x00000001;
-                            Word_Index = MAX_SOURCE_WORDS;
+                        if (Op_Pending == 0x00000000) {
+                        out_cell(STREAM_EMIT_CELL, OP_CONST_CODE);
+                        sys_call(FILE_U8);
+                        Emitted_Bytes = Emitted_Bytes + 1;
+                        log_cell(STREAM_EMIT_CELL, Lit_Value);
+                        sys_call(FILE_PUT);
+                        Emitted_Bytes = Emitted_Bytes + 4;
+                        Token_Counter = Token_Counter + 1;
+                        Found_Flag = 0x00000001;
+                        } else {
+                        // честная операция (TKT-050 + TKT-052 веха-3): acc = (acc ОП
+                        // Lit_Value); режим честно из Op_Pending (0x14 ad / 0x16 eq /
+                        // 0x17 su / 0x1A gt / 0x1B lt) — OP_LOAD 0x12 + режим + BE32
+                        out_cell(STREAM_EMIT_CELL, OP_LOAD_CODE);
+                        sys_call(FILE_U8);
+                        Emitted_Bytes = Emitted_Bytes + 1;
+                        log_cell(STREAM_EMIT_CELL, Op_Pending);
+                        sys_call(FILE_U8);
+                        Emitted_Bytes = Emitted_Bytes + 1;
+                        log_cell(STREAM_EMIT_CELL, Lit_Value);
+                        sys_call(FILE_PUT);
+                        Emitted_Bytes = Emitted_Bytes + 4;
+                        Op_Pending = 0x00000000;
+                        Token_Counter = Token_Counter + 1;
+                        Found_Flag = 0x00000001;
                         }
                     }
-                } else {
-                if (Op_Pending == 0x00000000) {
-                    out_cell(STREAM_EMIT_CELL, OP_CONST_CODE);
-                    sys_call(FILE_U8);
-                    Emitted_Bytes = Emitted_Bytes + 1;
-                    log_cell(STREAM_EMIT_CELL, Lit_Value);
-                    sys_call(FILE_PUT);
-                    Emitted_Bytes = Emitted_Bytes + 4;
-                    Token_Counter = Token_Counter + 1;
-                    Found_Flag = 0x00000001;
-                } else {
-                    // честная операция (TKT-050 + TKT-052 веха-3): acc = (acc ОП
-                    // Lit_Value); режим честно из Op_Pending (0x14 ad / 0x16 eq /
-                    // 0x17 su / 0x1A gt / 0x1B lt) — OP_LOAD 0x12 + режим + BE32
-                    out_cell(STREAM_EMIT_CELL, OP_LOAD_CODE);
-                    sys_call(FILE_U8);
-                    Emitted_Bytes = Emitted_Bytes + 1;
-                    log_cell(STREAM_EMIT_CELL, Op_Pending);
-                    sys_call(FILE_U8);
-                    Emitted_Bytes = Emitted_Bytes + 1;
-                    log_cell(STREAM_EMIT_CELL, Lit_Value);
-                    sys_call(FILE_PUT);
-                    Emitted_Bytes = Emitted_Bytes + 4;
-                    Op_Pending = 0x00000000;
-                    Token_Counter = Token_Counter + 1;
-                    Found_Flag = 0x00000001;
-                }
                 }
             }
 
             if (Current_Char == LIT_D4) {
                 Lit_Value = Current_Char - 48;
-                if (Run_Pending == 0x00000001) {
-                    // честный вызов по номеру (TKT-051 веха-3): номер 1..4
-                    Run_Pending = 0x00000000;
-                    if (Lit_Value == 0x00000001) {
-                        Fn_OK = 0x00000001;
-                    } else {
-                        if (Lit_Value == 0x00000002) {
+                if (W_Pending == 0x00000001) {
+                    // 'wc d' (TKT-052 веха-5): сайт D4 честно ЗНАЕТ свою цифру
+                    // по сигнатуре (значение = 4) — она по построению в диапазоне
+                    // 0..5, проверка диапазона не нужна: слот = WC_BASE + d = W6
+                    Tmp_Addr = WC_BASE;
+                    Tmp_Addr = Tmp_Addr + Lit_Value;
+                    W_Current = Tmp_Addr;
+                    W_Pending = 0x00000000;
+                    Token_Counter = Token_Counter + 1;
+                    Found_Flag = 0x00000001;
+                } else {
+                    if (Run_Pending == 0x00000001) {
+                        // честный вызов по номеру (TKT-051 веха-3): номер 1..4
+                        Run_Pending = 0x00000000;
+                        if (Lit_Value == 0x00000001) {
                             Fn_OK = 0x00000001;
                         } else {
-                            if (Lit_Value == 0x00000003) {
+                            if (Lit_Value == 0x00000002) {
                                 Fn_OK = 0x00000001;
                             } else {
-                                if (Lit_Value == 0x00000004) {
+                                if (Lit_Value == 0x00000003) {
                                     Fn_OK = 0x00000001;
                                 } else {
-                                    Fn_OK = 0x00000000;
+                                    if (Lit_Value == 0x00000004) {
+                                        Fn_OK = 0x00000001;
+                                    } else {
+                                        Fn_OK = 0x00000000;
+                                    }
                                 }
                             }
                         }
-                    }
-                    if (Fn_OK == 0x00000001) {
-                        if (Call_Count == 0x00000004) {
-                            // честный отказ ДО эмиссии: все 4 слота заняты
+                        if (Fn_OK == 0x00000001) {
+                            if (Call_Count == 0x00000004) {
+                                // честный отказ ДО эмиссии: все 4 слота заняты
+                                if (Error_Flag == 0x00000000) {
+                                    Fail_Code = BRK_PATCH_OVERFLOW;
+                                    Fail_Position = Word_Index;
+                                    Error_Flag = 0x00000001;
+                                    Word_Index = MAX_SOURCE_WORDS;
+                                }
+                            } else {
+                                out_cell(STREAM_EMIT_CELL, OP_CALL_CODE);
+                                sys_call(FILE_U8);
+                                Emitted_Bytes = Emitted_Bytes + 1;
+                                // честный слот = позиция операнда + номер функции
+                                if (Call_Count == 0x00000000) {
+                                    Call_Site_1 = Emitted_Bytes;
+                                    Call_Fn_1 = Lit_Value;
+                                } else {
+                                    if (Call_Count == 0x00000001) {
+                                        Call_Site_2 = Emitted_Bytes;
+                                        Call_Fn_2 = Lit_Value;
+                                    } else {
+                                        if (Call_Count == 0x00000002) {
+                                            Call_Site_3 = Emitted_Bytes;
+                                            Call_Fn_3 = Lit_Value;
+                                        } else {
+                                            Call_Site_4 = Emitted_Bytes;
+                                            Call_Fn_4 = Lit_Value;
+                                        }
+                                    }
+                                }
+                                Call_Count = Call_Count + 1;
+                                out_cell(STREAM_EMIT_CELL, 0x00000000);
+                                sys_call(FILE_U16);
+                                sys_call(FILE_U16);
+                                Emitted_Bytes = Emitted_Bytes + 4;
+                                Token_Counter = Token_Counter + 1;
+                                Found_Flag = 0x00000001;
+                            }
+                        } else {
+                            // честный отказ ДО эмиссии: номера функции нет (вне 1..4)
                             if (Error_Flag == 0x00000000) {
-                                Fail_Code = BRK_PATCH_OVERFLOW;
+                                Fail_Code = BRK_NO_FUNC;
                                 Fail_Position = Word_Index;
                                 Error_Flag = 0x00000001;
                                 Word_Index = MAX_SOURCE_WORDS;
                             }
-                        } else {
-                            out_cell(STREAM_EMIT_CELL, OP_CALL_CODE);
-                            sys_call(FILE_U8);
-                            Emitted_Bytes = Emitted_Bytes + 1;
-                            // честный слот = позиция операнда + номер функции
-                            if (Call_Count == 0x00000000) {
-                                Call_Site_1 = Emitted_Bytes;
-                                Call_Fn_1 = Lit_Value;
-                            } else {
-                                if (Call_Count == 0x00000001) {
-                                    Call_Site_2 = Emitted_Bytes;
-                                    Call_Fn_2 = Lit_Value;
-                                } else {
-                                    if (Call_Count == 0x00000002) {
-                                        Call_Site_3 = Emitted_Bytes;
-                                        Call_Fn_3 = Lit_Value;
-                                    } else {
-                                        Call_Site_4 = Emitted_Bytes;
-                                        Call_Fn_4 = Lit_Value;
-                                    }
-                                }
-                            }
-                            Call_Count = Call_Count + 1;
-                            out_cell(STREAM_EMIT_CELL, 0x00000000);
-                            sys_call(FILE_U16);
-                            sys_call(FILE_U16);
-                            Emitted_Bytes = Emitted_Bytes + 4;
-                            Token_Counter = Token_Counter + 1;
-                            Found_Flag = 0x00000001;
                         }
                     } else {
-                        // честный отказ ДО эмиссии: номера функции нет (вне 1..4)
-                        if (Error_Flag == 0x00000000) {
-                            Fail_Code = BRK_NO_FUNC;
-                            Fail_Position = Word_Index;
-                            Error_Flag = 0x00000001;
-                            Word_Index = MAX_SOURCE_WORDS;
+                        if (Op_Pending == 0x00000000) {
+                        out_cell(STREAM_EMIT_CELL, OP_CONST_CODE);
+                        sys_call(FILE_U8);
+                        Emitted_Bytes = Emitted_Bytes + 1;
+                        log_cell(STREAM_EMIT_CELL, Lit_Value);
+                        sys_call(FILE_PUT);
+                        Emitted_Bytes = Emitted_Bytes + 4;
+                        Token_Counter = Token_Counter + 1;
+                        Found_Flag = 0x00000001;
+                        } else {
+                        // честная операция (TKT-050 + TKT-052 веха-3): acc = (acc ОП
+                        // Lit_Value); режим честно из Op_Pending (0x14 ad / 0x16 eq /
+                        // 0x17 su / 0x1A gt / 0x1B lt) — OP_LOAD 0x12 + режим + BE32
+                        out_cell(STREAM_EMIT_CELL, OP_LOAD_CODE);
+                        sys_call(FILE_U8);
+                        Emitted_Bytes = Emitted_Bytes + 1;
+                        log_cell(STREAM_EMIT_CELL, Op_Pending);
+                        sys_call(FILE_U8);
+                        Emitted_Bytes = Emitted_Bytes + 1;
+                        log_cell(STREAM_EMIT_CELL, Lit_Value);
+                        sys_call(FILE_PUT);
+                        Emitted_Bytes = Emitted_Bytes + 4;
+                        Op_Pending = 0x00000000;
+                        Token_Counter = Token_Counter + 1;
+                        Found_Flag = 0x00000001;
                         }
                     }
-                } else {
-                if (Op_Pending == 0x00000000) {
-                    out_cell(STREAM_EMIT_CELL, OP_CONST_CODE);
-                    sys_call(FILE_U8);
-                    Emitted_Bytes = Emitted_Bytes + 1;
-                    log_cell(STREAM_EMIT_CELL, Lit_Value);
-                    sys_call(FILE_PUT);
-                    Emitted_Bytes = Emitted_Bytes + 4;
-                    Token_Counter = Token_Counter + 1;
-                    Found_Flag = 0x00000001;
-                } else {
-                    // честная операция (TKT-050 + TKT-052 веха-3): acc = (acc ОП
-                    // Lit_Value); режим честно из Op_Pending (0x14 ad / 0x16 eq /
-                    // 0x17 su / 0x1A gt / 0x1B lt) — OP_LOAD 0x12 + режим + BE32
-                    out_cell(STREAM_EMIT_CELL, OP_LOAD_CODE);
-                    sys_call(FILE_U8);
-                    Emitted_Bytes = Emitted_Bytes + 1;
-                    log_cell(STREAM_EMIT_CELL, Op_Pending);
-                    sys_call(FILE_U8);
-                    Emitted_Bytes = Emitted_Bytes + 1;
-                    log_cell(STREAM_EMIT_CELL, Lit_Value);
-                    sys_call(FILE_PUT);
-                    Emitted_Bytes = Emitted_Bytes + 4;
-                    Op_Pending = 0x00000000;
-                    Token_Counter = Token_Counter + 1;
-                    Found_Flag = 0x00000001;
-                }
                 }
             }
 
             if (Current_Char == LIT_D5) {
                 Lit_Value = Current_Char - 48;
-                if (Run_Pending == 0x00000001) {
-                    // честный вызов по номеру (TKT-051 веха-3): номер 1..4
-                    Run_Pending = 0x00000000;
-                    if (Lit_Value == 0x00000001) {
-                        Fn_OK = 0x00000001;
-                    } else {
-                        if (Lit_Value == 0x00000002) {
+                if (W_Pending == 0x00000001) {
+                    // 'wc d' (TKT-052 веха-5): сайт D5 честно ЗНАЕТ свою цифру
+                    // по сигнатуре (значение = 5) — она по построению в диапазоне
+                    // 0..5, проверка диапазона не нужна: слот = WC_BASE + d = W7
+                    Tmp_Addr = WC_BASE;
+                    Tmp_Addr = Tmp_Addr + Lit_Value;
+                    W_Current = Tmp_Addr;
+                    W_Pending = 0x00000000;
+                    Token_Counter = Token_Counter + 1;
+                    Found_Flag = 0x00000001;
+                } else {
+                    if (Run_Pending == 0x00000001) {
+                        // честный вызов по номеру (TKT-051 веха-3): номер 1..4
+                        Run_Pending = 0x00000000;
+                        if (Lit_Value == 0x00000001) {
                             Fn_OK = 0x00000001;
                         } else {
-                            if (Lit_Value == 0x00000003) {
+                            if (Lit_Value == 0x00000002) {
                                 Fn_OK = 0x00000001;
                             } else {
-                                if (Lit_Value == 0x00000004) {
+                                if (Lit_Value == 0x00000003) {
                                     Fn_OK = 0x00000001;
                                 } else {
-                                    Fn_OK = 0x00000000;
+                                    if (Lit_Value == 0x00000004) {
+                                        Fn_OK = 0x00000001;
+                                    } else {
+                                        Fn_OK = 0x00000000;
+                                    }
                                 }
                             }
                         }
-                    }
-                    if (Fn_OK == 0x00000001) {
-                        if (Call_Count == 0x00000004) {
-                            // честный отказ ДО эмиссии: все 4 слота заняты
+                        if (Fn_OK == 0x00000001) {
+                            if (Call_Count == 0x00000004) {
+                                // честный отказ ДО эмиссии: все 4 слота заняты
+                                if (Error_Flag == 0x00000000) {
+                                    Fail_Code = BRK_PATCH_OVERFLOW;
+                                    Fail_Position = Word_Index;
+                                    Error_Flag = 0x00000001;
+                                    Word_Index = MAX_SOURCE_WORDS;
+                                }
+                            } else {
+                                out_cell(STREAM_EMIT_CELL, OP_CALL_CODE);
+                                sys_call(FILE_U8);
+                                Emitted_Bytes = Emitted_Bytes + 1;
+                                // честный слот = позиция операнда + номер функции
+                                if (Call_Count == 0x00000000) {
+                                    Call_Site_1 = Emitted_Bytes;
+                                    Call_Fn_1 = Lit_Value;
+                                } else {
+                                    if (Call_Count == 0x00000001) {
+                                        Call_Site_2 = Emitted_Bytes;
+                                        Call_Fn_2 = Lit_Value;
+                                    } else {
+                                        if (Call_Count == 0x00000002) {
+                                            Call_Site_3 = Emitted_Bytes;
+                                            Call_Fn_3 = Lit_Value;
+                                        } else {
+                                            Call_Site_4 = Emitted_Bytes;
+                                            Call_Fn_4 = Lit_Value;
+                                        }
+                                    }
+                                }
+                                Call_Count = Call_Count + 1;
+                                out_cell(STREAM_EMIT_CELL, 0x00000000);
+                                sys_call(FILE_U16);
+                                sys_call(FILE_U16);
+                                Emitted_Bytes = Emitted_Bytes + 4;
+                                Token_Counter = Token_Counter + 1;
+                                Found_Flag = 0x00000001;
+                            }
+                        } else {
+                            // честный отказ ДО эмиссии: номера функции нет (вне 1..4)
                             if (Error_Flag == 0x00000000) {
-                                Fail_Code = BRK_PATCH_OVERFLOW;
+                                Fail_Code = BRK_NO_FUNC;
                                 Fail_Position = Word_Index;
                                 Error_Flag = 0x00000001;
                                 Word_Index = MAX_SOURCE_WORDS;
                             }
-                        } else {
-                            out_cell(STREAM_EMIT_CELL, OP_CALL_CODE);
-                            sys_call(FILE_U8);
-                            Emitted_Bytes = Emitted_Bytes + 1;
-                            // честный слот = позиция операнда + номер функции
-                            if (Call_Count == 0x00000000) {
-                                Call_Site_1 = Emitted_Bytes;
-                                Call_Fn_1 = Lit_Value;
-                            } else {
-                                if (Call_Count == 0x00000001) {
-                                    Call_Site_2 = Emitted_Bytes;
-                                    Call_Fn_2 = Lit_Value;
-                                } else {
-                                    if (Call_Count == 0x00000002) {
-                                        Call_Site_3 = Emitted_Bytes;
-                                        Call_Fn_3 = Lit_Value;
-                                    } else {
-                                        Call_Site_4 = Emitted_Bytes;
-                                        Call_Fn_4 = Lit_Value;
-                                    }
-                                }
-                            }
-                            Call_Count = Call_Count + 1;
-                            out_cell(STREAM_EMIT_CELL, 0x00000000);
-                            sys_call(FILE_U16);
-                            sys_call(FILE_U16);
-                            Emitted_Bytes = Emitted_Bytes + 4;
-                            Token_Counter = Token_Counter + 1;
-                            Found_Flag = 0x00000001;
                         }
                     } else {
-                        // честный отказ ДО эмиссии: номера функции нет (вне 1..4)
-                        if (Error_Flag == 0x00000000) {
-                            Fail_Code = BRK_NO_FUNC;
-                            Fail_Position = Word_Index;
-                            Error_Flag = 0x00000001;
-                            Word_Index = MAX_SOURCE_WORDS;
+                        if (Op_Pending == 0x00000000) {
+                        out_cell(STREAM_EMIT_CELL, OP_CONST_CODE);
+                        sys_call(FILE_U8);
+                        Emitted_Bytes = Emitted_Bytes + 1;
+                        log_cell(STREAM_EMIT_CELL, Lit_Value);
+                        sys_call(FILE_PUT);
+                        Emitted_Bytes = Emitted_Bytes + 4;
+                        Token_Counter = Token_Counter + 1;
+                        Found_Flag = 0x00000001;
+                        } else {
+                        // честная операция (TKT-050 + TKT-052 веха-3): acc = (acc ОП
+                        // Lit_Value); режим честно из Op_Pending (0x14 ad / 0x16 eq /
+                        // 0x17 su / 0x1A gt / 0x1B lt) — OP_LOAD 0x12 + режим + BE32
+                        out_cell(STREAM_EMIT_CELL, OP_LOAD_CODE);
+                        sys_call(FILE_U8);
+                        Emitted_Bytes = Emitted_Bytes + 1;
+                        log_cell(STREAM_EMIT_CELL, Op_Pending);
+                        sys_call(FILE_U8);
+                        Emitted_Bytes = Emitted_Bytes + 1;
+                        log_cell(STREAM_EMIT_CELL, Lit_Value);
+                        sys_call(FILE_PUT);
+                        Emitted_Bytes = Emitted_Bytes + 4;
+                        Op_Pending = 0x00000000;
+                        Token_Counter = Token_Counter + 1;
+                        Found_Flag = 0x00000001;
                         }
                     }
-                } else {
-                if (Op_Pending == 0x00000000) {
-                    out_cell(STREAM_EMIT_CELL, OP_CONST_CODE);
-                    sys_call(FILE_U8);
-                    Emitted_Bytes = Emitted_Bytes + 1;
-                    log_cell(STREAM_EMIT_CELL, Lit_Value);
-                    sys_call(FILE_PUT);
-                    Emitted_Bytes = Emitted_Bytes + 4;
-                    Token_Counter = Token_Counter + 1;
-                    Found_Flag = 0x00000001;
-                } else {
-                    // честная операция (TKT-050 + TKT-052 веха-3): acc = (acc ОП
-                    // Lit_Value); режим честно из Op_Pending (0x14 ad / 0x16 eq /
-                    // 0x17 su / 0x1A gt / 0x1B lt) — OP_LOAD 0x12 + режим + BE32
-                    out_cell(STREAM_EMIT_CELL, OP_LOAD_CODE);
-                    sys_call(FILE_U8);
-                    Emitted_Bytes = Emitted_Bytes + 1;
-                    log_cell(STREAM_EMIT_CELL, Op_Pending);
-                    sys_call(FILE_U8);
-                    Emitted_Bytes = Emitted_Bytes + 1;
-                    log_cell(STREAM_EMIT_CELL, Lit_Value);
-                    sys_call(FILE_PUT);
-                    Emitted_Bytes = Emitted_Bytes + 4;
-                    Op_Pending = 0x00000000;
-                    Token_Counter = Token_Counter + 1;
-                    Found_Flag = 0x00000001;
-                }
                 }
             }
 
             if (Current_Char == LIT_D6) {
                 Lit_Value = Current_Char - 48;
-                if (Run_Pending == 0x00000001) {
-                    // честный вызов по номеру (TKT-051 веха-3): номер 1..4
-                    Run_Pending = 0x00000000;
-                    if (Lit_Value == 0x00000001) {
-                        Fn_OK = 0x00000001;
-                    } else {
-                        if (Lit_Value == 0x00000002) {
+                if (W_Pending == 0x00000001) {
+                    // 'wc d' (TKT-052 веха-5): сайт D6 честно ЗНАЕТ свою цифру
+                    // по сигнатуре (значение = 6) — она ВНЕ диапазона 0..5,
+                    // честный брак ДО эмиссии: цифра после 'wc' честно не
+                    // эмитит ни байта (BRK_WC_NO_LIT, тот же честный вектор)
+                    if (Error_Flag == 0x00000000) {
+                        Fail_Code = BRK_WC_NO_LIT;
+                        Fail_Position = Word_Index;
+                        Error_Flag = 0x00000001;
+                        Word_Index = MAX_SOURCE_WORDS;
+                    }
+                } else {
+                    if (Run_Pending == 0x00000001) {
+                        // честный вызов по номеру (TKT-051 веха-3): номер 1..4
+                        Run_Pending = 0x00000000;
+                        if (Lit_Value == 0x00000001) {
                             Fn_OK = 0x00000001;
                         } else {
-                            if (Lit_Value == 0x00000003) {
+                            if (Lit_Value == 0x00000002) {
                                 Fn_OK = 0x00000001;
                             } else {
-                                if (Lit_Value == 0x00000004) {
+                                if (Lit_Value == 0x00000003) {
                                     Fn_OK = 0x00000001;
                                 } else {
-                                    Fn_OK = 0x00000000;
+                                    if (Lit_Value == 0x00000004) {
+                                        Fn_OK = 0x00000001;
+                                    } else {
+                                        Fn_OK = 0x00000000;
+                                    }
                                 }
                             }
                         }
-                    }
-                    if (Fn_OK == 0x00000001) {
-                        if (Call_Count == 0x00000004) {
-                            // честный отказ ДО эмиссии: все 4 слота заняты
+                        if (Fn_OK == 0x00000001) {
+                            if (Call_Count == 0x00000004) {
+                                // честный отказ ДО эмиссии: все 4 слота заняты
+                                if (Error_Flag == 0x00000000) {
+                                    Fail_Code = BRK_PATCH_OVERFLOW;
+                                    Fail_Position = Word_Index;
+                                    Error_Flag = 0x00000001;
+                                    Word_Index = MAX_SOURCE_WORDS;
+                                }
+                            } else {
+                                out_cell(STREAM_EMIT_CELL, OP_CALL_CODE);
+                                sys_call(FILE_U8);
+                                Emitted_Bytes = Emitted_Bytes + 1;
+                                // честный слот = позиция операнда + номер функции
+                                if (Call_Count == 0x00000000) {
+                                    Call_Site_1 = Emitted_Bytes;
+                                    Call_Fn_1 = Lit_Value;
+                                } else {
+                                    if (Call_Count == 0x00000001) {
+                                        Call_Site_2 = Emitted_Bytes;
+                                        Call_Fn_2 = Lit_Value;
+                                    } else {
+                                        if (Call_Count == 0x00000002) {
+                                            Call_Site_3 = Emitted_Bytes;
+                                            Call_Fn_3 = Lit_Value;
+                                        } else {
+                                            Call_Site_4 = Emitted_Bytes;
+                                            Call_Fn_4 = Lit_Value;
+                                        }
+                                    }
+                                }
+                                Call_Count = Call_Count + 1;
+                                out_cell(STREAM_EMIT_CELL, 0x00000000);
+                                sys_call(FILE_U16);
+                                sys_call(FILE_U16);
+                                Emitted_Bytes = Emitted_Bytes + 4;
+                                Token_Counter = Token_Counter + 1;
+                                Found_Flag = 0x00000001;
+                            }
+                        } else {
+                            // честный отказ ДО эмиссии: номера функции нет (вне 1..4)
                             if (Error_Flag == 0x00000000) {
-                                Fail_Code = BRK_PATCH_OVERFLOW;
+                                Fail_Code = BRK_NO_FUNC;
                                 Fail_Position = Word_Index;
                                 Error_Flag = 0x00000001;
                                 Word_Index = MAX_SOURCE_WORDS;
                             }
-                        } else {
-                            out_cell(STREAM_EMIT_CELL, OP_CALL_CODE);
-                            sys_call(FILE_U8);
-                            Emitted_Bytes = Emitted_Bytes + 1;
-                            // честный слот = позиция операнда + номер функции
-                            if (Call_Count == 0x00000000) {
-                                Call_Site_1 = Emitted_Bytes;
-                                Call_Fn_1 = Lit_Value;
-                            } else {
-                                if (Call_Count == 0x00000001) {
-                                    Call_Site_2 = Emitted_Bytes;
-                                    Call_Fn_2 = Lit_Value;
-                                } else {
-                                    if (Call_Count == 0x00000002) {
-                                        Call_Site_3 = Emitted_Bytes;
-                                        Call_Fn_3 = Lit_Value;
-                                    } else {
-                                        Call_Site_4 = Emitted_Bytes;
-                                        Call_Fn_4 = Lit_Value;
-                                    }
-                                }
-                            }
-                            Call_Count = Call_Count + 1;
-                            out_cell(STREAM_EMIT_CELL, 0x00000000);
-                            sys_call(FILE_U16);
-                            sys_call(FILE_U16);
-                            Emitted_Bytes = Emitted_Bytes + 4;
-                            Token_Counter = Token_Counter + 1;
-                            Found_Flag = 0x00000001;
                         }
                     } else {
-                        // честный отказ ДО эмиссии: номера функции нет (вне 1..4)
-                        if (Error_Flag == 0x00000000) {
-                            Fail_Code = BRK_NO_FUNC;
-                            Fail_Position = Word_Index;
-                            Error_Flag = 0x00000001;
-                            Word_Index = MAX_SOURCE_WORDS;
+                        if (Op_Pending == 0x00000000) {
+                        out_cell(STREAM_EMIT_CELL, OP_CONST_CODE);
+                        sys_call(FILE_U8);
+                        Emitted_Bytes = Emitted_Bytes + 1;
+                        log_cell(STREAM_EMIT_CELL, Lit_Value);
+                        sys_call(FILE_PUT);
+                        Emitted_Bytes = Emitted_Bytes + 4;
+                        Token_Counter = Token_Counter + 1;
+                        Found_Flag = 0x00000001;
+                        } else {
+                        // честная операция (TKT-050 + TKT-052 веха-3): acc = (acc ОП
+                        // Lit_Value); режим честно из Op_Pending (0x14 ad / 0x16 eq /
+                        // 0x17 su / 0x1A gt / 0x1B lt) — OP_LOAD 0x12 + режим + BE32
+                        out_cell(STREAM_EMIT_CELL, OP_LOAD_CODE);
+                        sys_call(FILE_U8);
+                        Emitted_Bytes = Emitted_Bytes + 1;
+                        log_cell(STREAM_EMIT_CELL, Op_Pending);
+                        sys_call(FILE_U8);
+                        Emitted_Bytes = Emitted_Bytes + 1;
+                        log_cell(STREAM_EMIT_CELL, Lit_Value);
+                        sys_call(FILE_PUT);
+                        Emitted_Bytes = Emitted_Bytes + 4;
+                        Op_Pending = 0x00000000;
+                        Token_Counter = Token_Counter + 1;
+                        Found_Flag = 0x00000001;
                         }
                     }
-                } else {
-                if (Op_Pending == 0x00000000) {
-                    out_cell(STREAM_EMIT_CELL, OP_CONST_CODE);
-                    sys_call(FILE_U8);
-                    Emitted_Bytes = Emitted_Bytes + 1;
-                    log_cell(STREAM_EMIT_CELL, Lit_Value);
-                    sys_call(FILE_PUT);
-                    Emitted_Bytes = Emitted_Bytes + 4;
-                    Token_Counter = Token_Counter + 1;
-                    Found_Flag = 0x00000001;
-                } else {
-                    // честная операция (TKT-050 + TKT-052 веха-3): acc = (acc ОП
-                    // Lit_Value); режим честно из Op_Pending (0x14 ad / 0x16 eq /
-                    // 0x17 su / 0x1A gt / 0x1B lt) — OP_LOAD 0x12 + режим + BE32
-                    out_cell(STREAM_EMIT_CELL, OP_LOAD_CODE);
-                    sys_call(FILE_U8);
-                    Emitted_Bytes = Emitted_Bytes + 1;
-                    log_cell(STREAM_EMIT_CELL, Op_Pending);
-                    sys_call(FILE_U8);
-                    Emitted_Bytes = Emitted_Bytes + 1;
-                    log_cell(STREAM_EMIT_CELL, Lit_Value);
-                    sys_call(FILE_PUT);
-                    Emitted_Bytes = Emitted_Bytes + 4;
-                    Op_Pending = 0x00000000;
-                    Token_Counter = Token_Counter + 1;
-                    Found_Flag = 0x00000001;
-                }
                 }
             }
 
             if (Current_Char == LIT_D7) {
                 Lit_Value = Current_Char - 48;
-                if (Run_Pending == 0x00000001) {
-                    // честный вызов по номеру (TKT-051 веха-3): номер 1..4
-                    Run_Pending = 0x00000000;
-                    if (Lit_Value == 0x00000001) {
-                        Fn_OK = 0x00000001;
-                    } else {
-                        if (Lit_Value == 0x00000002) {
+                if (W_Pending == 0x00000001) {
+                    // 'wc d' (TKT-052 веха-5): сайт D7 честно ЗНАЕТ свою цифру
+                    // по сигнатуре (значение = 7) — она ВНЕ диапазона 0..5,
+                    // честный брак ДО эмиссии: цифра после 'wc' честно не
+                    // эмитит ни байта (BRK_WC_NO_LIT, тот же честный вектор)
+                    if (Error_Flag == 0x00000000) {
+                        Fail_Code = BRK_WC_NO_LIT;
+                        Fail_Position = Word_Index;
+                        Error_Flag = 0x00000001;
+                        Word_Index = MAX_SOURCE_WORDS;
+                    }
+                } else {
+                    if (Run_Pending == 0x00000001) {
+                        // честный вызов по номеру (TKT-051 веха-3): номер 1..4
+                        Run_Pending = 0x00000000;
+                        if (Lit_Value == 0x00000001) {
                             Fn_OK = 0x00000001;
                         } else {
-                            if (Lit_Value == 0x00000003) {
+                            if (Lit_Value == 0x00000002) {
                                 Fn_OK = 0x00000001;
                             } else {
-                                if (Lit_Value == 0x00000004) {
+                                if (Lit_Value == 0x00000003) {
                                     Fn_OK = 0x00000001;
                                 } else {
-                                    Fn_OK = 0x00000000;
+                                    if (Lit_Value == 0x00000004) {
+                                        Fn_OK = 0x00000001;
+                                    } else {
+                                        Fn_OK = 0x00000000;
+                                    }
                                 }
                             }
                         }
-                    }
-                    if (Fn_OK == 0x00000001) {
-                        if (Call_Count == 0x00000004) {
-                            // честный отказ ДО эмиссии: все 4 слота заняты
+                        if (Fn_OK == 0x00000001) {
+                            if (Call_Count == 0x00000004) {
+                                // честный отказ ДО эмиссии: все 4 слота заняты
+                                if (Error_Flag == 0x00000000) {
+                                    Fail_Code = BRK_PATCH_OVERFLOW;
+                                    Fail_Position = Word_Index;
+                                    Error_Flag = 0x00000001;
+                                    Word_Index = MAX_SOURCE_WORDS;
+                                }
+                            } else {
+                                out_cell(STREAM_EMIT_CELL, OP_CALL_CODE);
+                                sys_call(FILE_U8);
+                                Emitted_Bytes = Emitted_Bytes + 1;
+                                // честный слот = позиция операнда + номер функции
+                                if (Call_Count == 0x00000000) {
+                                    Call_Site_1 = Emitted_Bytes;
+                                    Call_Fn_1 = Lit_Value;
+                                } else {
+                                    if (Call_Count == 0x00000001) {
+                                        Call_Site_2 = Emitted_Bytes;
+                                        Call_Fn_2 = Lit_Value;
+                                    } else {
+                                        if (Call_Count == 0x00000002) {
+                                            Call_Site_3 = Emitted_Bytes;
+                                            Call_Fn_3 = Lit_Value;
+                                        } else {
+                                            Call_Site_4 = Emitted_Bytes;
+                                            Call_Fn_4 = Lit_Value;
+                                        }
+                                    }
+                                }
+                                Call_Count = Call_Count + 1;
+                                out_cell(STREAM_EMIT_CELL, 0x00000000);
+                                sys_call(FILE_U16);
+                                sys_call(FILE_U16);
+                                Emitted_Bytes = Emitted_Bytes + 4;
+                                Token_Counter = Token_Counter + 1;
+                                Found_Flag = 0x00000001;
+                            }
+                        } else {
+                            // честный отказ ДО эмиссии: номера функции нет (вне 1..4)
                             if (Error_Flag == 0x00000000) {
-                                Fail_Code = BRK_PATCH_OVERFLOW;
+                                Fail_Code = BRK_NO_FUNC;
                                 Fail_Position = Word_Index;
                                 Error_Flag = 0x00000001;
                                 Word_Index = MAX_SOURCE_WORDS;
                             }
-                        } else {
-                            out_cell(STREAM_EMIT_CELL, OP_CALL_CODE);
-                            sys_call(FILE_U8);
-                            Emitted_Bytes = Emitted_Bytes + 1;
-                            // честный слот = позиция операнда + номер функции
-                            if (Call_Count == 0x00000000) {
-                                Call_Site_1 = Emitted_Bytes;
-                                Call_Fn_1 = Lit_Value;
-                            } else {
-                                if (Call_Count == 0x00000001) {
-                                    Call_Site_2 = Emitted_Bytes;
-                                    Call_Fn_2 = Lit_Value;
-                                } else {
-                                    if (Call_Count == 0x00000002) {
-                                        Call_Site_3 = Emitted_Bytes;
-                                        Call_Fn_3 = Lit_Value;
-                                    } else {
-                                        Call_Site_4 = Emitted_Bytes;
-                                        Call_Fn_4 = Lit_Value;
-                                    }
-                                }
-                            }
-                            Call_Count = Call_Count + 1;
-                            out_cell(STREAM_EMIT_CELL, 0x00000000);
-                            sys_call(FILE_U16);
-                            sys_call(FILE_U16);
-                            Emitted_Bytes = Emitted_Bytes + 4;
-                            Token_Counter = Token_Counter + 1;
-                            Found_Flag = 0x00000001;
                         }
                     } else {
-                        // честный отказ ДО эмиссии: номера функции нет (вне 1..4)
-                        if (Error_Flag == 0x00000000) {
-                            Fail_Code = BRK_NO_FUNC;
-                            Fail_Position = Word_Index;
-                            Error_Flag = 0x00000001;
-                            Word_Index = MAX_SOURCE_WORDS;
+                        if (Op_Pending == 0x00000000) {
+                        out_cell(STREAM_EMIT_CELL, OP_CONST_CODE);
+                        sys_call(FILE_U8);
+                        Emitted_Bytes = Emitted_Bytes + 1;
+                        log_cell(STREAM_EMIT_CELL, Lit_Value);
+                        sys_call(FILE_PUT);
+                        Emitted_Bytes = Emitted_Bytes + 4;
+                        Token_Counter = Token_Counter + 1;
+                        Found_Flag = 0x00000001;
+                        } else {
+                        // честная операция (TKT-050 + TKT-052 веха-3): acc = (acc ОП
+                        // Lit_Value); режим честно из Op_Pending (0x14 ad / 0x16 eq /
+                        // 0x17 su / 0x1A gt / 0x1B lt) — OP_LOAD 0x12 + режим + BE32
+                        out_cell(STREAM_EMIT_CELL, OP_LOAD_CODE);
+                        sys_call(FILE_U8);
+                        Emitted_Bytes = Emitted_Bytes + 1;
+                        log_cell(STREAM_EMIT_CELL, Op_Pending);
+                        sys_call(FILE_U8);
+                        Emitted_Bytes = Emitted_Bytes + 1;
+                        log_cell(STREAM_EMIT_CELL, Lit_Value);
+                        sys_call(FILE_PUT);
+                        Emitted_Bytes = Emitted_Bytes + 4;
+                        Op_Pending = 0x00000000;
+                        Token_Counter = Token_Counter + 1;
+                        Found_Flag = 0x00000001;
                         }
                     }
-                } else {
-                if (Op_Pending == 0x00000000) {
-                    out_cell(STREAM_EMIT_CELL, OP_CONST_CODE);
-                    sys_call(FILE_U8);
-                    Emitted_Bytes = Emitted_Bytes + 1;
-                    log_cell(STREAM_EMIT_CELL, Lit_Value);
-                    sys_call(FILE_PUT);
-                    Emitted_Bytes = Emitted_Bytes + 4;
-                    Token_Counter = Token_Counter + 1;
-                    Found_Flag = 0x00000001;
-                } else {
-                    // честная операция (TKT-050 + TKT-052 веха-3): acc = (acc ОП
-                    // Lit_Value); режим честно из Op_Pending (0x14 ad / 0x16 eq /
-                    // 0x17 su / 0x1A gt / 0x1B lt) — OP_LOAD 0x12 + режим + BE32
-                    out_cell(STREAM_EMIT_CELL, OP_LOAD_CODE);
-                    sys_call(FILE_U8);
-                    Emitted_Bytes = Emitted_Bytes + 1;
-                    log_cell(STREAM_EMIT_CELL, Op_Pending);
-                    sys_call(FILE_U8);
-                    Emitted_Bytes = Emitted_Bytes + 1;
-                    log_cell(STREAM_EMIT_CELL, Lit_Value);
-                    sys_call(FILE_PUT);
-                    Emitted_Bytes = Emitted_Bytes + 4;
-                    Op_Pending = 0x00000000;
-                    Token_Counter = Token_Counter + 1;
-                    Found_Flag = 0x00000001;
-                }
                 }
             }
 
             if (Current_Char == LIT_D8) {
                 Lit_Value = Current_Char - 48;
-                if (Run_Pending == 0x00000001) {
-                    // честный вызов по номеру (TKT-051 веха-3): номер 1..4
-                    Run_Pending = 0x00000000;
-                    if (Lit_Value == 0x00000001) {
-                        Fn_OK = 0x00000001;
-                    } else {
-                        if (Lit_Value == 0x00000002) {
+                if (W_Pending == 0x00000001) {
+                    // 'wc d' (TKT-052 веха-5): сайт D8 честно ЗНАЕТ свою цифру
+                    // по сигнатуре (значение = 8) — она ВНЕ диапазона 0..5,
+                    // честный брак ДО эмиссии: цифра после 'wc' честно не
+                    // эмитит ни байта (BRK_WC_NO_LIT, тот же честный вектор)
+                    if (Error_Flag == 0x00000000) {
+                        Fail_Code = BRK_WC_NO_LIT;
+                        Fail_Position = Word_Index;
+                        Error_Flag = 0x00000001;
+                        Word_Index = MAX_SOURCE_WORDS;
+                    }
+                } else {
+                    if (Run_Pending == 0x00000001) {
+                        // честный вызов по номеру (TKT-051 веха-3): номер 1..4
+                        Run_Pending = 0x00000000;
+                        if (Lit_Value == 0x00000001) {
                             Fn_OK = 0x00000001;
                         } else {
-                            if (Lit_Value == 0x00000003) {
+                            if (Lit_Value == 0x00000002) {
                                 Fn_OK = 0x00000001;
                             } else {
-                                if (Lit_Value == 0x00000004) {
+                                if (Lit_Value == 0x00000003) {
                                     Fn_OK = 0x00000001;
                                 } else {
-                                    Fn_OK = 0x00000000;
+                                    if (Lit_Value == 0x00000004) {
+                                        Fn_OK = 0x00000001;
+                                    } else {
+                                        Fn_OK = 0x00000000;
+                                    }
                                 }
                             }
                         }
-                    }
-                    if (Fn_OK == 0x00000001) {
-                        if (Call_Count == 0x00000004) {
-                            // честный отказ ДО эмиссии: все 4 слота заняты
+                        if (Fn_OK == 0x00000001) {
+                            if (Call_Count == 0x00000004) {
+                                // честный отказ ДО эмиссии: все 4 слота заняты
+                                if (Error_Flag == 0x00000000) {
+                                    Fail_Code = BRK_PATCH_OVERFLOW;
+                                    Fail_Position = Word_Index;
+                                    Error_Flag = 0x00000001;
+                                    Word_Index = MAX_SOURCE_WORDS;
+                                }
+                            } else {
+                                out_cell(STREAM_EMIT_CELL, OP_CALL_CODE);
+                                sys_call(FILE_U8);
+                                Emitted_Bytes = Emitted_Bytes + 1;
+                                // честный слот = позиция операнда + номер функции
+                                if (Call_Count == 0x00000000) {
+                                    Call_Site_1 = Emitted_Bytes;
+                                    Call_Fn_1 = Lit_Value;
+                                } else {
+                                    if (Call_Count == 0x00000001) {
+                                        Call_Site_2 = Emitted_Bytes;
+                                        Call_Fn_2 = Lit_Value;
+                                    } else {
+                                        if (Call_Count == 0x00000002) {
+                                            Call_Site_3 = Emitted_Bytes;
+                                            Call_Fn_3 = Lit_Value;
+                                        } else {
+                                            Call_Site_4 = Emitted_Bytes;
+                                            Call_Fn_4 = Lit_Value;
+                                        }
+                                    }
+                                }
+                                Call_Count = Call_Count + 1;
+                                out_cell(STREAM_EMIT_CELL, 0x00000000);
+                                sys_call(FILE_U16);
+                                sys_call(FILE_U16);
+                                Emitted_Bytes = Emitted_Bytes + 4;
+                                Token_Counter = Token_Counter + 1;
+                                Found_Flag = 0x00000001;
+                            }
+                        } else {
+                            // честный отказ ДО эмиссии: номера функции нет (вне 1..4)
                             if (Error_Flag == 0x00000000) {
-                                Fail_Code = BRK_PATCH_OVERFLOW;
+                                Fail_Code = BRK_NO_FUNC;
                                 Fail_Position = Word_Index;
                                 Error_Flag = 0x00000001;
                                 Word_Index = MAX_SOURCE_WORDS;
                             }
-                        } else {
-                            out_cell(STREAM_EMIT_CELL, OP_CALL_CODE);
-                            sys_call(FILE_U8);
-                            Emitted_Bytes = Emitted_Bytes + 1;
-                            // честный слот = позиция операнда + номер функции
-                            if (Call_Count == 0x00000000) {
-                                Call_Site_1 = Emitted_Bytes;
-                                Call_Fn_1 = Lit_Value;
-                            } else {
-                                if (Call_Count == 0x00000001) {
-                                    Call_Site_2 = Emitted_Bytes;
-                                    Call_Fn_2 = Lit_Value;
-                                } else {
-                                    if (Call_Count == 0x00000002) {
-                                        Call_Site_3 = Emitted_Bytes;
-                                        Call_Fn_3 = Lit_Value;
-                                    } else {
-                                        Call_Site_4 = Emitted_Bytes;
-                                        Call_Fn_4 = Lit_Value;
-                                    }
-                                }
-                            }
-                            Call_Count = Call_Count + 1;
-                            out_cell(STREAM_EMIT_CELL, 0x00000000);
-                            sys_call(FILE_U16);
-                            sys_call(FILE_U16);
-                            Emitted_Bytes = Emitted_Bytes + 4;
-                            Token_Counter = Token_Counter + 1;
-                            Found_Flag = 0x00000001;
                         }
                     } else {
-                        // честный отказ ДО эмиссии: номера функции нет (вне 1..4)
-                        if (Error_Flag == 0x00000000) {
-                            Fail_Code = BRK_NO_FUNC;
-                            Fail_Position = Word_Index;
-                            Error_Flag = 0x00000001;
-                            Word_Index = MAX_SOURCE_WORDS;
+                        if (Op_Pending == 0x00000000) {
+                        out_cell(STREAM_EMIT_CELL, OP_CONST_CODE);
+                        sys_call(FILE_U8);
+                        Emitted_Bytes = Emitted_Bytes + 1;
+                        log_cell(STREAM_EMIT_CELL, Lit_Value);
+                        sys_call(FILE_PUT);
+                        Emitted_Bytes = Emitted_Bytes + 4;
+                        Token_Counter = Token_Counter + 1;
+                        Found_Flag = 0x00000001;
+                        } else {
+                        // честная операция (TKT-050 + TKT-052 веха-3): acc = (acc ОП
+                        // Lit_Value); режим честно из Op_Pending (0x14 ad / 0x16 eq /
+                        // 0x17 su / 0x1A gt / 0x1B lt) — OP_LOAD 0x12 + режим + BE32
+                        out_cell(STREAM_EMIT_CELL, OP_LOAD_CODE);
+                        sys_call(FILE_U8);
+                        Emitted_Bytes = Emitted_Bytes + 1;
+                        log_cell(STREAM_EMIT_CELL, Op_Pending);
+                        sys_call(FILE_U8);
+                        Emitted_Bytes = Emitted_Bytes + 1;
+                        log_cell(STREAM_EMIT_CELL, Lit_Value);
+                        sys_call(FILE_PUT);
+                        Emitted_Bytes = Emitted_Bytes + 4;
+                        Op_Pending = 0x00000000;
+                        Token_Counter = Token_Counter + 1;
+                        Found_Flag = 0x00000001;
                         }
                     }
-                } else {
-                if (Op_Pending == 0x00000000) {
-                    out_cell(STREAM_EMIT_CELL, OP_CONST_CODE);
-                    sys_call(FILE_U8);
-                    Emitted_Bytes = Emitted_Bytes + 1;
-                    log_cell(STREAM_EMIT_CELL, Lit_Value);
-                    sys_call(FILE_PUT);
-                    Emitted_Bytes = Emitted_Bytes + 4;
-                    Token_Counter = Token_Counter + 1;
-                    Found_Flag = 0x00000001;
-                } else {
-                    // честная операция (TKT-050 + TKT-052 веха-3): acc = (acc ОП
-                    // Lit_Value); режим честно из Op_Pending (0x14 ad / 0x16 eq /
-                    // 0x17 su / 0x1A gt / 0x1B lt) — OP_LOAD 0x12 + режим + BE32
-                    out_cell(STREAM_EMIT_CELL, OP_LOAD_CODE);
-                    sys_call(FILE_U8);
-                    Emitted_Bytes = Emitted_Bytes + 1;
-                    log_cell(STREAM_EMIT_CELL, Op_Pending);
-                    sys_call(FILE_U8);
-                    Emitted_Bytes = Emitted_Bytes + 1;
-                    log_cell(STREAM_EMIT_CELL, Lit_Value);
-                    sys_call(FILE_PUT);
-                    Emitted_Bytes = Emitted_Bytes + 4;
-                    Op_Pending = 0x00000000;
-                    Token_Counter = Token_Counter + 1;
-                    Found_Flag = 0x00000001;
-                }
                 }
             }
 
             if (Current_Char == LIT_D9) {
                 Lit_Value = Current_Char - 48;
-                if (Run_Pending == 0x00000001) {
-                    // честный вызов по номеру (TKT-051 веха-3): номер 1..4
-                    Run_Pending = 0x00000000;
-                    if (Lit_Value == 0x00000001) {
-                        Fn_OK = 0x00000001;
-                    } else {
-                        if (Lit_Value == 0x00000002) {
+                if (W_Pending == 0x00000001) {
+                    // 'wc d' (TKT-052 веха-5): сайт D9 честно ЗНАЕТ свою цифру
+                    // по сигнатуре (значение = 9) — она ВНЕ диапазона 0..5,
+                    // честный брак ДО эмиссии: цифра после 'wc' честно не
+                    // эмитит ни байта (BRK_WC_NO_LIT, тот же честный вектор)
+                    if (Error_Flag == 0x00000000) {
+                        Fail_Code = BRK_WC_NO_LIT;
+                        Fail_Position = Word_Index;
+                        Error_Flag = 0x00000001;
+                        Word_Index = MAX_SOURCE_WORDS;
+                    }
+                } else {
+                    if (Run_Pending == 0x00000001) {
+                        // честный вызов по номеру (TKT-051 веха-3): номер 1..4
+                        Run_Pending = 0x00000000;
+                        if (Lit_Value == 0x00000001) {
                             Fn_OK = 0x00000001;
                         } else {
-                            if (Lit_Value == 0x00000003) {
+                            if (Lit_Value == 0x00000002) {
                                 Fn_OK = 0x00000001;
                             } else {
-                                if (Lit_Value == 0x00000004) {
+                                if (Lit_Value == 0x00000003) {
                                     Fn_OK = 0x00000001;
                                 } else {
-                                    Fn_OK = 0x00000000;
+                                    if (Lit_Value == 0x00000004) {
+                                        Fn_OK = 0x00000001;
+                                    } else {
+                                        Fn_OK = 0x00000000;
+                                    }
                                 }
                             }
                         }
-                    }
-                    if (Fn_OK == 0x00000001) {
-                        if (Call_Count == 0x00000004) {
-                            // честный отказ ДО эмиссии: все 4 слота заняты
+                        if (Fn_OK == 0x00000001) {
+                            if (Call_Count == 0x00000004) {
+                                // честный отказ ДО эмиссии: все 4 слота заняты
+                                if (Error_Flag == 0x00000000) {
+                                    Fail_Code = BRK_PATCH_OVERFLOW;
+                                    Fail_Position = Word_Index;
+                                    Error_Flag = 0x00000001;
+                                    Word_Index = MAX_SOURCE_WORDS;
+                                }
+                            } else {
+                                out_cell(STREAM_EMIT_CELL, OP_CALL_CODE);
+                                sys_call(FILE_U8);
+                                Emitted_Bytes = Emitted_Bytes + 1;
+                                // честный слот = позиция операнда + номер функции
+                                if (Call_Count == 0x00000000) {
+                                    Call_Site_1 = Emitted_Bytes;
+                                    Call_Fn_1 = Lit_Value;
+                                } else {
+                                    if (Call_Count == 0x00000001) {
+                                        Call_Site_2 = Emitted_Bytes;
+                                        Call_Fn_2 = Lit_Value;
+                                    } else {
+                                        if (Call_Count == 0x00000002) {
+                                            Call_Site_3 = Emitted_Bytes;
+                                            Call_Fn_3 = Lit_Value;
+                                        } else {
+                                            Call_Site_4 = Emitted_Bytes;
+                                            Call_Fn_4 = Lit_Value;
+                                        }
+                                    }
+                                }
+                                Call_Count = Call_Count + 1;
+                                out_cell(STREAM_EMIT_CELL, 0x00000000);
+                                sys_call(FILE_U16);
+                                sys_call(FILE_U16);
+                                Emitted_Bytes = Emitted_Bytes + 4;
+                                Token_Counter = Token_Counter + 1;
+                                Found_Flag = 0x00000001;
+                            }
+                        } else {
+                            // честный отказ ДО эмиссии: номера функции нет (вне 1..4)
                             if (Error_Flag == 0x00000000) {
-                                Fail_Code = BRK_PATCH_OVERFLOW;
+                                Fail_Code = BRK_NO_FUNC;
                                 Fail_Position = Word_Index;
                                 Error_Flag = 0x00000001;
                                 Word_Index = MAX_SOURCE_WORDS;
                             }
-                        } else {
-                            out_cell(STREAM_EMIT_CELL, OP_CALL_CODE);
-                            sys_call(FILE_U8);
-                            Emitted_Bytes = Emitted_Bytes + 1;
-                            // честный слот = позиция операнда + номер функции
-                            if (Call_Count == 0x00000000) {
-                                Call_Site_1 = Emitted_Bytes;
-                                Call_Fn_1 = Lit_Value;
-                            } else {
-                                if (Call_Count == 0x00000001) {
-                                    Call_Site_2 = Emitted_Bytes;
-                                    Call_Fn_2 = Lit_Value;
-                                } else {
-                                    if (Call_Count == 0x00000002) {
-                                        Call_Site_3 = Emitted_Bytes;
-                                        Call_Fn_3 = Lit_Value;
-                                    } else {
-                                        Call_Site_4 = Emitted_Bytes;
-                                        Call_Fn_4 = Lit_Value;
-                                    }
-                                }
-                            }
-                            Call_Count = Call_Count + 1;
-                            out_cell(STREAM_EMIT_CELL, 0x00000000);
-                            sys_call(FILE_U16);
-                            sys_call(FILE_U16);
-                            Emitted_Bytes = Emitted_Bytes + 4;
-                            Token_Counter = Token_Counter + 1;
-                            Found_Flag = 0x00000001;
                         }
                     } else {
-                        // честный отказ ДО эмиссии: номера функции нет (вне 1..4)
-                        if (Error_Flag == 0x00000000) {
-                            Fail_Code = BRK_NO_FUNC;
-                            Fail_Position = Word_Index;
-                            Error_Flag = 0x00000001;
-                            Word_Index = MAX_SOURCE_WORDS;
+                        if (Op_Pending == 0x00000000) {
+                        out_cell(STREAM_EMIT_CELL, OP_CONST_CODE);
+                        sys_call(FILE_U8);
+                        Emitted_Bytes = Emitted_Bytes + 1;
+                        log_cell(STREAM_EMIT_CELL, Lit_Value);
+                        sys_call(FILE_PUT);
+                        Emitted_Bytes = Emitted_Bytes + 4;
+                        Token_Counter = Token_Counter + 1;
+                        Found_Flag = 0x00000001;
+                        } else {
+                        // честная операция (TKT-050 + TKT-052 веха-3): acc = (acc ОП
+                        // Lit_Value); режим честно из Op_Pending (0x14 ad / 0x16 eq /
+                        // 0x17 su / 0x1A gt / 0x1B lt) — OP_LOAD 0x12 + режим + BE32
+                        out_cell(STREAM_EMIT_CELL, OP_LOAD_CODE);
+                        sys_call(FILE_U8);
+                        Emitted_Bytes = Emitted_Bytes + 1;
+                        log_cell(STREAM_EMIT_CELL, Op_Pending);
+                        sys_call(FILE_U8);
+                        Emitted_Bytes = Emitted_Bytes + 1;
+                        log_cell(STREAM_EMIT_CELL, Lit_Value);
+                        sys_call(FILE_PUT);
+                        Emitted_Bytes = Emitted_Bytes + 4;
+                        Op_Pending = 0x00000000;
+                        Token_Counter = Token_Counter + 1;
+                        Found_Flag = 0x00000001;
                         }
                     }
-                } else {
-                if (Op_Pending == 0x00000000) {
-                    out_cell(STREAM_EMIT_CELL, OP_CONST_CODE);
-                    sys_call(FILE_U8);
-                    Emitted_Bytes = Emitted_Bytes + 1;
-                    log_cell(STREAM_EMIT_CELL, Lit_Value);
-                    sys_call(FILE_PUT);
-                    Emitted_Bytes = Emitted_Bytes + 4;
-                    Token_Counter = Token_Counter + 1;
-                    Found_Flag = 0x00000001;
-                } else {
-                    // честная операция (TKT-050 + TKT-052 веха-3): acc = (acc ОП
-                    // Lit_Value); режим честно из Op_Pending (0x14 ad / 0x16 eq /
-                    // 0x17 su / 0x1A gt / 0x1B lt) — OP_LOAD 0x12 + режим + BE32
-                    out_cell(STREAM_EMIT_CELL, OP_LOAD_CODE);
-                    sys_call(FILE_U8);
-                    Emitted_Bytes = Emitted_Bytes + 1;
-                    log_cell(STREAM_EMIT_CELL, Op_Pending);
-                    sys_call(FILE_U8);
-                    Emitted_Bytes = Emitted_Bytes + 1;
-                    log_cell(STREAM_EMIT_CELL, Lit_Value);
-                    sys_call(FILE_PUT);
-                    Emitted_Bytes = Emitted_Bytes + 4;
-                    Op_Pending = 0x00000000;
-                    Token_Counter = Token_Counter + 1;
-                    Found_Flag = 0x00000001;
-                }
                 }
             }
 
