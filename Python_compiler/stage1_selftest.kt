@@ -59,7 +59,7 @@
 
 #define: LOG_PORT            0x3F0050C0
 #define: SOURCE_CODE_BUFFER  0x00A00000
-#define: MAX_SOURCE_WORDS    0x00000010
+#define: MAX_SOURCE_WORDS    0x00000040
 
 // честные двухсимвольные сигнатуры
 #define: D_WORD_PREPROC 0x00000023
@@ -79,6 +79,29 @@
 #define: KW_RET 0x00006572 // 're' = return: честный выход из функции (TKT-051)
 #define: KW_PR 0x00007270 // 'pr' = print: честный вывод — OP_OUTCELL_V + порт + WORK_CELL (TKT-052 веха-4)
 #define: KW_WC 0x00006377 // 'wc' = work cell select: следующий литерал d (0..5) честно выбирает расширенный слот (TKT-052 веха-5)
+
+
+// Вехи 6-10 (TKT-052, догон стенда по компилятору): честный define-комплект
+#define: KW_GP 0x00007067 // 'gp' = get pointer: acc = cell[cell[W_Current]] (веха-6, через 0x52)
+#define: KW_SP 0x00007073 // 'sp' = store pointer: cell[cell[W_Current]] = acc (веха-6, через 0x53)
+#define: KW_NB 0x0000626E // 'nb' = num begin: честный старт многозначного литерала (TKT-052 веха-7)
+#define: KW_NE 0x0000656E // 'ne' = num end: честное закрытие накопителя — эмит CONST BE32(Num_Acc) (веха-7)
+#define: BRK_WC_RANGE 0x0000000D // поглощённый 'wc' вне честного номинала рабочих слотов — честный брак fail-fast (веха-10)
+#define: WC_LIT_WORK 0x00F00FF1 // номинал: WORK_CELL (десятичный 15732721)
+#define: WC_LIT_W2 0x00F00FF3 // номинал: W2 = WC_BASE + 0 (десятичный 15732723)
+#define: WC_LIT_W3 0x00F00FF4 // номинал: W3 = WC_BASE + 1 (десятичный 15732724)
+#define: WC_LIT_W4 0x00F00FF5 // номинал: W4 = WC_BASE + 2 (десятичный 15732725)
+#define: WC_LIT_W5 0x00F00FF6 // номинал: W5 = WC_BASE + 3 (десятичный 15732726)
+#define: WC_LIT_W6 0x00F00FF7 // номинал: W6 = WC_BASE + 4 (десятичный 15732727)
+#define: WC_LIT_W7 0x00F00FF8 // номинал: W7 = WC_BASE + 5 (десятичный 15732728)
+#define: BRK_NUM_OPEN 0x00000009 // 'nb' открыл число, 'ne' к концу исходника не пришёл — честный брак (веха-7)
+#define: BRK_NE_NO_NUM 0x0000000A // 'ne' без открытого числа 'nb' — честный брак (веха-7)
+#define: BRK_NB_NESTED 0x0000000B // второй 'nb' при открытом числе — честный брак fail-fast (веха-7)
+#define: BRK_NB_NO_CONS 0x0000000C // оператор без поглощения при открытом nb-числе — честный брак fail-fast (веха-8)
+#define: BRK_WC_NO_LIT 0x00000008 // 'wc' без следующего литерала-номера слота — честный брак (TKT-052 веха-5)
+#define: OP_INCELL_IND_CODE 0x00000052 // 0x52 OP_INCELL_IND acc = cell[cell[arg]] — честная косвенность (TKT-052 веха-6)
+#define: OP_STORE_IND_CODE 0x00000053 // 0x53 OP_STORE_IND cell[cell[arg]] = acc — честная косвенная запись (TKT-052 веха-6)
+#define: OUTPUT_BINARY_PORT  0x3F0050C0 // Физический порт для записи готового бинарника
 #define: KW_TERM        0x00006574
 #define: SYM_BRACE_OPEN 0x0000007B
 #define: SYM_BRACE_CLOSE 0x0000007D
@@ -186,6 +209,12 @@ set static Fail_Position     = 0x00000000; // честная позиция бр
 set static W_Current       = 0x00F00FF1; // честный текущий рабочий слот, default = WORK_CELL (TKT-052 веха-5)
 set static W_Pending       = 0x00000000; // честный флаг: 'wc' ждёт литерал 0..5 (TKT-052 веха-5)
 set static W_Position      = 0x00000000; // честная позиция слова wc (для брака) (TKT-052 веха-5)
+set static Num_Acc         = 0x00000000; // честный накопитель nb-чисел (веха-7, догон стенда)
+set static Num_Tmp         = 0x00000000; // честный сдвиг x10 (веха-7)
+set static Num_Digit       = 0x00000000; // честная текущая цифра (веха-7)
+set static Num_Pending     = 0x00000000; // честный флаг открытого числа (веха-7)
+set static Num_Position    = 0x00000000; // честная позиция nb (веха-7)
+set static Sl_OK           = 0x00000000; // честный признак номинала слота (веха-10)
 
 // ---------- Ф13 (TKT-052 веха-3): честная арифметика ad/su ----------
 // Слова: '7' 'ad' '2' 'su' '1' 'te' .
@@ -318,6 +347,515 @@ function Load_WcBad_Demo() {
     Tmp_Addr = SOURCE_CODE_BUFFER + 12;
     Tmp_Word = CH_WORD_END;
     store_ind(Tmp_Addr, Tmp_Word);
+}
+
+// ---------- Load_F16_Gpsp_Demo ----------
+// Слова: wc 4 4 sv gp eq 0 sp gp eq 1 9 pr te .
+// Ф16: честная косвенность (probe_indirect): эмиссия 52 Б (артефакт 97)
+function Load_F16_Gpsp_Demo() {
+    Tmp_Addr = SOURCE_CODE_BUFFER;
+    Tmp_Word = KW_WC;
+    store_ind(Tmp_Addr, Tmp_Word);
+
+    Tmp_Addr = SOURCE_CODE_BUFFER + 4;
+    Tmp_Word = LIT_D4;
+    store_ind(Tmp_Addr, Tmp_Word);
+
+    Tmp_Addr = SOURCE_CODE_BUFFER + 8;
+    Tmp_Word = LIT_D4;
+    store_ind(Tmp_Addr, Tmp_Word);
+
+    Tmp_Addr = SOURCE_CODE_BUFFER + 12;
+    Tmp_Word = KW_SAVE;
+    store_ind(Tmp_Addr, Tmp_Word);
+
+    Tmp_Addr = SOURCE_CODE_BUFFER + 16;
+    Tmp_Word = KW_GP;
+    store_ind(Tmp_Addr, Tmp_Word);
+
+    Tmp_Addr = SOURCE_CODE_BUFFER + 20;
+    Tmp_Word = KW_EQ;
+    store_ind(Tmp_Addr, Tmp_Word);
+
+    Tmp_Addr = SOURCE_CODE_BUFFER + 24;
+    Tmp_Word = LIT_D0;
+    store_ind(Tmp_Addr, Tmp_Word);
+
+    Tmp_Addr = SOURCE_CODE_BUFFER + 28;
+    Tmp_Word = KW_SP;
+    store_ind(Tmp_Addr, Tmp_Word);
+
+    Tmp_Addr = SOURCE_CODE_BUFFER + 32;
+    Tmp_Word = KW_GP;
+    store_ind(Tmp_Addr, Tmp_Word);
+
+    Tmp_Addr = SOURCE_CODE_BUFFER + 36;
+    Tmp_Word = KW_EQ;
+    store_ind(Tmp_Addr, Tmp_Word);
+
+    Tmp_Addr = SOURCE_CODE_BUFFER + 40;
+    Tmp_Word = LIT_D1;
+    store_ind(Tmp_Addr, Tmp_Word);
+
+    Tmp_Addr = SOURCE_CODE_BUFFER + 44;
+    Tmp_Word = LIT_D9;
+    store_ind(Tmp_Addr, Tmp_Word);
+
+    Tmp_Addr = SOURCE_CODE_BUFFER + 48;
+    Tmp_Word = KW_PR;
+    store_ind(Tmp_Addr, Tmp_Word);
+
+    Tmp_Addr = SOURCE_CODE_BUFFER + 52;
+    Tmp_Word = KW_TERM;
+    store_ind(Tmp_Addr, Tmp_Word);
+
+    Tmp_Addr = SOURCE_CODE_BUFFER + 56;
+    Tmp_Word = CH_WORD_END;
+    store_ind(Tmp_Addr, Tmp_Word);
+
+}
+
+
+// ---------- Load_F17_Nbne_Demo ----------
+// Слова: nb 3 4 ne sv va ad 6 sv pr te .
+// Ф17: честное nb/ne (probe_num): эмиссия 37 Б (артефакт 82)
+function Load_F17_Nbne_Demo() {
+    Tmp_Addr = SOURCE_CODE_BUFFER;
+    Tmp_Word = KW_NB;
+    store_ind(Tmp_Addr, Tmp_Word);
+
+    Tmp_Addr = SOURCE_CODE_BUFFER + 4;
+    Tmp_Word = LIT_D3;
+    store_ind(Tmp_Addr, Tmp_Word);
+
+    Tmp_Addr = SOURCE_CODE_BUFFER + 8;
+    Tmp_Word = LIT_D4;
+    store_ind(Tmp_Addr, Tmp_Word);
+
+    Tmp_Addr = SOURCE_CODE_BUFFER + 12;
+    Tmp_Word = KW_NE;
+    store_ind(Tmp_Addr, Tmp_Word);
+
+    Tmp_Addr = SOURCE_CODE_BUFFER + 16;
+    Tmp_Word = KW_SAVE;
+    store_ind(Tmp_Addr, Tmp_Word);
+
+    Tmp_Addr = SOURCE_CODE_BUFFER + 20;
+    Tmp_Word = KW_VALUE;
+    store_ind(Tmp_Addr, Tmp_Word);
+
+    Tmp_Addr = SOURCE_CODE_BUFFER + 24;
+    Tmp_Word = KW_ADD;
+    store_ind(Tmp_Addr, Tmp_Word);
+
+    Tmp_Addr = SOURCE_CODE_BUFFER + 28;
+    Tmp_Word = LIT_D6;
+    store_ind(Tmp_Addr, Tmp_Word);
+
+    Tmp_Addr = SOURCE_CODE_BUFFER + 32;
+    Tmp_Word = KW_SAVE;
+    store_ind(Tmp_Addr, Tmp_Word);
+
+    Tmp_Addr = SOURCE_CODE_BUFFER + 36;
+    Tmp_Word = KW_PR;
+    store_ind(Tmp_Addr, Tmp_Word);
+
+    Tmp_Addr = SOURCE_CODE_BUFFER + 40;
+    Tmp_Word = KW_TERM;
+    store_ind(Tmp_Addr, Tmp_Word);
+
+    Tmp_Addr = SOURCE_CODE_BUFFER + 44;
+    Tmp_Word = CH_WORD_END;
+    store_ind(Tmp_Addr, Tmp_Word);
+
+}
+
+
+// ---------- Load_F18_Absorb_Demo ----------
+// Слова: nb 5 ne nb 6 sv nb 6 va ad 1 sv pr te .
+// Ф18: честные поглотители (pos_oper): эмиссия 37 Б (артефакт 82)
+function Load_F18_Absorb_Demo() {
+    Tmp_Addr = SOURCE_CODE_BUFFER;
+    Tmp_Word = KW_NB;
+    store_ind(Tmp_Addr, Tmp_Word);
+
+    Tmp_Addr = SOURCE_CODE_BUFFER + 4;
+    Tmp_Word = LIT_D5;
+    store_ind(Tmp_Addr, Tmp_Word);
+
+    Tmp_Addr = SOURCE_CODE_BUFFER + 8;
+    Tmp_Word = KW_NE;
+    store_ind(Tmp_Addr, Tmp_Word);
+
+    Tmp_Addr = SOURCE_CODE_BUFFER + 12;
+    Tmp_Word = KW_NB;
+    store_ind(Tmp_Addr, Tmp_Word);
+
+    Tmp_Addr = SOURCE_CODE_BUFFER + 16;
+    Tmp_Word = LIT_D6;
+    store_ind(Tmp_Addr, Tmp_Word);
+
+    Tmp_Addr = SOURCE_CODE_BUFFER + 20;
+    Tmp_Word = KW_SAVE;
+    store_ind(Tmp_Addr, Tmp_Word);
+
+    Tmp_Addr = SOURCE_CODE_BUFFER + 24;
+    Tmp_Word = KW_NB;
+    store_ind(Tmp_Addr, Tmp_Word);
+
+    Tmp_Addr = SOURCE_CODE_BUFFER + 28;
+    Tmp_Word = LIT_D6;
+    store_ind(Tmp_Addr, Tmp_Word);
+
+    Tmp_Addr = SOURCE_CODE_BUFFER + 32;
+    Tmp_Word = KW_VALUE;
+    store_ind(Tmp_Addr, Tmp_Word);
+
+    Tmp_Addr = SOURCE_CODE_BUFFER + 36;
+    Tmp_Word = KW_ADD;
+    store_ind(Tmp_Addr, Tmp_Word);
+
+    Tmp_Addr = SOURCE_CODE_BUFFER + 40;
+    Tmp_Word = LIT_D1;
+    store_ind(Tmp_Addr, Tmp_Word);
+
+    Tmp_Addr = SOURCE_CODE_BUFFER + 44;
+    Tmp_Word = KW_SAVE;
+    store_ind(Tmp_Addr, Tmp_Word);
+
+    Tmp_Addr = SOURCE_CODE_BUFFER + 48;
+    Tmp_Word = KW_PR;
+    store_ind(Tmp_Addr, Tmp_Word);
+
+    Tmp_Addr = SOURCE_CODE_BUFFER + 52;
+    Tmp_Word = KW_TERM;
+    store_ind(Tmp_Addr, Tmp_Word);
+
+    Tmp_Addr = SOURCE_CODE_BUFFER + 56;
+    Tmp_Word = CH_WORD_END;
+    store_ind(Tmp_Addr, Tmp_Word);
+
+}
+
+
+// ---------- Load_F18b_Nbop_Demo ----------
+// Слова: nb 5 ad 7 ne pr te .
+// Ф18б: честный брак BRK_NB_NO_CONS 0x0C@2 — ad при открытом nb
+function Load_F18b_Nbop_Demo() {
+    Tmp_Addr = SOURCE_CODE_BUFFER;
+    Tmp_Word = KW_NB;
+    store_ind(Tmp_Addr, Tmp_Word);
+
+    Tmp_Addr = SOURCE_CODE_BUFFER + 4;
+    Tmp_Word = LIT_D5;
+    store_ind(Tmp_Addr, Tmp_Word);
+
+    Tmp_Addr = SOURCE_CODE_BUFFER + 8;
+    Tmp_Word = KW_ADD;
+    store_ind(Tmp_Addr, Tmp_Word);
+
+    Tmp_Addr = SOURCE_CODE_BUFFER + 12;
+    Tmp_Word = LIT_D7;
+    store_ind(Tmp_Addr, Tmp_Word);
+
+    Tmp_Addr = SOURCE_CODE_BUFFER + 16;
+    Tmp_Word = KW_NE;
+    store_ind(Tmp_Addr, Tmp_Word);
+
+    Tmp_Addr = SOURCE_CODE_BUFFER + 20;
+    Tmp_Word = KW_PR;
+    store_ind(Tmp_Addr, Tmp_Word);
+
+    Tmp_Addr = SOURCE_CODE_BUFFER + 24;
+    Tmp_Word = KW_TERM;
+    store_ind(Tmp_Addr, Tmp_Word);
+
+    Tmp_Addr = SOURCE_CODE_BUFFER + 28;
+    Tmp_Word = CH_WORD_END;
+    store_ind(Tmp_Addr, Tmp_Word);
+
+}
+
+
+// ---------- Load_F19_WcAbs_Demo ----------
+// Слова: nb 1 5 7 3 2 7 2 1 wc te .
+// Ф19: wc-поглощение m1: эмиссия ТОЛЬКО TERM 1 Б (артефакт 46)
+function Load_F19_WcAbs_Demo() {
+    Tmp_Addr = SOURCE_CODE_BUFFER;
+    Tmp_Word = KW_NB;
+    store_ind(Tmp_Addr, Tmp_Word);
+
+    Tmp_Addr = SOURCE_CODE_BUFFER + 4;
+    Tmp_Word = LIT_D1;
+    store_ind(Tmp_Addr, Tmp_Word);
+
+    Tmp_Addr = SOURCE_CODE_BUFFER + 8;
+    Tmp_Word = LIT_D5;
+    store_ind(Tmp_Addr, Tmp_Word);
+
+    Tmp_Addr = SOURCE_CODE_BUFFER + 12;
+    Tmp_Word = LIT_D7;
+    store_ind(Tmp_Addr, Tmp_Word);
+
+    Tmp_Addr = SOURCE_CODE_BUFFER + 16;
+    Tmp_Word = LIT_D3;
+    store_ind(Tmp_Addr, Tmp_Word);
+
+    Tmp_Addr = SOURCE_CODE_BUFFER + 20;
+    Tmp_Word = LIT_D2;
+    store_ind(Tmp_Addr, Tmp_Word);
+
+    Tmp_Addr = SOURCE_CODE_BUFFER + 24;
+    Tmp_Word = LIT_D7;
+    store_ind(Tmp_Addr, Tmp_Word);
+
+    Tmp_Addr = SOURCE_CODE_BUFFER + 28;
+    Tmp_Word = LIT_D2;
+    store_ind(Tmp_Addr, Tmp_Word);
+
+    Tmp_Addr = SOURCE_CODE_BUFFER + 32;
+    Tmp_Word = LIT_D1;
+    store_ind(Tmp_Addr, Tmp_Word);
+
+    Tmp_Addr = SOURCE_CODE_BUFFER + 36;
+    Tmp_Word = KW_WC;
+    store_ind(Tmp_Addr, Tmp_Word);
+
+    Tmp_Addr = SOURCE_CODE_BUFFER + 40;
+    Tmp_Word = KW_TERM;
+    store_ind(Tmp_Addr, Tmp_Word);
+
+    Tmp_Addr = SOURCE_CODE_BUFFER + 44;
+    Tmp_Word = CH_WORD_END;
+    store_ind(Tmp_Addr, Tmp_Word);
+
+}
+
+
+// ---------- Load_F19v_WcAbs2_Demo ----------
+// Слова: nb 1 5 7 3 2 7 2 1 wc sv pr te .
+// Ф19в: поглощение без CONST (pos_wc2): эмиссия 15 Б (артефакт 60)
+function Load_F19v_WcAbs2_Demo() {
+    Tmp_Addr = SOURCE_CODE_BUFFER;
+    Tmp_Word = KW_NB;
+    store_ind(Tmp_Addr, Tmp_Word);
+
+    Tmp_Addr = SOURCE_CODE_BUFFER + 4;
+    Tmp_Word = LIT_D1;
+    store_ind(Tmp_Addr, Tmp_Word);
+
+    Tmp_Addr = SOURCE_CODE_BUFFER + 8;
+    Tmp_Word = LIT_D5;
+    store_ind(Tmp_Addr, Tmp_Word);
+
+    Tmp_Addr = SOURCE_CODE_BUFFER + 12;
+    Tmp_Word = LIT_D7;
+    store_ind(Tmp_Addr, Tmp_Word);
+
+    Tmp_Addr = SOURCE_CODE_BUFFER + 16;
+    Tmp_Word = LIT_D3;
+    store_ind(Tmp_Addr, Tmp_Word);
+
+    Tmp_Addr = SOURCE_CODE_BUFFER + 20;
+    Tmp_Word = LIT_D2;
+    store_ind(Tmp_Addr, Tmp_Word);
+
+    Tmp_Addr = SOURCE_CODE_BUFFER + 24;
+    Tmp_Word = LIT_D7;
+    store_ind(Tmp_Addr, Tmp_Word);
+
+    Tmp_Addr = SOURCE_CODE_BUFFER + 28;
+    Tmp_Word = LIT_D2;
+    store_ind(Tmp_Addr, Tmp_Word);
+
+    Tmp_Addr = SOURCE_CODE_BUFFER + 32;
+    Tmp_Word = LIT_D1;
+    store_ind(Tmp_Addr, Tmp_Word);
+
+    Tmp_Addr = SOURCE_CODE_BUFFER + 36;
+    Tmp_Word = KW_WC;
+    store_ind(Tmp_Addr, Tmp_Word);
+
+    Tmp_Addr = SOURCE_CODE_BUFFER + 40;
+    Tmp_Word = KW_SAVE;
+    store_ind(Tmp_Addr, Tmp_Word);
+
+    Tmp_Addr = SOURCE_CODE_BUFFER + 44;
+    Tmp_Word = KW_PR;
+    store_ind(Tmp_Addr, Tmp_Word);
+
+    Tmp_Addr = SOURCE_CODE_BUFFER + 48;
+    Tmp_Word = KW_TERM;
+    store_ind(Tmp_Addr, Tmp_Word);
+
+    Tmp_Addr = SOURCE_CODE_BUFFER + 52;
+    Tmp_Word = CH_WORD_END;
+    store_ind(Tmp_Addr, Tmp_Word);
+
+}
+
+
+// ---------- Load_F19b_Wcrange_Demo ----------
+// Слова: nb 6 wc .
+// Ф19б: честный брак BRK_WC_RANGE 0x0D@2 — nb 6 вне номинала
+function Load_F19b_Wcrange_Demo() {
+    Tmp_Addr = SOURCE_CODE_BUFFER;
+    Tmp_Word = KW_NB;
+    store_ind(Tmp_Addr, Tmp_Word);
+
+    Tmp_Addr = SOURCE_CODE_BUFFER + 4;
+    Tmp_Word = LIT_D6;
+    store_ind(Tmp_Addr, Tmp_Word);
+
+    Tmp_Addr = SOURCE_CODE_BUFFER + 8;
+    Tmp_Word = KW_WC;
+    store_ind(Tmp_Addr, Tmp_Word);
+
+    Tmp_Addr = SOURCE_CODE_BUFFER + 12;
+    Tmp_Word = CH_WORD_END;
+    store_ind(Tmp_Addr, Tmp_Word);
+
+}
+// ---------- Load_F20_Buf_Demo ----------
+// Слова: { } { } { } { } { } { } { } { } { } { } { } { } { } { } { } { } . .
+// Ф20 (веха-9 буфер): 34 слова — при старом MAX 0x10 честный брак 0x07@16; сейчас честный проход (скобки/концы не эмитят)
+function Load_F20_Buf_Demo() {
+    Tmp_Addr = SOURCE_CODE_BUFFER;
+    Tmp_Word = SYM_BRACE_OPEN;
+    store_ind(Tmp_Addr, Tmp_Word);
+
+    Tmp_Addr = SOURCE_CODE_BUFFER + 4;
+    Tmp_Word = SYM_BRACE_CLOSE;
+    store_ind(Tmp_Addr, Tmp_Word);
+
+    Tmp_Addr = SOURCE_CODE_BUFFER + 8;
+    Tmp_Word = SYM_BRACE_OPEN;
+    store_ind(Tmp_Addr, Tmp_Word);
+
+    Tmp_Addr = SOURCE_CODE_BUFFER + 12;
+    Tmp_Word = SYM_BRACE_CLOSE;
+    store_ind(Tmp_Addr, Tmp_Word);
+
+    Tmp_Addr = SOURCE_CODE_BUFFER + 16;
+    Tmp_Word = SYM_BRACE_OPEN;
+    store_ind(Tmp_Addr, Tmp_Word);
+
+    Tmp_Addr = SOURCE_CODE_BUFFER + 20;
+    Tmp_Word = SYM_BRACE_CLOSE;
+    store_ind(Tmp_Addr, Tmp_Word);
+
+    Tmp_Addr = SOURCE_CODE_BUFFER + 24;
+    Tmp_Word = SYM_BRACE_OPEN;
+    store_ind(Tmp_Addr, Tmp_Word);
+
+    Tmp_Addr = SOURCE_CODE_BUFFER + 28;
+    Tmp_Word = SYM_BRACE_CLOSE;
+    store_ind(Tmp_Addr, Tmp_Word);
+
+    Tmp_Addr = SOURCE_CODE_BUFFER + 32;
+    Tmp_Word = SYM_BRACE_OPEN;
+    store_ind(Tmp_Addr, Tmp_Word);
+
+    Tmp_Addr = SOURCE_CODE_BUFFER + 36;
+    Tmp_Word = SYM_BRACE_CLOSE;
+    store_ind(Tmp_Addr, Tmp_Word);
+
+    Tmp_Addr = SOURCE_CODE_BUFFER + 40;
+    Tmp_Word = SYM_BRACE_OPEN;
+    store_ind(Tmp_Addr, Tmp_Word);
+
+    Tmp_Addr = SOURCE_CODE_BUFFER + 44;
+    Tmp_Word = SYM_BRACE_CLOSE;
+    store_ind(Tmp_Addr, Tmp_Word);
+
+    Tmp_Addr = SOURCE_CODE_BUFFER + 48;
+    Tmp_Word = SYM_BRACE_OPEN;
+    store_ind(Tmp_Addr, Tmp_Word);
+
+    Tmp_Addr = SOURCE_CODE_BUFFER + 52;
+    Tmp_Word = SYM_BRACE_CLOSE;
+    store_ind(Tmp_Addr, Tmp_Word);
+
+    Tmp_Addr = SOURCE_CODE_BUFFER + 56;
+    Tmp_Word = SYM_BRACE_OPEN;
+    store_ind(Tmp_Addr, Tmp_Word);
+
+    Tmp_Addr = SOURCE_CODE_BUFFER + 60;
+    Tmp_Word = SYM_BRACE_CLOSE;
+    store_ind(Tmp_Addr, Tmp_Word);
+
+    Tmp_Addr = SOURCE_CODE_BUFFER + 64;
+    Tmp_Word = SYM_BRACE_OPEN;
+    store_ind(Tmp_Addr, Tmp_Word);
+
+    Tmp_Addr = SOURCE_CODE_BUFFER + 68;
+    Tmp_Word = SYM_BRACE_CLOSE;
+    store_ind(Tmp_Addr, Tmp_Word);
+
+    Tmp_Addr = SOURCE_CODE_BUFFER + 72;
+    Tmp_Word = SYM_BRACE_OPEN;
+    store_ind(Tmp_Addr, Tmp_Word);
+
+    Tmp_Addr = SOURCE_CODE_BUFFER + 76;
+    Tmp_Word = SYM_BRACE_CLOSE;
+    store_ind(Tmp_Addr, Tmp_Word);
+
+    Tmp_Addr = SOURCE_CODE_BUFFER + 80;
+    Tmp_Word = SYM_BRACE_OPEN;
+    store_ind(Tmp_Addr, Tmp_Word);
+
+    Tmp_Addr = SOURCE_CODE_BUFFER + 84;
+    Tmp_Word = SYM_BRACE_CLOSE;
+    store_ind(Tmp_Addr, Tmp_Word);
+
+    Tmp_Addr = SOURCE_CODE_BUFFER + 88;
+    Tmp_Word = SYM_BRACE_OPEN;
+    store_ind(Tmp_Addr, Tmp_Word);
+
+    Tmp_Addr = SOURCE_CODE_BUFFER + 92;
+    Tmp_Word = SYM_BRACE_CLOSE;
+    store_ind(Tmp_Addr, Tmp_Word);
+
+    Tmp_Addr = SOURCE_CODE_BUFFER + 96;
+    Tmp_Word = SYM_BRACE_OPEN;
+    store_ind(Tmp_Addr, Tmp_Word);
+
+    Tmp_Addr = SOURCE_CODE_BUFFER + 100;
+    Tmp_Word = SYM_BRACE_CLOSE;
+    store_ind(Tmp_Addr, Tmp_Word);
+
+    Tmp_Addr = SOURCE_CODE_BUFFER + 104;
+    Tmp_Word = SYM_BRACE_OPEN;
+    store_ind(Tmp_Addr, Tmp_Word);
+
+    Tmp_Addr = SOURCE_CODE_BUFFER + 108;
+    Tmp_Word = SYM_BRACE_CLOSE;
+    store_ind(Tmp_Addr, Tmp_Word);
+
+    Tmp_Addr = SOURCE_CODE_BUFFER + 112;
+    Tmp_Word = SYM_BRACE_OPEN;
+    store_ind(Tmp_Addr, Tmp_Word);
+
+    Tmp_Addr = SOURCE_CODE_BUFFER + 116;
+    Tmp_Word = SYM_BRACE_CLOSE;
+    store_ind(Tmp_Addr, Tmp_Word);
+
+    Tmp_Addr = SOURCE_CODE_BUFFER + 120;
+    Tmp_Word = SYM_BRACE_OPEN;
+    store_ind(Tmp_Addr, Tmp_Word);
+
+    Tmp_Addr = SOURCE_CODE_BUFFER + 124;
+    Tmp_Word = SYM_BRACE_CLOSE;
+    store_ind(Tmp_Addr, Tmp_Word);
+
+    Tmp_Addr = SOURCE_CODE_BUFFER + 128;
+    Tmp_Word = CH_WORD_END;
+    store_ind(Tmp_Addr, Tmp_Word);
+
+    Tmp_Addr = SOURCE_CODE_BUFFER + 132;
+    Tmp_Word = CH_WORD_END;
+    store_ind(Tmp_Addr, Tmp_Word);
+
 }
 
 pub entry main(cell:raw args) {
@@ -888,6 +1426,165 @@ pub entry main(cell:raw args) {
         out_cell(LOG_PORT, 0x00009099);
     }
 
+    
+// ---------- честная карта маркеров Ф16-Ф20 (догон стенда TKT-052) ----------
+// состояния: Ф16 0x90A0/0x90A1, Ф17 0x90A2/0x90A3, Ф18 0x90A4/0x90A5,
+//   Ф18б 0x90A6/0x90A7, Ф19 0x90A8/0x90A9, Ф19в 0x90AA/0x90AB,
+//   Ф19б 0x90AC/0x90AD, Ф20 0x90AE/0x90AF
+// сверки: 0x91B7..0x91C8 (кумулятивная чётность Emitted_Bytes и браки)
+
+// ---------- Ф16 (TKT-052 веха-8): честный gp/sp ---------------------------
+out_cell(LOG_PORT, 0x000090A0);      // LOG: Ф16 честное начало
+run Load_F16_Gpsp_Demo();
+run Reset_Scan();
+run Scan_Word_Loop();
+out_cell(LOG_PORT, 0x000090A1);      // LOG: Ф16 честно просканирована
+// эмиссия 52 Б: кумулятив 0xF2 + 0x34 = 0x126
+if (Emitted_Bytes == 0x00000126) {
+    out_cell(LOG_PORT, 0x000091B7);  // LOG: Ф16 честный кумулятив
+} else {
+    out_cell(LOG_PORT, 0x00009099);
+}
+if (Error_Flag == 0x00000000) {
+    out_cell(LOG_PORT, 0x000091B8);  // LOG: Ф16 честно без брака
+} else {
+    out_cell(LOG_PORT, 0x00009099);
+}
+
+// ---------- Ф17 (TKT-052 веха-7): честное nb/ne ---------------------------
+out_cell(LOG_PORT, 0x000090A2);      // LOG: Ф17 честное начало
+run Load_F17_Nbne_Demo();
+run Reset_Scan();
+run Scan_Word_Loop();
+out_cell(LOG_PORT, 0x000090A3);      // LOG: Ф17 честно просканирована
+// эмиссия 37 Б: кумулятив 0x126 + 0x25 = 0x14B
+if (Emitted_Bytes == 0x0000014B) {
+    out_cell(LOG_PORT, 0x000091B9);  // LOG: Ф17 честный кумулятив
+} else {
+    out_cell(LOG_PORT, 0x00009099);
+}
+if (Error_Flag == 0x00000000) {
+    out_cell(LOG_PORT, 0x000091BA);  // LOG: Ф17 честно без брака
+} else {
+    out_cell(LOG_PORT, 0x00009099);
+}
+
+// ---------- Ф18 (TKT-052 веха-8): честные поглотители ---------------------
+out_cell(LOG_PORT, 0x000090A4);      // LOG: Ф18 честное начало
+run Load_F18_Absorb_Demo();
+run Reset_Scan();
+run Scan_Word_Loop();
+out_cell(LOG_PORT, 0x000090A5);      // LOG: Ф18 честно просканирована
+// эмиссия 37 Б: кумулятив 0x14B + 0x25 = 0x170
+if (Emitted_Bytes == 0x00000170) {
+    out_cell(LOG_PORT, 0x000091BB);  // LOG: Ф18 честный кумулятив
+} else {
+    out_cell(LOG_PORT, 0x00009099);
+}
+if (Error_Flag == 0x00000000) {
+    out_cell(LOG_PORT, 0x000091BC);  // LOG: Ф18 честно без брака
+} else {
+    out_cell(LOG_PORT, 0x00009099);
+}
+
+// ---------- Ф18б: честный брак 'ad' при открытом nb -----------------------
+out_cell(LOG_PORT, 0x000090A6);      // LOG: Ф18б честное начало
+run Load_F18b_Nbop_Demo();
+run Reset_Scan();
+run Scan_Word_Loop();
+out_cell(LOG_PORT, 0x000090A7);      // LOG: Ф18б честно просканирована
+if (Fail_Code == BRK_NB_NO_CONS) {
+    out_cell(LOG_PORT, 0x000091BD);  // LOG: честный брак 0x0C
+} else {
+    out_cell(LOG_PORT, 0x00009099);
+}
+if (Fail_Position == 0x00000002) {
+    out_cell(LOG_PORT, 0x000091BE);  // LOG: честная позиция слова 'ad'
+} else {
+    out_cell(LOG_PORT, 0x00009099);
+}
+if (Emitted_Bytes == 0x00000170) {
+    out_cell(LOG_PORT, 0x000091BF);  // LOG: честный ноль эмиссий брака
+} else {
+    out_cell(LOG_PORT, 0x00009099);
+}
+
+// ---------- Ф19 (TKT-052 веха-10): честное поглощение wc -------------------
+out_cell(LOG_PORT, 0x000090A8);      // LOG: Ф19 честное начало
+run Load_F19_WcAbs_Demo();
+run Reset_Scan();
+run Scan_Word_Loop();
+out_cell(LOG_PORT, 0x000090A9);      // LOG: Ф19 честно просканирована
+// m1 эмиссия ТОЛЬКО TERM 1 Б: кумулятив 0x170 + 1 = 0x171
+if (Emitted_Bytes == 0x00000171) {
+    out_cell(LOG_PORT, 0x000091C0);  // LOG: Ф19 честный только-TERM
+} else {
+    out_cell(LOG_PORT, 0x00009099);
+}
+if (Error_Flag == 0x00000000) {
+    out_cell(LOG_PORT, 0x000091C1);  // LOG: Ф19 честно без брака
+} else {
+    out_cell(LOG_PORT, 0x00009099);
+}
+
+// ---------- Ф19в: поглощение без CONST (pos_wc2) ---------------------------
+out_cell(LOG_PORT, 0x000090AA);      // LOG: Ф19в честное начало
+run Load_F19v_WcAbs2_Demo();
+run Reset_Scan();
+run Scan_Word_Loop();
+out_cell(LOG_PORT, 0x000090AB);      // LOG: Ф19в честно просканирована
+// эмиссия 15 Б: кумулятив 0x171 + 0xF = 0x180
+if (Emitted_Bytes == 0x00000180) {
+    out_cell(LOG_PORT, 0x000091C2);  // LOG: Ф19в честный кумулятив
+} else {
+    out_cell(LOG_PORT, 0x00009099);
+}
+
+// ---------- Ф19б: честный брак 'nb 6 wc' вне номинала ----------------------
+out_cell(LOG_PORT, 0x000090AC);      // LOG: Ф19б честное начало
+run Load_F19b_Wcrange_Demo();
+run Reset_Scan();
+run Scan_Word_Loop();
+out_cell(LOG_PORT, 0x000090AD);      // LOG: Ф19б честно просканирована
+if (Fail_Code == BRK_WC_RANGE) {
+    out_cell(LOG_PORT, 0x000091C3);  // LOG: честный брак 0x0D
+} else {
+    out_cell(LOG_PORT, 0x00009099);
+}
+if (Fail_Position == 0x00000002) {
+    out_cell(LOG_PORT, 0x000091C4);  // LOG: честная позиция слова 'wc'
+} else {
+    out_cell(LOG_PORT, 0x00009099);
+}
+if (Emitted_Bytes == 0x00000180) {
+    out_cell(LOG_PORT, 0x000091C5);  // LOG: честный ноль эмиссий брака
+} else {
+    out_cell(LOG_PORT, 0x00009099);
+}
+
+// ---------- Ф20 (TKT-052 веха-9): честный буфер 34 слова -------------------
+// При старом MAX_SOURCE_WORDS 0x10 честный брак 0x07@16; теперь честный проход.
+out_cell(LOG_PORT, 0x000090AE);      // LOG: Ф20 честное начало
+run Load_F20_Buf_Demo();
+run Reset_Scan();
+run Scan_Word_Loop();
+out_cell(LOG_PORT, 0x000090AF);      // LOG: Ф20 честно просканирована
+if (Node_Counter == 0x00000010) {
+    out_cell(LOG_PORT, 0x000091C6);  // LOG: честные 16 скобочных пар
+} else {
+    out_cell(LOG_PORT, 0x00009099);
+}
+if (Error_Flag == 0x00000000) {
+    out_cell(LOG_PORT, 0x000091C7);  // LOG: Ф20 честно без брака
+} else {
+    out_cell(LOG_PORT, 0x00009099);
+}
+if (Emitted_Bytes == 0x00000180) {
+    out_cell(LOG_PORT, 0x000091C8);  // LOG: скобки/концы честно не эмитят
+} else {
+    out_cell(LOG_PORT, 0x00009099);
+}
+
     run Write_Artifact_Report();
 
     // --- 1.5-б честный шаг: стадия-1 сама пишет свой артефакт-файл ---
@@ -1175,6 +1872,10 @@ function Reset_Scan() {
                            // стадия-0 НЕ пишет инициализаторы в ячейки)
     W_Pending = 0;         // честный pending выбора слота пуст (веха-5)
     W_Position = 0;        // честная позиция слова wc сброшена (веха-5)
+    Num_Acc = 0;           // честный накопитель сброшен (веха-7, догон стенда)
+    Num_Pending = 0;       // честный флаг числа сброшен (веха-7)
+    Num_Position = 0;      // честная позиция nb сброшена (веха-7)
+    Sl_OK = 0;             // честный признак номинала сброшен (веха-10)
 }
 
 // ---------- честная загрузка Ф1 (роль хоста) ----------
@@ -1617,16 +2318,32 @@ function Load_Call_Demo() {
 }
 
 
+function Num_Place() {
+    Num_Tmp = 0x00000000;
+    Num_Tmp = Num_Tmp + Num_Acc;
+    Num_Tmp = Num_Tmp + Num_Acc;
+    Num_Tmp = Num_Tmp + Num_Acc;
+    Num_Tmp = Num_Tmp + Num_Acc;
+    Num_Tmp = Num_Tmp + Num_Acc;
+    Num_Tmp = Num_Tmp + Num_Acc;
+    Num_Tmp = Num_Tmp + Num_Acc;
+    Num_Tmp = Num_Tmp + Num_Acc;
+    Num_Tmp = Num_Tmp + Num_Acc;
+    Num_Tmp = Num_Tmp + Num_Acc;
+    Num_Acc = Num_Tmp + Num_Digit;
+}
+
 // ---------- честный лексер+стек групп (тот же алгоритм, что в компиляторе) ----------
 function Scan_Word_Loop() {
     if (Word_Index == MAX_SOURCE_WORDS) {
-        // честная база: граница буфера честно отщелкала
+        // Честная база: граница буфера честно отщелкала
     } else {
+        // Читаем очередное физическое слово из памяти устройства
         Current_Char = in_cell(Execution_Pointer);
 
+        // Ограничитель: честное слово-терминатор исходника
+        // TKT-051 веха-3: 'ru' без номера к концу исходника — честный брак
         if (Current_Char == CH_WORD_END) {
-            // честный терминатор: выход БЕЗ инкрементов и БЕЗ рекурсии
-            // TKT-051 веха-3: 'ru' без номера к концу исходника — честный брак
             if (Run_Pending == 0x00000000) {
                 // честно: вызовов без номера нет
             } else {
@@ -1641,8 +2358,9 @@ function Scan_Word_Loop() {
         }
 
         if (Word_Index == MAX_SOURCE_WORDS) {
-            // честный терминатор закрыл проход — честный выход
+            // честный терминатор честно закрыл проход — честный выход
         } else {
+            // Слово еще не распознано: честная метка итерации
             Found_Flag = 0x00000000;
 
             // TKT-051 веха-3: честные врата после 'ru' — ждём номер функции,
@@ -1709,8 +2427,10 @@ function Scan_Word_Loop() {
             } else {
 
             // 1.6 (TKT-036): эмит-сайты честно пишут поток В АРТЕФАКТ
-            // (STREAM_EMIT_CELL + FILE_PUT), зеркально компилятору; LOG_PORT
-            // остаётся только для честных маркеров сверок.
+            // (STREAM_EMIT_CELL + FILE_PUT); порт остаётся только для
+            // честного консольного отчёта (log_cell) — двойного честного
+            // канала верификации нет: файл теперь единственный артефакт.
+            // '#' -> директива препроцессора -> OP_INIT (0x01)
             if (Current_Char == D_WORD_PREPROC) {
                 out_cell(STREAM_EMIT_CELL, OP_INIT_CODE);
                 sys_call(FILE_U8);
@@ -1719,26 +2439,66 @@ function Scan_Word_Loop() {
                 Found_Flag = 0x00000001;
             }
 
+            // 'se' -> set -> OP_ALLOC_ST (0x10)
             if (Current_Char == KW_SET) {
+                if (Num_Pending == 0x00000001) {
+                    // веха-8: открытое nb-число потребляется честно только
+                    // 'sv'/'va'/'gp'/'sp' или закрывается 'ne' — честный
+                    // брак fail-fast (позиция = текущее слово)
+                    if (Error_Flag == 0x00000000) {
+                        Fail_Code = BRK_NB_NO_CONS;
+                        Fail_Position = Word_Index;
+                        Error_Flag = 0x00000001;
+                        Word_Index = MAX_SOURCE_WORDS;
+                    }
+                } else {
                 out_cell(STREAM_EMIT_CELL, OP_ALLOC_CODE);
                 sys_call(FILE_U8);
                 Emitted_Bytes = Emitted_Bytes + 1;
                 Token_Counter = Token_Counter + 1;
                 Found_Flag = 0x00000001;
+                }
             }
 
+            // 'st' -> static -> OP_ALLOC_ST (0x10)
             if (Current_Char == KW_STATIC) {
+                if (Num_Pending == 0x00000001) {
+                    // веха-8: открытое nb-число потребляется честно только
+                    // 'sv'/'va'/'gp'/'sp' или закрывается 'ne' — честный
+                    // брак fail-fast (позиция = текущее слово)
+                    if (Error_Flag == 0x00000000) {
+                        Fail_Code = BRK_NB_NO_CONS;
+                        Fail_Position = Word_Index;
+                        Error_Flag = 0x00000001;
+                        Word_Index = MAX_SOURCE_WORDS;
+                    }
+                } else {
                 out_cell(STREAM_EMIT_CELL, OP_ALLOC_CODE);
                 sys_call(FILE_U8);
                 Emitted_Bytes = Emitted_Bytes + 1;
                 Token_Counter = Token_Counter + 1;
                 Found_Flag = 0x00000001;
+                }
             }
 
+            // 'fu' -> function/pub entry -> OP_CALL (0x03) + честный слот:
+            // операнд BE32 запоминается у Call_Site_1 (позиция = после байта
+            // опкода), честный плейсхолдер 00000000 — патч в вердиктной фазе
             // 'fu' -> честная МЕТКА функции (TKT-051 веха-3): байт не эмитится,
             // позиция потока честно пишется в слот Fu_Pos_N (первый свободный
             // из 4, счётчик Fu_Count); 'ru N' честно прыгает на функцию N
             if (Current_Char == KW_FUNCTION) {
+                if (Num_Pending == 0x00000001) {
+                    // веха-8: открытое nb-число потребляется честно только
+                    // 'sv'/'va'/'gp'/'sp' или закрывается 'ne' — честный
+                    // брак fail-fast (позиция = текущее слово)
+                    if (Error_Flag == 0x00000000) {
+                        Fail_Code = BRK_NB_NO_CONS;
+                        Fail_Position = Word_Index;
+                        Error_Flag = 0x00000001;
+                        Word_Index = MAX_SOURCE_WORDS;
+                    }
+                } else {
                 if (Fu_Count == 0x00000004) {
                     // честный отказ ДО записи: все 4 слота функций заняты
                     if (Error_Flag == 0x00000000) {
@@ -1765,6 +2525,7 @@ function Scan_Word_Loop() {
                     Token_Counter = Token_Counter + 1;
                     Found_Flag = 0x00000001;
                 }
+                }
             }
 
             // 'ru' -> run -> OP_CALL (0x03) + плейсхолдер BE32 + первый свободный
@@ -1775,6 +2536,17 @@ function Scan_Word_Loop() {
             // эмитит CALL + слот + номер функции (Call_Fn_i). 'ru' без номера —
             // честный брак BRK_NO_FUNC (хвост-проверка, ноль эмиссий).
             if (Current_Char == KW_RUN) {
+                if (Num_Pending == 0x00000001) {
+                    // веха-8: открытое nb-число потребляется честно только
+                    // 'sv'/'va'/'gp'/'sp' или закрывается 'ne' — честный
+                    // брак fail-fast (позиция = текущее слово)
+                    if (Error_Flag == 0x00000000) {
+                        Fail_Code = BRK_NB_NO_CONS;
+                        Fail_Position = Word_Index;
+                        Error_Flag = 0x00000001;
+                        Word_Index = MAX_SOURCE_WORDS;
+                    }
+                } else {
                 if (Run_Pending == 0x00000000) {
                     Run_Pending = 0x00000001;
                     Run_Position = Word_Index;
@@ -1789,13 +2561,72 @@ function Scan_Word_Loop() {
                         Word_Index = MAX_SOURCE_WORDS;
                     }
                 }
+                }
             }
 
             // Слово байта НЕ эмитит: ставит W_Pending = 1, следующий
             // литерал d (0..5) честно переключает W_Current (сайт цифр).
             // 'wc' при активном ожидании — честный брак BRK_WC_NO_LIT.
-            // (урок 1.3: сайт живёт в обеих копиях — зеркало честное)
             if (Current_Char == KW_WC) {
+                if (Num_Pending == 0x00000001) {
+                    // веха-10: 'wc' стал честным ПЯТЫМ поглотителем nb-числа
+                    // (вехи-8 список непоглотителей 13 -> 12): форма 'nb X wc'
+                    // выбирает слот АБСОЛЮТНО — W_Current = BE32(Num_Acc),
+                    // НО только по честному номиналу рабочих слотов
+                    // {WORK_CELL, W2..W7}. Системные ячейки 0x00F00FF0
+                    // (Stream_Emit) и 0x00F00FF2 (FILE_EOF) в номинал НЕ
+                    // входят. '<=' на стадии-0 нет — номинал честно развёрнут
+                    // в цепь равенств (7 ветвей). Вне номинала — честный брак
+                    // BRK_WC_RANGE (fail-fast ДО эмиссии: 'wc' байта не эмитит,
+                    // позиция = текущее слово). Успешное поглощение честно
+                    // сбрасывает и W_Pending — 'nb X wc' самодостаточная форма
+                    // выбора слота (прежний цифровой pending честно накрыт).
+                    if (Num_Acc == WC_LIT_WORK) {
+                        Sl_OK = 0x00000001;
+                    } else {
+                    if (Num_Acc == WC_LIT_W2) {
+                        Sl_OK = 0x00000001;
+                    } else {
+                    if (Num_Acc == WC_LIT_W3) {
+                        Sl_OK = 0x00000001;
+                    } else {
+                    if (Num_Acc == WC_LIT_W4) {
+                        Sl_OK = 0x00000001;
+                    } else {
+                    if (Num_Acc == WC_LIT_W5) {
+                        Sl_OK = 0x00000001;
+                    } else {
+                    if (Num_Acc == WC_LIT_W6) {
+                        Sl_OK = 0x00000001;
+                    } else {
+                    if (Num_Acc == WC_LIT_W7) {
+                        Sl_OK = 0x00000001;
+                    } else {
+                        // честно: число вне номинала рабочих слотов
+                        Sl_OK = 0x00000000;
+                    }
+                    }
+                    }
+                    }
+                    }
+                    }
+                    }
+                    if (Sl_OK == 0x00000001) {
+                        W_Current = Num_Acc;
+                        W_Pending = 0x00000000;
+                        Num_Pending = 0x00000000;
+                        Num_Acc = 0x00000000;
+                        Token_Counter = Token_Counter + 1;
+                        Found_Flag = 0x00000001;
+                    } else {
+                        if (Error_Flag == 0x00000000) {
+                            Fail_Code = BRK_WC_RANGE;
+                            Fail_Position = Word_Index;
+                            Error_Flag = 0x00000001;
+                            Word_Index = MAX_SOURCE_WORDS;
+                        }
+                    }
+                } else {
                 if (W_Pending == 0x00000000) {
                     W_Pending = 0x00000001;
                     W_Position = Word_Index;
@@ -1810,26 +2641,102 @@ function Scan_Word_Loop() {
                         Word_Index = MAX_SOURCE_WORDS;
                     }
                 }
+                }
+            }
+
+            // 'nb' (TKT-052 веха-7): честное ЧИСЛО — открытие накопителя.
+            // Байта не эмитит: Num_Acc = 0, Num_Pending = 1, позиция для
+            // хвост-брака честно запоминается. Второй 'nb' при открытом
+            // числе — честный брак BRK_NB_NESTED (fail-fast).
+            if (Current_Char == KW_NB) {
+                if (Num_Pending == 0x00000001) {
+                    // честный отказ: число уже открыто
+                    if (Error_Flag == 0x00000000) {
+                        Fail_Code = BRK_NB_NESTED;
+                        Fail_Position = Word_Index;
+                        Error_Flag = 0x00000001;
+                        Word_Index = MAX_SOURCE_WORDS;
+                    }
+                } else {
+                    Num_Acc = 0x00000000;
+                    Num_Pending = 0x00000001;
+                    Num_Position = Word_Index;
+                    Token_Counter = Token_Counter + 1;
+                    Found_Flag = 0x00000001;
+                }
+            }
+            
+            // 'ne' (TKT-052 веха-7): честное закрытие числа — эмит
+            // OP_CONST_CODE + BE32(Num_Acc). 5 байт. 'ne' без открытого
+            // числа — честный брак BRK_NE_NO_NUM (fail-fast).
+            if (Current_Char == KW_NE) {
+                if (Num_Pending == 0x00000001) {
+                    Num_Pending = 0x00000000;
+                    out_cell(STREAM_EMIT_CELL, OP_CONST_CODE);
+                    sys_call(FILE_U8);
+                    Emitted_Bytes = Emitted_Bytes + 1;
+                    log_cell(STREAM_EMIT_CELL, Num_Acc);
+                    sys_call(FILE_PUT);
+                    Emitted_Bytes = Emitted_Bytes + 4;
+                    Token_Counter = Token_Counter + 1;
+                    Found_Flag = 0x00000001;
+                } else {
+                    // честный отказ: числа нет ('ne' без 'nb')
+                    if (Error_Flag == 0x00000000) {
+                        Fail_Code = BRK_NE_NO_NUM;
+                        Fail_Position = Word_Index;
+                        Error_Flag = 0x00000001;
+                        Word_Index = MAX_SOURCE_WORDS;
+                    }
+                }
             }
 
             // 'sv' (TKT-050 веха-2): честная запись памяти — OP_STORE_AT 0x55
             // + BE32(W_Current): cell[текущий слот] = acc. 5 байт.
             // Веха-5: слот честно выбирается 'wc d' (default WORK_CELL).
             if (Current_Char == KW_SAVE) {
+                if (Num_Pending == 0x00000001) {
+                    // веха-8: 'sv' честно ПОГЛОЩАЕТ открытое nb-число как
+                    // адрес: cell[Num_Acc] = acc. Длина та же 5 Б — честно
+                    // меняется только операнд BE32(W_Current) -> BE32(Num_Acc)
+                    out_cell(STREAM_EMIT_CELL, OP_STORE_AT_CODE);
+                    sys_call(FILE_U8);
+                    Emitted_Bytes = Emitted_Bytes + 1;
+                    log_cell(STREAM_EMIT_CELL, Num_Acc);
+                    sys_call(FILE_PUT);
+                    Emitted_Bytes = Emitted_Bytes + 4;
+                    Num_Pending = 0x00000000;
+                    Num_Acc = 0x00000000;
+                } else {
                 out_cell(STREAM_EMIT_CELL, OP_STORE_AT_CODE);
                 sys_call(FILE_U8);
                 Emitted_Bytes = Emitted_Bytes + 1;
                 log_cell(STREAM_EMIT_CELL, W_Current);
                 sys_call(FILE_PUT);
                 Emitted_Bytes = Emitted_Bytes + 4;
+                }
                 Token_Counter = Token_Counter + 1;
                 Found_Flag = 0x00000001;
             }
 
             // 'va' (TKT-050 веха-2): честная загрузка памяти — OP_LOAD 0x12
             // + режим 0x19 (acc = cell[arg]) + BE32(W_Current). 6 байт.
-            // Веха-5: слот честно выбирается 'wc d' (default WORK_CELL).
             if (Current_Char == KW_VALUE) {
+                if (Num_Pending == 0x00000001) {
+                    // веха-8: 'va' честно ПОГЛОЩАЕТ открытое nb-число как
+                    // адрес: acc = cell[Num_Acc]. Длина та же 6 Б.
+                    out_cell(STREAM_EMIT_CELL, OP_LOAD_CODE);
+                    sys_call(FILE_U8);
+                    Emitted_Bytes = Emitted_Bytes + 1;
+                    out_cell(STREAM_EMIT_CELL, 0x00000019);
+                    sys_call(FILE_U8);
+                    Emitted_Bytes = Emitted_Bytes + 1;
+                    log_cell(STREAM_EMIT_CELL, Num_Acc);
+                    sys_call(FILE_PUT);
+                    Emitted_Bytes = Emitted_Bytes + 4;
+                    Num_Pending = 0x00000000;
+                    Num_Acc = 0x00000000;
+                } else {
                 out_cell(STREAM_EMIT_CELL, OP_LOAD_CODE);
                 sys_call(FILE_U8);
                 Emitted_Bytes = Emitted_Bytes + 1;
@@ -1839,6 +2746,64 @@ function Scan_Word_Loop() {
                 log_cell(STREAM_EMIT_CELL, W_Current);
                 sys_call(FILE_PUT);
                 Emitted_Bytes = Emitted_Bytes + 4;
+                }
+                Token_Counter = Token_Counter + 1;
+                Found_Flag = 0x00000001;
+            }
+
+            // 'gp' (TKT-052 веха-6): честная косвенная загрузка —
+            // OP_INCELL_IND 0x52 + BE32(W_Current): acc =
+            // cell[cell[текущий слот]]. Указатель честно живёт в
+            // рабочем слоте: кладётся обычным 'sv' из acc. 5 байт.
+            if (Current_Char == KW_GP) {
+                if (Num_Pending == 0x00000001) {
+                    // веха-8: 'gp' честно ПОГЛОЩАЕТ открытое nb-число как
+                    // адрес: acc = cell[cell[Num_Acc]]. Длина та же 5 Б.
+                    out_cell(STREAM_EMIT_CELL, OP_INCELL_IND_CODE);
+                    sys_call(FILE_U8);
+                    Emitted_Bytes = Emitted_Bytes + 1;
+                    log_cell(STREAM_EMIT_CELL, Num_Acc);
+                    sys_call(FILE_PUT);
+                    Emitted_Bytes = Emitted_Bytes + 4;
+                    Num_Pending = 0x00000000;
+                    Num_Acc = 0x00000000;
+                } else {
+                out_cell(STREAM_EMIT_CELL, OP_INCELL_IND_CODE);
+                sys_call(FILE_U8);
+                Emitted_Bytes = Emitted_Bytes + 1;
+                log_cell(STREAM_EMIT_CELL, W_Current);
+                sys_call(FILE_PUT);
+                Emitted_Bytes = Emitted_Bytes + 4;
+                }
+                Token_Counter = Token_Counter + 1;
+                Found_Flag = 0x00000001;
+            }
+
+            // 'sp' (TKT-052 веха-6): честная косвенная запись —
+            // OP_STORE_IND 0x53 + BE32(W_Current):
+            // cell[cell[текущий слот]] = acc. Адрес 0 честно бракует
+            // сама VM (BRK_IND_ADDR_0) — эмит всегда честен. 5 байт.
+            if (Current_Char == KW_SP) {
+                if (Num_Pending == 0x00000001) {
+                    // веха-8: 'sp' честно ПОГЛОЩАЕТ открытое nb-число как
+                    // адрес: cell[cell[Num_Acc]] = acc. Адрес 0 честно
+                    // бракует сама VM (BRK_IND_ADDR_0). Длина та же 5 Б.
+                    out_cell(STREAM_EMIT_CELL, OP_STORE_IND_CODE);
+                    sys_call(FILE_U8);
+                    Emitted_Bytes = Emitted_Bytes + 1;
+                    log_cell(STREAM_EMIT_CELL, Num_Acc);
+                    sys_call(FILE_PUT);
+                    Emitted_Bytes = Emitted_Bytes + 4;
+                    Num_Pending = 0x00000000;
+                    Num_Acc = 0x00000000;
+                } else {
+                out_cell(STREAM_EMIT_CELL, OP_STORE_IND_CODE);
+                sys_call(FILE_U8);
+                Emitted_Bytes = Emitted_Bytes + 1;
+                log_cell(STREAM_EMIT_CELL, W_Current);
+                sys_call(FILE_PUT);
+                Emitted_Bytes = Emitted_Bytes + 4;
+                }
                 Token_Counter = Token_Counter + 1;
                 Found_Flag = 0x00000001;
             }
@@ -1862,7 +2827,7 @@ function Scan_Word_Loop() {
                 out_cell(STREAM_EMIT_CELL, OP_OUTCELL_V_CODE);
                 sys_call(FILE_U8);
                 Emitted_Bytes = Emitted_Bytes + 1;
-                out_cell(STREAM_EMIT_CELL, LOG_PORT);
+                out_cell(STREAM_EMIT_CELL, OUTPUT_BINARY_PORT);
                 sys_call(FILE_PUT);
                 Emitted_Bytes = Emitted_Bytes + 4;
                 log_cell(STREAM_EMIT_CELL, W_Current);
@@ -1880,6 +2845,17 @@ function Scan_Word_Loop() {
             // (хвост-проверка после скана).
 
             if (Current_Char == KW_EQ) {
+                if (Num_Pending == 0x00000001) {
+                    // веха-8: открытое nb-число потребляется честно только
+                    // 'sv'/'va'/'gp'/'sp' или закрывается 'ne' — честный
+                    // брак fail-fast (позиция = текущее слово)
+                    if (Error_Flag == 0x00000000) {
+                        Fail_Code = BRK_NB_NO_CONS;
+                        Fail_Position = Word_Index;
+                        Error_Flag = 0x00000001;
+                        Word_Index = MAX_SOURCE_WORDS;
+                    }
+                } else {
                 if (Op_Pending == 0x00000000) {
                     Op_Pending = 0x00000016;
                     Op_Position = Word_Index;
@@ -1894,9 +2870,21 @@ function Scan_Word_Loop() {
                         Word_Index = MAX_SOURCE_WORDS;
                     }
                 }
+                }
             }
 
             if (Current_Char == KW_GT) {
+                if (Num_Pending == 0x00000001) {
+                    // веха-8: открытое nb-число потребляется честно только
+                    // 'sv'/'va'/'gp'/'sp' или закрывается 'ne' — честный
+                    // брак fail-fast (позиция = текущее слово)
+                    if (Error_Flag == 0x00000000) {
+                        Fail_Code = BRK_NB_NO_CONS;
+                        Fail_Position = Word_Index;
+                        Error_Flag = 0x00000001;
+                        Word_Index = MAX_SOURCE_WORDS;
+                    }
+                } else {
                 if (Op_Pending == 0x00000000) {
                     Op_Pending = 0x0000001A;
                     Op_Position = Word_Index;
@@ -1911,9 +2899,21 @@ function Scan_Word_Loop() {
                         Word_Index = MAX_SOURCE_WORDS;
                     }
                 }
+                }
             }
 
             if (Current_Char == KW_LT) {
+                if (Num_Pending == 0x00000001) {
+                    // веха-8: открытое nb-число потребляется честно только
+                    // 'sv'/'va'/'gp'/'sp' или закрывается 'ne' — честный
+                    // брак fail-fast (позиция = текущее слово)
+                    if (Error_Flag == 0x00000000) {
+                        Fail_Code = BRK_NB_NO_CONS;
+                        Fail_Position = Word_Index;
+                        Error_Flag = 0x00000001;
+                        Word_Index = MAX_SOURCE_WORDS;
+                    }
+                } else {
                 if (Op_Pending == 0x00000000) {
                     Op_Pending = 0x0000001B;
                     Op_Position = Word_Index;
@@ -1928,9 +2928,21 @@ function Scan_Word_Loop() {
                         Word_Index = MAX_SOURCE_WORDS;
                     }
                 }
+                }
             }
 
             if (Current_Char == KW_ADD) {
+                if (Num_Pending == 0x00000001) {
+                    // веха-8: открытое nb-число потребляется честно только
+                    // 'sv'/'va'/'gp'/'sp' или закрывается 'ne' — честный
+                    // брак fail-fast (позиция = текущее слово)
+                    if (Error_Flag == 0x00000000) {
+                        Fail_Code = BRK_NB_NO_CONS;
+                        Fail_Position = Word_Index;
+                        Error_Flag = 0x00000001;
+                        Word_Index = MAX_SOURCE_WORDS;
+                    }
+                } else {
                 if (Op_Pending == 0x00000000) {
                     // честная арифметика (TKT-052 веха-3): режим OP_LOAD 0x14
                     // (acc = acc + литерал) — тот же pending-механизм, что у
@@ -1948,9 +2960,21 @@ function Scan_Word_Loop() {
                         Word_Index = MAX_SOURCE_WORDS;
                     }
                 }
+                }
             }
 
             if (Current_Char == KW_SUB) {
+                if (Num_Pending == 0x00000001) {
+                    // веха-8: открытое nb-число потребляется честно только
+                    // 'sv'/'va'/'gp'/'sp' или закрывается 'ne' — честный
+                    // брак fail-fast (позиция = текущее слово)
+                    if (Error_Flag == 0x00000000) {
+                        Fail_Code = BRK_NB_NO_CONS;
+                        Fail_Position = Word_Index;
+                        Error_Flag = 0x00000001;
+                        Word_Index = MAX_SOURCE_WORDS;
+                    }
+                } else {
                 if (Op_Pending == 0x00000000) {
                     // честная арифметика (TKT-052 веха-3): режим OP_LOAD 0x17
                     // (acc = acc - литерал) — VM-режим 0x17 уже честен (TKT-009)
@@ -1967,11 +2991,24 @@ function Scan_Word_Loop() {
                         Word_Index = MAX_SOURCE_WORDS;
                     }
                 }
+                }
             }
 
+            // 'if' -> if -> OP_JZ (0x06) + честный слот (тот же честный механизм)
             // 'if' -> OP_JZ (0x06) + честный слот If_Site_1; второй 'if' —
             // честный брак BRK_PATCH_OVERFLOW (fail-fast, правило первый-сбой)
             if (Current_Char == KW_IF) {
+                if (Num_Pending == 0x00000001) {
+                    // веха-8: открытое nb-число потребляется честно только
+                    // 'sv'/'va'/'gp'/'sp' или закрывается 'ne' — честный
+                    // брак fail-fast (позиция = текущее слово)
+                    if (Error_Flag == 0x00000000) {
+                        Fail_Code = BRK_NB_NO_CONS;
+                        Fail_Position = Word_Index;
+                        Error_Flag = 0x00000001;
+                        Word_Index = MAX_SOURCE_WORDS;
+                    }
+                } else {
                 if (If_Count == 0x00000002) {
                     // честный отказ ДО эмиссии: оба if-слота заняты (TKT-050)
                     if (Error_Flag == 0x00000000) {
@@ -1998,11 +3035,23 @@ function Scan_Word_Loop() {
                     Token_Counter = Token_Counter + 1;
                     Found_Flag = 0x00000001;
                 }
+                }
             }
 
             // 'es' -> else -> OP_JMP (0x07) + честный слот Jmp_Slot_1;
             // честное начало else-тела = позиция после операнда (туда прыгнет JZ)
             if (Current_Char == KW_ELSE) {
+                if (Num_Pending == 0x00000001) {
+                    // веха-8: открытое nb-число потребляется честно только
+                    // 'sv'/'va'/'gp'/'sp' или закрывается 'ne' — честный
+                    // брак fail-fast (позиция = текущее слово)
+                    if (Error_Flag == 0x00000000) {
+                        Fail_Code = BRK_NB_NO_CONS;
+                        Fail_Position = Word_Index;
+                        Error_Flag = 0x00000001;
+                        Word_Index = MAX_SOURCE_WORDS;
+                    }
+                } else {
                 if (Jmp_Count == 0x00000002) {
                     // честный отказ ДО эмиссии: оба else-слота заняты (TKT-050)
                     if (Error_Flag == 0x00000000) {
@@ -2035,25 +3084,43 @@ function Scan_Word_Loop() {
                     Token_Counter = Token_Counter + 1;
                     Found_Flag = 0x00000001;
                 }
+                }
             }
 
+            // 'te' -> terminate -> OP_TERM (0x05); честное запоминание позиции
+            // байта TERM — честный target патча демо (адрес честного останова)
             if (Current_Char == KW_TERM) {
+                if (Num_Pending == 0x00000001) {
+                    // веха-8: открытое nb-число потребляется честно только
+                    // 'sv'/'va'/'gp'/'sp' или закрывается 'ne' — честный
+                    // брак fail-fast (позиция = текущее слово)
+                    if (Error_Flag == 0x00000000) {
+                        Fail_Code = BRK_NB_NO_CONS;
+                        Fail_Position = Word_Index;
+                        Error_Flag = 0x00000001;
+                        Word_Index = MAX_SOURCE_WORDS;
+                    }
+                } else {
                 out_cell(STREAM_EMIT_CELL, OP_TERM_CODE);
                 sys_call(FILE_U8);
                 Emitted_Bytes = Emitted_Bytes + 1;
-                JP_Site_Term = Emitted_Bytes - 1;  // честная позиция байта TERM
+                JP_Site_Term = Emitted_Bytes - 1;  // честная позиция самого байта
                 Token_Counter = Token_Counter + 1;
                 Found_Flag = 0x00000001;
+                }
             }
 
-            // Честные литералы (стадия-1.4, зеркально компилятору TKT-036):
-            // слово '0'..'9' (сим1 цифра, сим2==0) -> OP_CONST 0x15 +
-            // честное значение. Честная форма стадии-0: вычитание только
-            // "имя - число" (десятичный RHS), значение живёт в ячейке
-            // Lit_Value и эмитится честным log_cell (OP_OUTCELL_V).
-            // Ограничение честной модели: в стадии-0 нет `*`/`/` —
-            // двухзначное слово честно не собирается; длинные числа
-            // честно разбиваются по словам.
+            // Честные литералы (стадия-1.4, TKT-036): слово '0'..'9',
+            // где сим1 == цифра 0x30..0x39 и сим2 == 0x00 (односимвольное
+            // слово) -> честный OP_CONST 0x15 + честное ЗНАЧЕНИЕ.
+            // Честная форма стадии-0: вычитание только "имя - число"
+            // (десятичный RHS), значение честно живёт в ячейке Lit_Value
+            // и эмитится честным log_cell (OP_OUTCELL_V), а не out_cell.
+            // Ограничение честной модели (документировано в тикете):
+            // в стадии-0 нет `*`/`/`, поэтому многозначные литералы
+            // собраны честной парой слов 'nb d d ... ne' (веха-7):
+            // цифры честно копят позиционный сдвиг (10 сложений),
+            // а 'ne' эмитит готовое значение одним CONST.
             if (Current_Char == LIT_D0) {
                 Lit_Value = Current_Char - 48;
                 if (W_Pending == 0x00000001) {
@@ -2067,6 +3134,14 @@ function Scan_Word_Loop() {
                     Token_Counter = Token_Counter + 1;
                     Found_Flag = 0x00000001;
                 } else {
+                    if (Num_Pending == 0x00000001) {
+                        // веха-7: цифра честно копит число — эмиссии
+                        // нет, готовый литерал честно эмитит 'ne'
+                        Num_Digit = Lit_Value;
+                        run Num_Place();
+                        Token_Counter = Token_Counter + 1;
+                        Found_Flag = 0x00000001;
+                    } else {
                     if (Run_Pending == 0x00000001) {
                         // честный вызов по номеру (TKT-051 веха-3): номер 1..4
                         Run_Pending = 0x00000000;
@@ -2162,6 +3237,7 @@ function Scan_Word_Loop() {
                         Token_Counter = Token_Counter + 1;
                         Found_Flag = 0x00000001;
                         }
+                    }
                     }
                 }
             }
@@ -2179,6 +3255,14 @@ function Scan_Word_Loop() {
                     Token_Counter = Token_Counter + 1;
                     Found_Flag = 0x00000001;
                 } else {
+                    if (Num_Pending == 0x00000001) {
+                        // веха-7: цифра честно копит число — эмиссии
+                        // нет, готовый литерал честно эмитит 'ne'
+                        Num_Digit = Lit_Value;
+                        run Num_Place();
+                        Token_Counter = Token_Counter + 1;
+                        Found_Flag = 0x00000001;
+                    } else {
                     if (Run_Pending == 0x00000001) {
                         // честный вызов по номеру (TKT-051 веха-3): номер 1..4
                         Run_Pending = 0x00000000;
@@ -2274,6 +3358,7 @@ function Scan_Word_Loop() {
                         Token_Counter = Token_Counter + 1;
                         Found_Flag = 0x00000001;
                         }
+                    }
                     }
                 }
             }
@@ -2291,6 +3376,14 @@ function Scan_Word_Loop() {
                     Token_Counter = Token_Counter + 1;
                     Found_Flag = 0x00000001;
                 } else {
+                    if (Num_Pending == 0x00000001) {
+                        // веха-7: цифра честно копит число — эмиссии
+                        // нет, готовый литерал честно эмитит 'ne'
+                        Num_Digit = Lit_Value;
+                        run Num_Place();
+                        Token_Counter = Token_Counter + 1;
+                        Found_Flag = 0x00000001;
+                    } else {
                     if (Run_Pending == 0x00000001) {
                         // честный вызов по номеру (TKT-051 веха-3): номер 1..4
                         Run_Pending = 0x00000000;
@@ -2386,6 +3479,7 @@ function Scan_Word_Loop() {
                         Token_Counter = Token_Counter + 1;
                         Found_Flag = 0x00000001;
                         }
+                    }
                     }
                 }
             }
@@ -2403,6 +3497,14 @@ function Scan_Word_Loop() {
                     Token_Counter = Token_Counter + 1;
                     Found_Flag = 0x00000001;
                 } else {
+                    if (Num_Pending == 0x00000001) {
+                        // веха-7: цифра честно копит число — эмиссии
+                        // нет, готовый литерал честно эмитит 'ne'
+                        Num_Digit = Lit_Value;
+                        run Num_Place();
+                        Token_Counter = Token_Counter + 1;
+                        Found_Flag = 0x00000001;
+                    } else {
                     if (Run_Pending == 0x00000001) {
                         // честный вызов по номеру (TKT-051 веха-3): номер 1..4
                         Run_Pending = 0x00000000;
@@ -2498,6 +3600,7 @@ function Scan_Word_Loop() {
                         Token_Counter = Token_Counter + 1;
                         Found_Flag = 0x00000001;
                         }
+                    }
                     }
                 }
             }
@@ -2515,6 +3618,14 @@ function Scan_Word_Loop() {
                     Token_Counter = Token_Counter + 1;
                     Found_Flag = 0x00000001;
                 } else {
+                    if (Num_Pending == 0x00000001) {
+                        // веха-7: цифра честно копит число — эмиссии
+                        // нет, готовый литерал честно эмитит 'ne'
+                        Num_Digit = Lit_Value;
+                        run Num_Place();
+                        Token_Counter = Token_Counter + 1;
+                        Found_Flag = 0x00000001;
+                    } else {
                     if (Run_Pending == 0x00000001) {
                         // честный вызов по номеру (TKT-051 веха-3): номер 1..4
                         Run_Pending = 0x00000000;
@@ -2611,6 +3722,7 @@ function Scan_Word_Loop() {
                         Found_Flag = 0x00000001;
                         }
                     }
+                    }
                 }
             }
 
@@ -2627,6 +3739,14 @@ function Scan_Word_Loop() {
                     Token_Counter = Token_Counter + 1;
                     Found_Flag = 0x00000001;
                 } else {
+                    if (Num_Pending == 0x00000001) {
+                        // веха-7: цифра честно копит число — эмиссии
+                        // нет, готовый литерал честно эмитит 'ne'
+                        Num_Digit = Lit_Value;
+                        run Num_Place();
+                        Token_Counter = Token_Counter + 1;
+                        Found_Flag = 0x00000001;
+                    } else {
                     if (Run_Pending == 0x00000001) {
                         // честный вызов по номеру (TKT-051 веха-3): номер 1..4
                         Run_Pending = 0x00000000;
@@ -2722,6 +3842,7 @@ function Scan_Word_Loop() {
                         Token_Counter = Token_Counter + 1;
                         Found_Flag = 0x00000001;
                         }
+                    }
                     }
                 }
             }
@@ -2740,6 +3861,14 @@ function Scan_Word_Loop() {
                         Word_Index = MAX_SOURCE_WORDS;
                     }
                 } else {
+                    if (Num_Pending == 0x00000001) {
+                        // веха-7: цифра честно копит число — эмиссии
+                        // нет, готовый литерал честно эмитит 'ne'
+                        Num_Digit = Lit_Value;
+                        run Num_Place();
+                        Token_Counter = Token_Counter + 1;
+                        Found_Flag = 0x00000001;
+                    } else {
                     if (Run_Pending == 0x00000001) {
                         // честный вызов по номеру (TKT-051 веха-3): номер 1..4
                         Run_Pending = 0x00000000;
@@ -2835,6 +3964,7 @@ function Scan_Word_Loop() {
                         Token_Counter = Token_Counter + 1;
                         Found_Flag = 0x00000001;
                         }
+                    }
                     }
                 }
             }
@@ -2853,6 +3983,14 @@ function Scan_Word_Loop() {
                         Word_Index = MAX_SOURCE_WORDS;
                     }
                 } else {
+                    if (Num_Pending == 0x00000001) {
+                        // веха-7: цифра честно копит число — эмиссии
+                        // нет, готовый литерал честно эмитит 'ne'
+                        Num_Digit = Lit_Value;
+                        run Num_Place();
+                        Token_Counter = Token_Counter + 1;
+                        Found_Flag = 0x00000001;
+                    } else {
                     if (Run_Pending == 0x00000001) {
                         // честный вызов по номеру (TKT-051 веха-3): номер 1..4
                         Run_Pending = 0x00000000;
@@ -2948,6 +4086,7 @@ function Scan_Word_Loop() {
                         Token_Counter = Token_Counter + 1;
                         Found_Flag = 0x00000001;
                         }
+                    }
                     }
                 }
             }
@@ -2966,6 +4105,14 @@ function Scan_Word_Loop() {
                         Word_Index = MAX_SOURCE_WORDS;
                     }
                 } else {
+                    if (Num_Pending == 0x00000001) {
+                        // веха-7: цифра честно копит число — эмиссии
+                        // нет, готовый литерал честно эмитит 'ne'
+                        Num_Digit = Lit_Value;
+                        run Num_Place();
+                        Token_Counter = Token_Counter + 1;
+                        Found_Flag = 0x00000001;
+                    } else {
                     if (Run_Pending == 0x00000001) {
                         // честный вызов по номеру (TKT-051 веха-3): номер 1..4
                         Run_Pending = 0x00000000;
@@ -3061,6 +4208,7 @@ function Scan_Word_Loop() {
                         Token_Counter = Token_Counter + 1;
                         Found_Flag = 0x00000001;
                         }
+                    }
                     }
                 }
             }
@@ -3079,6 +4227,14 @@ function Scan_Word_Loop() {
                         Word_Index = MAX_SOURCE_WORDS;
                     }
                 } else {
+                    if (Num_Pending == 0x00000001) {
+                        // веха-7: цифра честно копит число — эмиссии
+                        // нет, готовый литерал честно эмитит 'ne'
+                        Num_Digit = Lit_Value;
+                        run Num_Place();
+                        Token_Counter = Token_Counter + 1;
+                        Found_Flag = 0x00000001;
+                    } else {
                     if (Run_Pending == 0x00000001) {
                         // честный вызов по номеру (TKT-051 веха-3): номер 1..4
                         Run_Pending = 0x00000000;
@@ -3175,19 +4331,22 @@ function Scan_Word_Loop() {
                         Found_Flag = 0x00000001;
                         }
                     }
+                    }
                 }
             }
 
-            // '{': честный клад на стек групп
+            // Структурные слова: НЕ эмитят байт — честный подсчёт.
+            // Скобки честно ведут стек групп (стадия-1.3): ловят
+            // преждевременное закрытие и незакрытые группы в финале.
             if (Current_Char == SYM_BRACE_OPEN) {
                 Syntax_Counter = Syntax_Counter + 1;
                 Node_Brace_Depth = Node_Brace_Depth + 1;
                 Found_Flag = 0x00000001;
             }
 
-            // '}': честный сним — или честный отказ (K-S2, TKT-033)
             if (Current_Char == SYM_BRACE_CLOSE) {
                 if (Node_Brace_Depth == 0x00000000) {
+                    // Честный отказ: '}' при пустом честном стеке {} (K-S2, TKT-033)
                     Fail_Code = BRK_STRAY_CLOSE;
                     Fail_Position = Word_Index;
                     Error_Flag = 0x00000001;
@@ -3200,16 +4359,15 @@ function Scan_Word_Loop() {
                 }
             }
 
-            // '(': честный клад
             if (Current_Char == SYM_PAREN_OPEN) {
                 Syntax_Counter = Syntax_Counter + 1;
                 Node_Paren_Depth = Node_Paren_Depth + 1;
                 Found_Flag = 0x00000001;
             }
 
-            // ')': честный сним — или честный отказ (K-S2, TKT-033)
             if (Current_Char == SYM_PAREN_CLOSE) {
                 if (Node_Paren_Depth == 0x00000000) {
+                    // Честный отказ: ')' при пустом честном стеке () (K-S2, TKT-033)
                     Fail_Code = BRK_STRAY_CLOSE;
                     Fail_Position = Word_Index;
                     Error_Flag = 0x00000001;
@@ -3227,9 +4385,13 @@ function Scan_Word_Loop() {
                 Found_Flag = 0x00000001;
             }
 
-            // честный отказ: неизвестное слово (K-S1, TKT-033)
-            // позиция честно запоминается ДО обрыва (Word_Index = MAX затёр бы);
-            // приоритет честный: код брака = ПЕРВЫЙ честный сбой (см. stage1_compiler)
+            // Честный отказ: слово не совпало ни с одной честной сигнатурой
+            // (K-S1, TKT-033) — честная позиция слова ЗАПОМИНАЕТСЯ ДО обрыва,
+            // иначе Word_Index = MAX затирает честную позицию брака.
+            // Приоритет честный: код брака = ПЕРВЫЙ честный сбой; если брак
+            // уже был (Error_Flag == 1), честный код и позиция не трогаются —
+            // иначе следом идущий unknown затёр бы честный код (ловлено
+            // трассой Ф3: stray '}' не ставит Found_Flag и тянул K-S1 сверху).
             if (Found_Flag == 0x00000000) {
                 if (Error_Flag == 0x00000000) {
                     Fail_Code = BRK_UNKNOWN_WORD;
@@ -3244,6 +4406,7 @@ function Scan_Word_Loop() {
             if (Word_Index == MAX_SOURCE_WORDS) {
                 // честный отказ или граница — выход без шага
             } else {
+                // Шаг после чтения: честное смещение на машинное слово (4 байта)
                 Execution_Pointer = Execution_Pointer + 4;
                 Word_Index = Word_Index + 1;
 
