@@ -124,6 +124,7 @@
 #define: BRK_NUM_OPEN 0x00000009 // 'nb' открыл число, 'ne' к концу исходника не пришёл — честный брак (веха-7)
 #define: BRK_NE_NO_NUM 0x0000000A // 'ne' без открытого числа 'nb' — честный брак (веха-7)
 #define: BRK_NB_NESTED 0x0000000B // второй 'nb' при открытом числе — честный брак fail-fast (веха-7)
+#define: BRK_NB_NO_CONS 0x0000000C // оператор без поглощения при открытом nb-числе — честный брак fail-fast (веха-8)
 #define: HDR_BODY_SIZE    0x00000014 // честный размер заголовка v1.1 = 20 байт
 
 // Объявляем глобальные статические ячейки памяти ядра (регистры компилятора)
@@ -739,20 +740,44 @@ function Scan_Word_Loop() {
 
             // 'se' -> set -> OP_ALLOC_ST (0x10)
             if (Current_Char == KW_SET) {
+                if (Num_Pending == 0x00000001) {
+                    // веха-8: открытое nb-число потребляется честно только
+                    // 'sv'/'va'/'gp'/'sp' или закрывается 'ne' — честный
+                    // брак fail-fast (позиция = текущее слово)
+                    if (Error_Flag == 0x00000000) {
+                        Fail_Code = BRK_NB_NO_CONS;
+                        Fail_Position = Word_Index;
+                        Error_Flag = 0x00000001;
+                        Word_Index = MAX_SOURCE_WORDS;
+                    }
+                } else {
                 out_cell(STREAM_EMIT_CELL, OP_ALLOC_CODE);
                 sys_call(FILE_U8);
                 Emitted_Bytes = Emitted_Bytes + 1;
                 Token_Counter = Token_Counter + 1;
                 Found_Flag = 0x00000001;
+                }
             }
 
             // 'st' -> static -> OP_ALLOC_ST (0x10)
             if (Current_Char == KW_STATIC) {
+                if (Num_Pending == 0x00000001) {
+                    // веха-8: открытое nb-число потребляется честно только
+                    // 'sv'/'va'/'gp'/'sp' или закрывается 'ne' — честный
+                    // брак fail-fast (позиция = текущее слово)
+                    if (Error_Flag == 0x00000000) {
+                        Fail_Code = BRK_NB_NO_CONS;
+                        Fail_Position = Word_Index;
+                        Error_Flag = 0x00000001;
+                        Word_Index = MAX_SOURCE_WORDS;
+                    }
+                } else {
                 out_cell(STREAM_EMIT_CELL, OP_ALLOC_CODE);
                 sys_call(FILE_U8);
                 Emitted_Bytes = Emitted_Bytes + 1;
                 Token_Counter = Token_Counter + 1;
                 Found_Flag = 0x00000001;
+                }
             }
 
             // 'fu' -> function/pub entry -> OP_CALL (0x03) + честный слот:
@@ -762,6 +787,17 @@ function Scan_Word_Loop() {
             // позиция потока честно пишется в слот Fu_Pos_N (первый свободный
             // из 4, счётчик Fu_Count); 'ru N' честно прыгает на функцию N
             if (Current_Char == KW_FUNCTION) {
+                if (Num_Pending == 0x00000001) {
+                    // веха-8: открытое nb-число потребляется честно только
+                    // 'sv'/'va'/'gp'/'sp' или закрывается 'ne' — честный
+                    // брак fail-fast (позиция = текущее слово)
+                    if (Error_Flag == 0x00000000) {
+                        Fail_Code = BRK_NB_NO_CONS;
+                        Fail_Position = Word_Index;
+                        Error_Flag = 0x00000001;
+                        Word_Index = MAX_SOURCE_WORDS;
+                    }
+                } else {
                 if (Fu_Count == 0x00000004) {
                     // честный отказ ДО записи: все 4 слота функций заняты
                     if (Error_Flag == 0x00000000) {
@@ -788,6 +824,7 @@ function Scan_Word_Loop() {
                     Token_Counter = Token_Counter + 1;
                     Found_Flag = 0x00000001;
                 }
+                }
             }
 
             // 'ru' -> run -> OP_CALL (0x03) + плейсхолдер BE32 + первый свободный
@@ -798,6 +835,17 @@ function Scan_Word_Loop() {
             // эмитит CALL + слот + номер функции (Call_Fn_i). 'ru' без номера —
             // честный брак BRK_NO_FUNC (хвост-проверка, ноль эмиссий).
             if (Current_Char == KW_RUN) {
+                if (Num_Pending == 0x00000001) {
+                    // веха-8: открытое nb-число потребляется честно только
+                    // 'sv'/'va'/'gp'/'sp' или закрывается 'ne' — честный
+                    // брак fail-fast (позиция = текущее слово)
+                    if (Error_Flag == 0x00000000) {
+                        Fail_Code = BRK_NB_NO_CONS;
+                        Fail_Position = Word_Index;
+                        Error_Flag = 0x00000001;
+                        Word_Index = MAX_SOURCE_WORDS;
+                    }
+                } else {
                 if (Run_Pending == 0x00000000) {
                     Run_Pending = 0x00000001;
                     Run_Position = Word_Index;
@@ -812,12 +860,24 @@ function Scan_Word_Loop() {
                         Word_Index = MAX_SOURCE_WORDS;
                     }
                 }
+                }
             }
 
             // Слово байта НЕ эмитит: ставит W_Pending = 1, следующий
             // литерал d (0..5) честно переключает W_Current (сайт цифр).
             // 'wc' при активном ожидании — честный брак BRK_WC_NO_LIT.
             if (Current_Char == KW_WC) {
+                if (Num_Pending == 0x00000001) {
+                    // веха-8: открытое nb-число потребляется честно только
+                    // 'sv'/'va'/'gp'/'sp' или закрывается 'ne' — честный
+                    // брак fail-fast (позиция = текущее слово)
+                    if (Error_Flag == 0x00000000) {
+                        Fail_Code = BRK_NB_NO_CONS;
+                        Fail_Position = Word_Index;
+                        Error_Flag = 0x00000001;
+                        Word_Index = MAX_SOURCE_WORDS;
+                    }
+                } else {
                 if (W_Pending == 0x00000000) {
                     W_Pending = 0x00000001;
                     W_Position = Word_Index;
@@ -831,6 +891,7 @@ function Scan_Word_Loop() {
                         Error_Flag = 0x00000001;
                         Word_Index = MAX_SOURCE_WORDS;
                     }
+                }
                 }
             }
 
@@ -885,12 +946,26 @@ function Scan_Word_Loop() {
             // + BE32(W_Current): cell[текущий слот] = acc. 5 байт.
             // Веха-5: слот честно выбирается 'wc d' (default WORK_CELL).
             if (Current_Char == KW_SAVE) {
+                if (Num_Pending == 0x00000001) {
+                    // веха-8: 'sv' честно ПОГЛОЩАЕТ открытое nb-число как
+                    // адрес: cell[Num_Acc] = acc. Длина та же 5 Б — честно
+                    // меняется только операнд BE32(W_Current) -> BE32(Num_Acc)
+                    out_cell(STREAM_EMIT_CELL, OP_STORE_AT_CODE);
+                    sys_call(FILE_U8);
+                    Emitted_Bytes = Emitted_Bytes + 1;
+                    log_cell(STREAM_EMIT_CELL, Num_Acc);
+                    sys_call(FILE_PUT);
+                    Emitted_Bytes = Emitted_Bytes + 4;
+                    Num_Pending = 0x00000000;
+                    Num_Acc = 0x00000000;
+                } else {
                 out_cell(STREAM_EMIT_CELL, OP_STORE_AT_CODE);
                 sys_call(FILE_U8);
                 Emitted_Bytes = Emitted_Bytes + 1;
                 log_cell(STREAM_EMIT_CELL, W_Current);
                 sys_call(FILE_PUT);
                 Emitted_Bytes = Emitted_Bytes + 4;
+                }
                 Token_Counter = Token_Counter + 1;
                 Found_Flag = 0x00000001;
             }
@@ -898,6 +973,21 @@ function Scan_Word_Loop() {
             // 'va' (TKT-050 веха-2): честная загрузка памяти — OP_LOAD 0x12
             // + режим 0x19 (acc = cell[arg]) + BE32(W_Current). 6 байт.
             if (Current_Char == KW_VALUE) {
+                if (Num_Pending == 0x00000001) {
+                    // веха-8: 'va' честно ПОГЛОЩАЕТ открытое nb-число как
+                    // адрес: acc = cell[Num_Acc]. Длина та же 6 Б.
+                    out_cell(STREAM_EMIT_CELL, OP_LOAD_CODE);
+                    sys_call(FILE_U8);
+                    Emitted_Bytes = Emitted_Bytes + 1;
+                    out_cell(STREAM_EMIT_CELL, 0x00000019);
+                    sys_call(FILE_U8);
+                    Emitted_Bytes = Emitted_Bytes + 1;
+                    log_cell(STREAM_EMIT_CELL, Num_Acc);
+                    sys_call(FILE_PUT);
+                    Emitted_Bytes = Emitted_Bytes + 4;
+                    Num_Pending = 0x00000000;
+                    Num_Acc = 0x00000000;
+                } else {
                 out_cell(STREAM_EMIT_CELL, OP_LOAD_CODE);
                 sys_call(FILE_U8);
                 Emitted_Bytes = Emitted_Bytes + 1;
@@ -907,6 +997,7 @@ function Scan_Word_Loop() {
                 log_cell(STREAM_EMIT_CELL, W_Current);
                 sys_call(FILE_PUT);
                 Emitted_Bytes = Emitted_Bytes + 4;
+                }
                 Token_Counter = Token_Counter + 1;
                 Found_Flag = 0x00000001;
             }
@@ -916,12 +1007,25 @@ function Scan_Word_Loop() {
             // cell[cell[текущий слот]]. Указатель честно живёт в
             // рабочем слоте: кладётся обычным 'sv' из acc. 5 байт.
             if (Current_Char == KW_GP) {
+                if (Num_Pending == 0x00000001) {
+                    // веха-8: 'gp' честно ПОГЛОЩАЕТ открытое nb-число как
+                    // адрес: acc = cell[cell[Num_Acc]]. Длина та же 5 Б.
+                    out_cell(STREAM_EMIT_CELL, OP_INCELL_IND_CODE);
+                    sys_call(FILE_U8);
+                    Emitted_Bytes = Emitted_Bytes + 1;
+                    log_cell(STREAM_EMIT_CELL, Num_Acc);
+                    sys_call(FILE_PUT);
+                    Emitted_Bytes = Emitted_Bytes + 4;
+                    Num_Pending = 0x00000000;
+                    Num_Acc = 0x00000000;
+                } else {
                 out_cell(STREAM_EMIT_CELL, OP_INCELL_IND_CODE);
                 sys_call(FILE_U8);
                 Emitted_Bytes = Emitted_Bytes + 1;
                 log_cell(STREAM_EMIT_CELL, W_Current);
                 sys_call(FILE_PUT);
                 Emitted_Bytes = Emitted_Bytes + 4;
+                }
                 Token_Counter = Token_Counter + 1;
                 Found_Flag = 0x00000001;
             }
@@ -931,12 +1035,26 @@ function Scan_Word_Loop() {
             // cell[cell[текущий слот]] = acc. Адрес 0 честно бракует
             // сама VM (BRK_IND_ADDR_0) — эмит всегда честен. 5 байт.
             if (Current_Char == KW_SP) {
+                if (Num_Pending == 0x00000001) {
+                    // веха-8: 'sp' честно ПОГЛОЩАЕТ открытое nb-число как
+                    // адрес: cell[cell[Num_Acc]] = acc. Адрес 0 честно
+                    // бракует сама VM (BRK_IND_ADDR_0). Длина та же 5 Б.
+                    out_cell(STREAM_EMIT_CELL, OP_STORE_IND_CODE);
+                    sys_call(FILE_U8);
+                    Emitted_Bytes = Emitted_Bytes + 1;
+                    log_cell(STREAM_EMIT_CELL, Num_Acc);
+                    sys_call(FILE_PUT);
+                    Emitted_Bytes = Emitted_Bytes + 4;
+                    Num_Pending = 0x00000000;
+                    Num_Acc = 0x00000000;
+                } else {
                 out_cell(STREAM_EMIT_CELL, OP_STORE_IND_CODE);
                 sys_call(FILE_U8);
                 Emitted_Bytes = Emitted_Bytes + 1;
                 log_cell(STREAM_EMIT_CELL, W_Current);
                 sys_call(FILE_PUT);
                 Emitted_Bytes = Emitted_Bytes + 4;
+                }
                 Token_Counter = Token_Counter + 1;
                 Found_Flag = 0x00000001;
             }
@@ -978,6 +1096,17 @@ function Scan_Word_Loop() {
             // (хвост-проверка после скана).
 
             if (Current_Char == KW_EQ) {
+                if (Num_Pending == 0x00000001) {
+                    // веха-8: открытое nb-число потребляется честно только
+                    // 'sv'/'va'/'gp'/'sp' или закрывается 'ne' — честный
+                    // брак fail-fast (позиция = текущее слово)
+                    if (Error_Flag == 0x00000000) {
+                        Fail_Code = BRK_NB_NO_CONS;
+                        Fail_Position = Word_Index;
+                        Error_Flag = 0x00000001;
+                        Word_Index = MAX_SOURCE_WORDS;
+                    }
+                } else {
                 if (Op_Pending == 0x00000000) {
                     Op_Pending = 0x00000016;
                     Op_Position = Word_Index;
@@ -992,9 +1121,21 @@ function Scan_Word_Loop() {
                         Word_Index = MAX_SOURCE_WORDS;
                     }
                 }
+                }
             }
 
             if (Current_Char == KW_GT) {
+                if (Num_Pending == 0x00000001) {
+                    // веха-8: открытое nb-число потребляется честно только
+                    // 'sv'/'va'/'gp'/'sp' или закрывается 'ne' — честный
+                    // брак fail-fast (позиция = текущее слово)
+                    if (Error_Flag == 0x00000000) {
+                        Fail_Code = BRK_NB_NO_CONS;
+                        Fail_Position = Word_Index;
+                        Error_Flag = 0x00000001;
+                        Word_Index = MAX_SOURCE_WORDS;
+                    }
+                } else {
                 if (Op_Pending == 0x00000000) {
                     Op_Pending = 0x0000001A;
                     Op_Position = Word_Index;
@@ -1009,9 +1150,21 @@ function Scan_Word_Loop() {
                         Word_Index = MAX_SOURCE_WORDS;
                     }
                 }
+                }
             }
 
             if (Current_Char == KW_LT) {
+                if (Num_Pending == 0x00000001) {
+                    // веха-8: открытое nb-число потребляется честно только
+                    // 'sv'/'va'/'gp'/'sp' или закрывается 'ne' — честный
+                    // брак fail-fast (позиция = текущее слово)
+                    if (Error_Flag == 0x00000000) {
+                        Fail_Code = BRK_NB_NO_CONS;
+                        Fail_Position = Word_Index;
+                        Error_Flag = 0x00000001;
+                        Word_Index = MAX_SOURCE_WORDS;
+                    }
+                } else {
                 if (Op_Pending == 0x00000000) {
                     Op_Pending = 0x0000001B;
                     Op_Position = Word_Index;
@@ -1026,9 +1179,21 @@ function Scan_Word_Loop() {
                         Word_Index = MAX_SOURCE_WORDS;
                     }
                 }
+                }
             }
 
             if (Current_Char == KW_ADD) {
+                if (Num_Pending == 0x00000001) {
+                    // веха-8: открытое nb-число потребляется честно только
+                    // 'sv'/'va'/'gp'/'sp' или закрывается 'ne' — честный
+                    // брак fail-fast (позиция = текущее слово)
+                    if (Error_Flag == 0x00000000) {
+                        Fail_Code = BRK_NB_NO_CONS;
+                        Fail_Position = Word_Index;
+                        Error_Flag = 0x00000001;
+                        Word_Index = MAX_SOURCE_WORDS;
+                    }
+                } else {
                 if (Op_Pending == 0x00000000) {
                     // честная арифметика (TKT-052 веха-3): режим OP_LOAD 0x14
                     // (acc = acc + литерал) — тот же pending-механизм, что у
@@ -1046,9 +1211,21 @@ function Scan_Word_Loop() {
                         Word_Index = MAX_SOURCE_WORDS;
                     }
                 }
+                }
             }
 
             if (Current_Char == KW_SUB) {
+                if (Num_Pending == 0x00000001) {
+                    // веха-8: открытое nb-число потребляется честно только
+                    // 'sv'/'va'/'gp'/'sp' или закрывается 'ne' — честный
+                    // брак fail-fast (позиция = текущее слово)
+                    if (Error_Flag == 0x00000000) {
+                        Fail_Code = BRK_NB_NO_CONS;
+                        Fail_Position = Word_Index;
+                        Error_Flag = 0x00000001;
+                        Word_Index = MAX_SOURCE_WORDS;
+                    }
+                } else {
                 if (Op_Pending == 0x00000000) {
                     // честная арифметика (TKT-052 веха-3): режим OP_LOAD 0x17
                     // (acc = acc - литерал) — VM-режим 0x17 уже честен (TKT-009)
@@ -1065,12 +1242,24 @@ function Scan_Word_Loop() {
                         Word_Index = MAX_SOURCE_WORDS;
                     }
                 }
+                }
             }
 
             // 'if' -> if -> OP_JZ (0x06) + честный слот (тот же честный механизм)
             // 'if' -> OP_JZ (0x06) + честный слот If_Site_1; второй 'if' —
             // честный брак BRK_PATCH_OVERFLOW (fail-fast, правило первый-сбой)
             if (Current_Char == KW_IF) {
+                if (Num_Pending == 0x00000001) {
+                    // веха-8: открытое nb-число потребляется честно только
+                    // 'sv'/'va'/'gp'/'sp' или закрывается 'ne' — честный
+                    // брак fail-fast (позиция = текущее слово)
+                    if (Error_Flag == 0x00000000) {
+                        Fail_Code = BRK_NB_NO_CONS;
+                        Fail_Position = Word_Index;
+                        Error_Flag = 0x00000001;
+                        Word_Index = MAX_SOURCE_WORDS;
+                    }
+                } else {
                 if (If_Count == 0x00000002) {
                     // честный отказ ДО эмиссии: оба if-слота заняты (TKT-050)
                     if (Error_Flag == 0x00000000) {
@@ -1097,11 +1286,23 @@ function Scan_Word_Loop() {
                     Token_Counter = Token_Counter + 1;
                     Found_Flag = 0x00000001;
                 }
+                }
             }
 
             // 'es' -> else -> OP_JMP (0x07) + честный слот Jmp_Slot_1;
             // честное начало else-тела = позиция после операнда (туда прыгнет JZ)
             if (Current_Char == KW_ELSE) {
+                if (Num_Pending == 0x00000001) {
+                    // веха-8: открытое nb-число потребляется честно только
+                    // 'sv'/'va'/'gp'/'sp' или закрывается 'ne' — честный
+                    // брак fail-fast (позиция = текущее слово)
+                    if (Error_Flag == 0x00000000) {
+                        Fail_Code = BRK_NB_NO_CONS;
+                        Fail_Position = Word_Index;
+                        Error_Flag = 0x00000001;
+                        Word_Index = MAX_SOURCE_WORDS;
+                    }
+                } else {
                 if (Jmp_Count == 0x00000002) {
                     // честный отказ ДО эмиссии: оба else-слота заняты (TKT-050)
                     if (Error_Flag == 0x00000000) {
@@ -1134,17 +1335,30 @@ function Scan_Word_Loop() {
                     Token_Counter = Token_Counter + 1;
                     Found_Flag = 0x00000001;
                 }
+                }
             }
 
             // 'te' -> terminate -> OP_TERM (0x05); честное запоминание позиции
             // байта TERM — честный target патча демо (адрес честного останова)
             if (Current_Char == KW_TERM) {
+                if (Num_Pending == 0x00000001) {
+                    // веха-8: открытое nb-число потребляется честно только
+                    // 'sv'/'va'/'gp'/'sp' или закрывается 'ne' — честный
+                    // брак fail-fast (позиция = текущее слово)
+                    if (Error_Flag == 0x00000000) {
+                        Fail_Code = BRK_NB_NO_CONS;
+                        Fail_Position = Word_Index;
+                        Error_Flag = 0x00000001;
+                        Word_Index = MAX_SOURCE_WORDS;
+                    }
+                } else {
                 out_cell(STREAM_EMIT_CELL, OP_TERM_CODE);
                 sys_call(FILE_U8);
                 Emitted_Bytes = Emitted_Bytes + 1;
                 JP_Site_Term = Emitted_Bytes - 1;  // честная позиция самого байта
                 Token_Counter = Token_Counter + 1;
                 Found_Flag = 0x00000001;
+                }
             }
 
             // Честные литералы (стадия-1.4, TKT-036): слово '0'..'9',
