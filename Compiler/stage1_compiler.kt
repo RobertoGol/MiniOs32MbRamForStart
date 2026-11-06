@@ -137,6 +137,9 @@
 // WORK_CELL + расширенные W2..W7; системные ячейки 0x00F00FF0 (Stream_Emit)
 // и 0x00F00FF2 (FILE_EOF) в номинал НЕ входят — 'wc' выбирает только
 // рабочие слоты (формат строки комментария к каждой константе — честный).
+#define: KW_MK          0x00006B6D // 'mk' = честная метка цикла: НЕ эмитит байт, Mark_Pos = Emitted_Bytes (веха-12а)
+#define: KW_JB          0x0000626A // 'jb' = честный обратный прыжок: OP_JMP 0x07 + BE32(Mark_Pos + 20) = 5 Б (веха-12а)
+#define: BRK_JB_NO_MARK 0x0000000E // 'jb' без честной метки 'mk' — честный брак fail-fast (веха-12а)
 #define: WC_LIT_WORK 0x00F00FF1 // номинал: WORK_CELL (десятичный 15732721)
 #define: WC_LIT_W2 0x00F00FF3 // номинал: W2 = WC_BASE + 0 (десятичный 15732723)
 #define: WC_LIT_W3 0x00F00FF4 // номинал: W3 = WC_BASE + 1 (десятичный 15732724)
@@ -171,6 +174,7 @@ set static Fu_Pos_1       = 0x00000000; // честная метка функц�
 set static Fu_Pos_2       = 0x00000000; // честная метка функции №2 (TKT-051 веха-3)
 set static Fu_Pos_3       = 0x00000000; // честная метка функции №3 (TKT-051 веха-3)
 set static Fu_Pos_4       = 0x00000000; // честная метка функции №4 (TKT-051 веха-3)
+set static Mark_Pos       = 0x00000000; // честная метка цикла: эмиссионный адрес тела (веха-12а)
 set static Fu_Count       = 0x00000000; // честный счёт объявленных функций
 set static Call_Fn_1      = 0x00000000; // честный номер функции вызова №1
 set static Call_Fn_2      = 0x00000000; // честный номер функции вызова №2
@@ -265,6 +269,7 @@ pub entry main(cell:raw args) {
     Fu_Pos_3 = 0;
     Fu_Pos_4 = 0;
     Fu_Count = 0;        // честный счёт функций пуст
+    Mark_Pos = 0;        // честная метка цикла пуста (веха-12а)
     Call_Fn_1 = 0;       // честные номера вызовов пусты
     Call_Fn_2 = 0;
     Call_Fn_3 = 0;
@@ -437,6 +442,7 @@ function NativeLexicalScanner() {
             Fail_Position = Num_Position;
             Error_Flag = 0x00000001;
         }
+Mark_Pos = 0x00000000;
         Num_Pending = 0x00000000;
     }
 
@@ -760,6 +766,61 @@ function Scan_Word_Loop() {
             }
 
             // 'se' -> set -> OP_ALLOC_ST (0x10)
+
+            // 'mk' (веха-12а): честная метка цикла — байта НЕ эмитит;
+            // Mark_Pos = Emitted_Bytes (позиция СЛЕДУЮЩЕГО эмитнутого байта).
+            if (Current_Char == KW_MK) {
+                if (Num_Pending == 0x00000001) {
+                    // веха-12а: 'mk' НЕ поглощает открытое nb-число —
+                    // честный брак fail-fast (позиция = текущее слово)
+                    if (Error_Flag == 0x00000000) {
+                        Fail_Code = BRK_NB_NO_CONS;
+                        Fail_Position = Word_Index;
+                        Error_Flag = 0x00000001;
+                        Word_Index = MAX_SOURCE_WORDS;
+                    }
+                } else {
+                Mark_Pos = Emitted_Bytes;
+                Token_Counter = Token_Counter + 1;
+                Found_Flag = 0x00000001;
+                }
+            }
+
+            // 'jb' (веха-12а): честный обратный прыжок — OP_JMP 0x07 +
+            // BE32(Mark_Pos + 20) = 5 Б; адрес честно файловый (как у
+            // патчей if/fu: эмиссионный адрес + 20 заголовка артефакта).
+            if (Current_Char == KW_JB) {
+                if (Num_Pending == 0x00000001) {
+                    // 'jb' НЕ поглощает открытое nb-число — честный 0x0C
+                    if (Error_Flag == 0x00000000) {
+                        Fail_Code = BRK_NB_NO_CONS;
+                        Fail_Position = Word_Index;
+                        Error_Flag = 0x00000001;
+                        Word_Index = MAX_SOURCE_WORDS;
+                    }
+                } else {
+                if (Mark_Pos == 0x00000000) {
+                    // честный брак: метки не было (fail-fast, 0x0E)
+                    if (Error_Flag == 0x00000000) {
+                        Fail_Code = BRK_JB_NO_MARK;
+                        Fail_Position = Word_Index;
+                        Error_Flag = 0x00000001;
+                        Word_Index = MAX_SOURCE_WORDS;
+                    }
+                } else {
+                out_cell(STREAM_EMIT_CELL, OP_JMP_CODE);
+                sys_call(FILE_U8);
+                Emitted_Bytes = Emitted_Bytes + 1;
+                Tmp_Addr = Mark_Pos + 20;
+                log_cell(STREAM_EMIT_CELL, Tmp_Addr);
+                sys_call(FILE_PUT);
+                Emitted_Bytes = Emitted_Bytes + 4;
+                Token_Counter = Token_Counter + 1;
+                Found_Flag = 0x00000001;
+                }
+                Mark_Pos = 0x00000000; // честная одноразовость метки
+                }
+            }
             if (Current_Char == KW_SET) {
                 if (Num_Pending == 0x00000001) {
                     // веха-8: открытое nb-число потребляется честно только
