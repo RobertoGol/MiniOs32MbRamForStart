@@ -56,6 +56,8 @@
 #define: KW_RET 0x00006572 // 're' = return: честный выход из функции (TKT-051)
 #define: KW_PR 0x00007270 // 'pr' = print: честный вывод — OP_OUTCELL_V + порт + WORK_CELL (TKT-052 веха-4)
 #define: KW_WC 0x00006377 // 'wc' = work cell select: следующий литерал d (0..5) честно выбирает расширенный слот (TKT-052 веха-5)
+#define: KW_GP 0x00007067 // 'gp' = get pointer: acc = cell[cell[W_Current]] (веха-6, через 0x52)
+#define: KW_SP 0x00007073 // 'sp' = store pointer: cell[cell[W_Current]] = acc (веха-6, через 0x53)
 #define: WC_BASE 0x00F00FF3 // честная база расширенных рабочих слотов W2..W7 (0x00F00FF3..0x00F00FF8 — соседние с WORK_CELL 0x00F00FF1, по чек-скану репо свободны)
 #define: KW_TERM          0x00006574 // 'te': terminate -> OP_TERM
 #define: SYM_BRACE_OPEN   0x0000007B // '{'  -> синтаксис, байт НЕ эмитится
@@ -77,6 +79,8 @@
 #define: OP_LOAD_CODE 0x00000012 // 0x12 OP_LOAD (режимы: 0x14 add, 0x16 eq, 0x17 sub)
 #define: OP_STORE_AT_CODE 0x00000055 // 0x55 OP_STORE_AT cell[arg] = acc (TKT-050 веха-2)
 #define: OP_OUTCELL_V_CODE 0x00000054 // 0x54 OP_OUTCELL_V — вывод ЗНАЧЕНИЯ ячейки в порт (TKT-052 веха-4 'pr')
+#define: OP_INCELL_IND_CODE 0x00000052 // 0x52 OP_INCELL_IND acc = cell[cell[arg]] — честная косвенность (TKT-052 веха-6)
+#define: OP_STORE_IND_CODE 0x00000053 // 0x53 OP_STORE_IND cell[cell[arg]] = acc — честная косвенная запись (TKT-052 веха-6)
 #define: SYM_LIT_BASE  0x00000030 // '0': база честного литерального ряда '0'..'9'
 #define: LIT_D0        0x00000030 // '0' — слово однозначного литерала (сим2==0)
 #define: LIT_D1        0x00000031 // '1'
@@ -808,6 +812,36 @@ function Scan_Word_Loop() {
                 sys_call(FILE_U8);
                 Emitted_Bytes = Emitted_Bytes + 1;
                 out_cell(STREAM_EMIT_CELL, 0x00000019);
+                sys_call(FILE_U8);
+                Emitted_Bytes = Emitted_Bytes + 1;
+                log_cell(STREAM_EMIT_CELL, W_Current);
+                sys_call(FILE_PUT);
+                Emitted_Bytes = Emitted_Bytes + 4;
+                Token_Counter = Token_Counter + 1;
+                Found_Flag = 0x00000001;
+            }
+
+            // 'gp' (TKT-052 веха-6): честная косвенная загрузка —
+            // OP_INCELL_IND 0x52 + BE32(W_Current): acc =
+            // cell[cell[текущий слот]]. Указатель честно живёт в
+            // рабочем слоте: кладётся обычным 'sv' из acc. 5 байт.
+            if (Current_Char == KW_GP) {
+                out_cell(STREAM_EMIT_CELL, OP_INCELL_IND_CODE);
+                sys_call(FILE_U8);
+                Emitted_Bytes = Emitted_Bytes + 1;
+                log_cell(STREAM_EMIT_CELL, W_Current);
+                sys_call(FILE_PUT);
+                Emitted_Bytes = Emitted_Bytes + 4;
+                Token_Counter = Token_Counter + 1;
+                Found_Flag = 0x00000001;
+            }
+
+            // 'sp' (TKT-052 веха-6): честная косвенная запись —
+            // OP_STORE_IND 0x53 + BE32(W_Current):
+            // cell[cell[текущий слот]] = acc. Адрес 0 честно бракует
+            // сама VM (BRK_IND_ADDR_0) — эмит всегда честен. 5 байт.
+            if (Current_Char == KW_SP) {
+                out_cell(STREAM_EMIT_CELL, OP_STORE_IND_CODE);
                 sys_call(FILE_U8);
                 Emitted_Bytes = Emitted_Bytes + 1;
                 log_cell(STREAM_EMIT_CELL, W_Current);
