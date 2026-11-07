@@ -109,6 +109,10 @@ class CtOsVm:
         # упакованных из текста инструментом; без --source честно пуст
         self.src_words = list(source_words) if source_words else []
         self.src_pos = 0       # честная позиция чтения потока исходника
+        # честный контекст задач (TKT-055 спринт А, NID 0x150-0x152):
+        # снимок состояния ЯДРА (планировщика) на момент RESTORE — точка возврата
+        # для честного WORK_CTX_YIELD; None = ядерный контекст не установлен
+        self.kernel_ctx = None
 
     # ---------- лог ----------
     def log(self, line):
@@ -119,6 +123,43 @@ class CtOsVm:
             self.trace_file.write(stamped + "\n")
         else:
             print(stamped)
+
+    # ---------- честный контекст задач: блок сохранения в ячейках (TKT-055) ----------
+    # Раскладка блока по честному указателю (адрес из Stream_Emit):
+    #   +0 magic 'CTX1' +1 pc +2 acc +3 rts_len +4.. rts-слова.
+    # rts хранится снизу вверх (как в списке VM) — порядок честно восстанавливается.
+    WORK_CTX_MAGIC = 0x43545831   # 'CTX1' BE
+    WORK_CTX_RTS_MAX = 0x80       # честная глубина стека в блоке (128 слов)
+
+    def _work_ctx_write(self, ptr, save_pc):
+        self.cells[ptr] = self.WORK_CTX_MAGIC
+        self.cells[ptr + 1] = save_pc & 0xFFFFFFFF
+        self.cells[ptr + 2] = getattr(self, "_acc", 0) & 0xFFFFFFFF
+        self.cells[ptr + 3] = len(self.rts) & 0xFFFFFFFF
+        base = ptr + 4
+        for i, ret in enumerate(self.rts):
+            self.cells[base + i] = ret & 0xFFFFFFFF
+
+    def _work_ctx_read(self, ptr):
+        magic = self.cells.get(ptr, 0) & 0xFFFFFFFF
+        if magic != self.WORK_CTX_MAGIC:
+            raise VmFault("WORK_CTX: честный брак — блок 0x%08X не имеет магии "
+                          "CTX1 (контекст не инициализирован / испорчен)" % ptr)
+        save_pc = self.cells.get(ptr + 1, 0) & 0xFFFFFFFF
+        acc = self.cells.get(ptr + 2, 0) & 0xFFFFFFFF
+        rts_len = self.cells.get(ptr + 3, 0) & 0xFFFFFFFF
+        if rts_len > self.WORK_CTX_RTS_MAX:
+            raise VmFault("WORK_CTX: честный брак — rts_len %d сверх лимита %d "
+                          "(контекст вне честного блока ячеек)"
+                          % (rts_len, self.WORK_CTX_RTS_MAX))
+        if save_pc < self.pc_entry or save_pc >= len(self.b):
+            raise VmFault("WORK_CTX: честный брак — pc 0x%08X вне потока опкодов"
+                          % save_pc)
+        base = ptr + 4
+        rts = []
+        for i in range(rts_len):
+            rts.append(self.cells.get(base + i, 0) & 0xFFFFFFFF)
+        return save_pc, acc, rts
 
     # ---------- разбор заголовка ----------
     def read_header(self):
@@ -292,6 +333,9 @@ class CtOsVm:
                 raise VmFault("OP_SYSCALL обрезан в конце файла")
             nid = struct.unpack_from(C1, b, pc + 1)[0]
             stream_cell = 0x00F00FF0  # честная ячейка-аргумент syscall (Stream_Emit)
+            # честный флаг: контекстные NID (0x150-0x152) сами выставляют pc,
+            # общий хвост pc+5 применяется только к syscall без переключения
+            ctx_jump = False
             if nid == 0x00000130:     # FILE_BEGIN — честный файл-воркер: открыть артефакт
                 if self.outfile is not None:
                     raise VmFault("FILE_BEGIN: честный артефакт уже открыт")
@@ -374,10 +418,88 @@ class CtOsVm:
                 else:
                     self.cells[0x00F00FF2] = 1
                     self.log("OP_SYSCALL[FILE_GET]: честный конец исходника (EOF)")
+            elif nid == 0x00000150:   # WORK_CTX_SAVE — сохранить контекст (TKT-055)
+                # Аргумент — АДРЕС блока контекста через Stream_Emit (0x00F00FF0).
+                # Сохраняются pc (после syscall), acc и стек rts. Состояние VM
+                # не меняется — SAVE это честный снимок.
+                ptr = self.cells.get(stream_cell, 0) & 0xFFFFFFFF
+                if ptr == 0:
+                    raise VmFault("WORK_CTX_SAVE: честный брак — нет открытого "
+                                  "протокола аргумента (Stream_Emit пуст)")
+                self._work_ctx_write(ptr, pc + 5)
+                self.log("OP_SYSCALL[WORK_CTX_SAVE]: контекст -> блок 0x%08X "
+                         "(pc=0x%08X, acc, rts=%d)" % (ptr, pc + 5, len(self.rts)))
+            elif nid == 0x00000151:   # WORK_CTX_RESTORE — загрузить контекст и продолжить
+                ptr = self.cells.get(stream_cell, 0) & 0xFFFFFFFF
+                if ptr == 0:
+                    raise VmFault("WORK_CTX_RESTORE: честный брак — нет открытого "
+                                  "протокола аргумента (Stream_Emit пуст)")
+                new_pc, new_acc, new_rts = self._work_ctx_read(ptr)
+                # честная переустановка ядерного контекста КАЖДУЮ эпоху: RESTORE
+                # всегда фиксирует точку планировщика после syscall как честную
+                # точку возврата WORK_CTX_YIELD (per-epoch контракт TKT-055)
+                self.kernel_ctx = (pc + 5,
+                                   self._acc & 0xFFFFFFFF,
+                                   list(self.rts))
+                self.rts = new_rts
+                self._acc = new_acc
+                self.pc = self.jump_target(new_pc)
+                ctx_jump = True
+                self.log("OP_SYSCALL[WORK_CTX_RESTORE]: переключение c блока 0x%08X "
+                         "-> pc=0x%08X (rts=%d, ядерный контекст переустановлен)"
+                         % (ptr, self.pc, len(self.rts)))
+            elif nid == 0x00000151:   # WORK_CTX_RESTORE — загрузить контекст и продолжить
+                ptr = self.cells.get(stream_cell, 0) & 0xFFFFFFFF
+                if ptr == 0:
+                    raise VmFault("WORK_CTX_RESTORE: честный брак — нет открытого "
+                                  "протокола аргумента (Stream_Emit пуст)")
+                new_pc, new_acc, new_rts = self._work_ctx_read(ptr)
+                # честная переустановка ядерного контекста КАЖДУЮ эпоху: RESTORE
+                # всегда фиксирует точку планировщика после syscall как честную
+                # точку возврата WORK_CTX_YIELD (per-epoch контракт TKT-055)
+                self.kernel_ctx = (pc + 5,
+                                   self._acc & 0xFFFFFFFF,
+                                   list(self.rts))
+                self.rts = new_rts
+                self._acc = new_acc
+                self.pc = self.jump_target(new_pc)
+                ctx_jump = True
+                self.log("OP_SYSCALL[WORK_CTX_RESTORE]: переключение c блока 0x%08X "
+                         "-> pc=0x%08X (rts=%d, ядерный контекст переустановлен)"
+                         % (ptr, self.pc, len(self.rts)))
+            elif nid == 0x00000152:   # WORK_CTX_YIELD — вернуть управление ядру (TKT-055)
+                ptr = self.cells.get(stream_cell, 0) & 0xFFFFFFFF
+                if ptr == 0:
+                    raise VmFault("WORK_CTX_YIELD: честный брак — нет открытого "
+                                  "протокола аргумента (Stream_Emit пуст)")
+                if self.kernel_ctx is None:
+                    # честный первый вход из свежего OP_CALL-старта задачи:
+                    # контекст задачи сохраняется ПОЛНОСТЬЮ (включая кадр вызова),
+                    # а кадр снимается — возврат в точку после run-вызова ядра
+                    self._work_ctx_write(ptr, pc + 5)
+                    ret_pc = self.rts.pop()
+                    self._acc = 0
+                    self.pc = self.jump_target(ret_pc)
+                    ctx_jump = True
+                    self.log("OP_SYSCALL[WORK_CTX_YIELD]: свежая задача -> блок "
+                             "0x%08X, возврат в точку вызова ядра pc=0x%08X"
+                             % (ptr, self.pc))
+                else:
+                    old_pc, old_acc, old_rts = self.kernel_ctx
+                    self.kernel_ctx = None
+                    self._work_ctx_write(ptr, pc + 5)
+                    self.rts = old_rts
+                    self._acc = old_acc
+                    self.pc = self.jump_target(old_pc)
+                    ctx_jump = True
+                    self.log("OP_SYSCALL[WORK_CTX_YIELD]: задача -> блок 0x%08X, "
+                             "возврат в ядро pc=0x%08X" % (ptr, self.pc))
             else:
                 raise VmFault("OP_SYSCALL: NID 0x%08X — честный драйвер не зарегистрирован "
-                              "(файл-слой зарегистрирован: NID 0x00000130..0x00000137)" % nid)
-            self.pc = pc + 5
+                              "(файл-слой зарегистрирован: NID 0x00000130..0x00000137, "
+                              "контекстный слой: NID 0x00000150..0x00000152)" % nid)
+            if not ctx_jump:
+                self.pc = pc + 5
         elif op == OP_STORE_A:
             if pc + 5 > len(b):
                 raise VmFault("OP_STORE_A обрезан в конце файла")
