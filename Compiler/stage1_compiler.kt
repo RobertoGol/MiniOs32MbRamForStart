@@ -139,6 +139,11 @@
 // рабочие слоты (формат строки комментария к каждой константе — честный).
 #define: KW_MK          0x00006B6D // 'mk' = честная метка цикла: НЕ эмитит байт, Mark_Pos = Emitted_Bytes (веха-12а)
 #define: KW_JB          0x0000626A // 'jb' = честный обратный прыжок: OP_JMP 0x07 + BE32(Mark_Pos + 20) = 5 Б (веха-12а)
+#define: KW_ML          0x00006C6D // 'ml' = честное умножение acc на цифру-литерал 0..9 (веха-12б)
+#define: BRK_ML_NO_LIT  0x0000000F // 'ml' без цифры-множителя — честный брак fail-fast (веха-12б)
+#define: TMP_X   0x00F00FFB // честная TMP-ячейка: множимое (копия acc) кольца 'ml' (веха-12б)
+#define: TMP_CNT 0x00F00FF9 // честная TMP-ячейка: счётчик кольца 'ml' (веха-12б)
+#define: TMP_ACC 0x00F00FFA // честная TMP-ячейка: накопитель произведения 'ml' (веха-12б)
 #define: BRK_JB_NO_MARK 0x0000000E // 'jb' без честной метки 'mk' — честный брак fail-fast (веха-12а)
 #define: WC_LIT_WORK 0x00F00FF1 // номинал: WORK_CELL (десятичный 15732721)
 #define: WC_LIT_W2 0x00F00FF3 // номинал: W2 = WC_BASE + 0 (десятичный 15732723)
@@ -175,6 +180,9 @@ set static Fu_Pos_2       = 0x00000000; // честная метка функц�
 set static Fu_Pos_3       = 0x00000000; // честная метка функции №3 (TKT-051 веха-3)
 set static Fu_Pos_4       = 0x00000000; // честная метка функции №4 (TKT-051 веха-3)
 set static Mark_Pos       = 0x00000000; // честная метка цикла: эмиссионный адрес тела (веха-12а)
+set static Ml_Mult        = 0x00000000; // честный множитель 'ml' (цифра 0..9) (веха-12б)
+set static Ml_L0          = 0x00000000; // честный эмиссионный адрес тела кольца ml (веха-12б)
+set static Emit_Val       = 0x00000000; // честный переносчик значения эмиссии (веха-12б)
 set static Fu_Count       = 0x00000000; // честный счёт объявленных функций
 set static Call_Fn_1      = 0x00000000; // честный номер функции вызова №1
 set static Call_Fn_2      = 0x00000000; // честный номер функции вызова №2
@@ -270,6 +278,8 @@ pub entry main(cell:raw args) {
     Fu_Pos_4 = 0;
     Fu_Count = 0;        // честный счёт функций пуст
     Mark_Pos = 0;        // честная метка цикла пуста (веха-12а)
+    Ml_Mult = 0;         // честный множитель ml пуст (веха-12б)
+    Ml_L0 = 0;           // честный адрес тела кольца ml пуст (веха-12б)
     Call_Fn_1 = 0;       // честные номера вызовов пусты
     Call_Fn_2 = 0;
     Call_Fn_3 = 0;
@@ -341,6 +351,126 @@ pub entry main(cell:raw args) {
 // TKT-052 веха-7: честный позиционный сдвиг накопителя многозначного
 // литерала. Умножения на стадии-0 нет — x10 честно развёрнут в 10
 // сложений (счётчик фиксированный, рекурсия не нужна).
+// веха-12б: честные микропомощники эмиссии (байт/слово), ровно та же
+// семантика, что у инлайн-сайтов: FILE_U8 / FILE_PUT + честный счётчик.
+function Emit_Op_Byte() {
+    log_cell(STREAM_EMIT_CELL, Emit_Val);
+    sys_call(FILE_U8);
+    Emitted_Bytes = Emitted_Bytes + 1;
+}
+
+function Emit_Op_Word() {
+    log_cell(STREAM_EMIT_CELL, Emit_Val);
+    sys_call(FILE_PUT);
+    Emitted_Bytes = Emitted_Bytes + 4;
+}
+
+// веха-12б: честное умножение acc = acc * Ml_Mult через runtime-кольцо.
+// Эмиссия 92 Б: setup 25 + тело 22 + body_add 39 + EXIT 6.
+// Все цели прыжков статичны (известны в момент эмиссии):
+//   L0 = база + 25 (эмиссионный адрес тела)
+//   body_add = L0 + 22; EXIT = L0 + 61; файл = цель + 20 (заголовок v1.1)
+// Ячейки: TMP_X 0x00F00FFB, TMP_CNT 0x00F00FF9, TMP_ACC 0x00F00FFA.
+function Emit_Ml_Ring() {
+    Ml_L0 = Emitted_Bytes + 25;
+    // setup: TMP_X <- acc (множимое)
+    Emit_Val = OP_STORE_AT_CODE;
+    run Emit_Op_Byte();
+    Emit_Val = TMP_X;
+    run Emit_Op_Word();
+    // setup: TMP_CNT <- Ml_Mult (множитель)
+    Emit_Val = OP_CONST_CODE;
+    run Emit_Op_Byte();
+    Emit_Val = Ml_Mult;
+    run Emit_Op_Word();
+    Emit_Val = OP_STORE_AT_CODE;
+    run Emit_Op_Byte();
+    Emit_Val = TMP_CNT;
+    run Emit_Op_Word();
+    // setup: TMP_ACC <- 0 (накопитель)
+    Emit_Val = OP_CONST_CODE;
+    run Emit_Op_Byte();
+    Emit_Val = 0;
+    run Emit_Op_Word();
+    Emit_Val = OP_STORE_AT_CODE;
+    run Emit_Op_Byte();
+    Emit_Val = TMP_ACC;
+    run Emit_Op_Word();
+    // тело: acc = TMP_CNT; acc = (acc == 0)
+    Emit_Val = OP_LOAD_CODE;
+    run Emit_Op_Byte();
+    Emit_Val = 0x00000019;
+    run Emit_Op_Byte();
+    Emit_Val = TMP_CNT;
+    run Emit_Op_Word();
+    Emit_Val = OP_LOAD_CODE;
+    run Emit_Op_Byte();
+    Emit_Val = 0x00000016;
+    run Emit_Op_Byte();
+    Emit_Val = 0;
+    run Emit_Op_Word();
+    // JZ -> body_add (счётчик != 0: acc == 0)
+    Emit_Val = OP_JZ_CODE;
+    run Emit_Op_Byte();
+    Emit_Val = Ml_L0 + 42;
+    run Emit_Op_Word();
+    // JMP -> EXIT (счётчик == 0: acc == 1)
+    Emit_Val = OP_JMP_CODE;
+    run Emit_Op_Byte();
+    Emit_Val = Ml_L0 + 81;
+    run Emit_Op_Word();
+    // body_add: acc = TMP_ACC; acc += TMP_X; TMP_ACC = acc
+    Emit_Val = OP_LOAD_CODE;
+    run Emit_Op_Byte();
+    Emit_Val = 0x00000019;
+    run Emit_Op_Byte();
+    Emit_Val = TMP_ACC;
+    run Emit_Op_Word();
+    Emit_Val = OP_LOAD_CODE;
+    run Emit_Op_Byte();
+    Emit_Val = 0x00000015;
+    run Emit_Op_Byte();
+    Emit_Val = TMP_X;
+    run Emit_Op_Word();
+    Emit_Val = OP_STORE_AT_CODE;
+    run Emit_Op_Byte();
+    Emit_Val = TMP_ACC;
+    run Emit_Op_Word();
+    // body_add: acc = TMP_CNT; acc -= 1; TMP_CNT = acc
+    Emit_Val = OP_LOAD_CODE;
+    run Emit_Op_Byte();
+    Emit_Val = 0x00000019;
+    run Emit_Op_Byte();
+    Emit_Val = TMP_CNT;
+    run Emit_Op_Word();
+    Emit_Val = OP_LOAD_CODE;
+    run Emit_Op_Byte();
+    Emit_Val = 0x00000017;
+    run Emit_Op_Byte();
+    Emit_Val = 1;
+    run Emit_Op_Word();
+    Emit_Val = OP_STORE_AT_CODE;
+    run Emit_Op_Byte();
+    Emit_Val = TMP_CNT;
+    run Emit_Op_Word();
+    // body_add: JMP -> тело (обратный прыжок, цель статична)
+    Emit_Val = OP_JMP_CODE;
+    run Emit_Op_Byte();
+    Emit_Val = Ml_L0 + 20;
+    run Emit_Op_Word();
+    // EXIT: acc = TMP_ACC (произведение)
+    Emit_Val = OP_LOAD_CODE;
+    run Emit_Op_Byte();
+    Emit_Val = 0x00000019;
+    run Emit_Op_Byte();
+    Emit_Val = TMP_ACC;
+    run Emit_Op_Word();
+    Ml_Mult = 0x00000000;
+    Op_Pending = 0x00000000;
+    Token_Counter = Token_Counter + 1;
+    Found_Flag = 0x00000001;
+}
+
 function Num_Place() {
     Num_Tmp = 0x00000000;
     Num_Tmp = Num_Tmp + Num_Acc;
@@ -398,7 +528,11 @@ function NativeLexicalScanner() {
         // честно: несравнённых pending нет
     } else {
         if (Error_Flag == 0x00000000) {
-            Fail_Code = BRK_EQ_NO_LIT;
+            if (Op_Pending == 0x00000090) {
+                Fail_Code = BRK_ML_NO_LIT;   // веха-12б: 'ml' без множителя
+            } else {
+                Fail_Code = BRK_EQ_NO_LIT;
+            }
             Fail_Position = Op_Position;
             Error_Flag = 0x00000001;
         }
@@ -819,6 +953,35 @@ function Scan_Word_Loop() {
                 Found_Flag = 0x00000001;
                 }
                 Mark_Pos = 0x00000000; // честная одноразовость метки
+                }
+            }
+            // 'ml' (веха-12б): честное умножение acc на СЛЕДУЮЩУЮ цифру 0..9.
+            // Слово байта НЕ эмитит: ставит честный pending-режим 0x90; цифра-
+            // множитель разворачивает runtime-кольцо Emit_Ml_Ring (92 Б).
+            if (Current_Char == KW_ML) {
+                if (Num_Pending == 0x00000001) {
+                    // 'ml' НЕ поглощает открытое nb-число — честный 0x0C
+                    if (Error_Flag == 0x00000000) {
+                        Fail_Code = BRK_NB_NO_CONS;
+                        Fail_Position = Word_Index;
+                        Error_Flag = 0x00000001;
+                        Word_Index = MAX_SOURCE_WORDS;
+                    }
+                } else {
+                if (Op_Pending == 0x00000000) {
+                    Op_Pending = 0x00000090; // честный режим множителя 'ml'
+                    Op_Position = Word_Index;
+                    Token_Counter = Token_Counter + 1;
+                    Found_Flag = 0x00000001;
+                } else {
+                    // честный отказ: два оператора подряд (множителя нет)
+                    if (Error_Flag == 0x00000000) {
+                        Fail_Code = BRK_EQ_NO_LIT;
+                        Fail_Position = Word_Index;
+                        Error_Flag = 0x00000001;
+                        Word_Index = MAX_SOURCE_WORDS;
+                    }
+                }
                 }
             }
             if (Current_Char == KW_SET) {
@@ -1602,6 +1765,11 @@ function Scan_Word_Loop() {
                         Token_Counter = Token_Counter + 1;
                         Found_Flag = 0x00000001;
                         } else {
+                        if (Op_Pending == 0x00000090) {
+                        // веха-12б: цифра-множитель 'ml' — честное кольцо
+                        Ml_Mult = Lit_Value;
+                        run Emit_Ml_Ring();
+                        } else {
                         // честная операция (TKT-050 + TKT-052 веха-3): acc = (acc ОП
                         // Lit_Value); режим честно из Op_Pending (0x14 ad / 0x16 eq /
                         // 0x17 su / 0x1A gt / 0x1B lt) — OP_LOAD 0x12 + режим + BE32
@@ -1617,6 +1785,7 @@ function Scan_Word_Loop() {
                         Op_Pending = 0x00000000;
                         Token_Counter = Token_Counter + 1;
                         Found_Flag = 0x00000001;
+                        }
                         }
                     }
                     }
@@ -1723,6 +1892,11 @@ function Scan_Word_Loop() {
                         Token_Counter = Token_Counter + 1;
                         Found_Flag = 0x00000001;
                         } else {
+                        if (Op_Pending == 0x00000090) {
+                        // веха-12б: цифра-множитель 'ml' — честное кольцо
+                        Ml_Mult = Lit_Value;
+                        run Emit_Ml_Ring();
+                        } else {
                         // честная операция (TKT-050 + TKT-052 веха-3): acc = (acc ОП
                         // Lit_Value); режим честно из Op_Pending (0x14 ad / 0x16 eq /
                         // 0x17 su / 0x1A gt / 0x1B lt) — OP_LOAD 0x12 + режим + BE32
@@ -1738,6 +1912,7 @@ function Scan_Word_Loop() {
                         Op_Pending = 0x00000000;
                         Token_Counter = Token_Counter + 1;
                         Found_Flag = 0x00000001;
+                        }
                         }
                     }
                     }
@@ -1844,6 +2019,11 @@ function Scan_Word_Loop() {
                         Token_Counter = Token_Counter + 1;
                         Found_Flag = 0x00000001;
                         } else {
+                        if (Op_Pending == 0x00000090) {
+                        // веха-12б: цифра-множитель 'ml' — честное кольцо
+                        Ml_Mult = Lit_Value;
+                        run Emit_Ml_Ring();
+                        } else {
                         // честная операция (TKT-050 + TKT-052 веха-3): acc = (acc ОП
                         // Lit_Value); режим честно из Op_Pending (0x14 ad / 0x16 eq /
                         // 0x17 su / 0x1A gt / 0x1B lt) — OP_LOAD 0x12 + режим + BE32
@@ -1859,6 +2039,7 @@ function Scan_Word_Loop() {
                         Op_Pending = 0x00000000;
                         Token_Counter = Token_Counter + 1;
                         Found_Flag = 0x00000001;
+                        }
                         }
                     }
                     }
@@ -1965,6 +2146,11 @@ function Scan_Word_Loop() {
                         Token_Counter = Token_Counter + 1;
                         Found_Flag = 0x00000001;
                         } else {
+                        if (Op_Pending == 0x00000090) {
+                        // веха-12б: цифра-множитель 'ml' — честное кольцо
+                        Ml_Mult = Lit_Value;
+                        run Emit_Ml_Ring();
+                        } else {
                         // честная операция (TKT-050 + TKT-052 веха-3): acc = (acc ОП
                         // Lit_Value); режим честно из Op_Pending (0x14 ad / 0x16 eq /
                         // 0x17 su / 0x1A gt / 0x1B lt) — OP_LOAD 0x12 + режим + BE32
@@ -1980,6 +2166,7 @@ function Scan_Word_Loop() {
                         Op_Pending = 0x00000000;
                         Token_Counter = Token_Counter + 1;
                         Found_Flag = 0x00000001;
+                        }
                         }
                     }
                     }
@@ -2086,6 +2273,11 @@ function Scan_Word_Loop() {
                         Token_Counter = Token_Counter + 1;
                         Found_Flag = 0x00000001;
                         } else {
+                        if (Op_Pending == 0x00000090) {
+                        // веха-12б: цифра-множитель 'ml' — честное кольцо
+                        Ml_Mult = Lit_Value;
+                        run Emit_Ml_Ring();
+                        } else {
                         // честная операция (TKT-050 + TKT-052 веха-3): acc = (acc ОП
                         // Lit_Value); режим честно из Op_Pending (0x14 ad / 0x16 eq /
                         // 0x17 su / 0x1A gt / 0x1B lt) — OP_LOAD 0x12 + режим + BE32
@@ -2101,6 +2293,7 @@ function Scan_Word_Loop() {
                         Op_Pending = 0x00000000;
                         Token_Counter = Token_Counter + 1;
                         Found_Flag = 0x00000001;
+                        }
                         }
                     }
                     }
@@ -2207,6 +2400,11 @@ function Scan_Word_Loop() {
                         Token_Counter = Token_Counter + 1;
                         Found_Flag = 0x00000001;
                         } else {
+                        if (Op_Pending == 0x00000090) {
+                        // веха-12б: цифра-множитель 'ml' — честное кольцо
+                        Ml_Mult = Lit_Value;
+                        run Emit_Ml_Ring();
+                        } else {
                         // честная операция (TKT-050 + TKT-052 веха-3): acc = (acc ОП
                         // Lit_Value); режим честно из Op_Pending (0x14 ad / 0x16 eq /
                         // 0x17 su / 0x1A gt / 0x1B lt) — OP_LOAD 0x12 + режим + BE32
@@ -2222,6 +2420,7 @@ function Scan_Word_Loop() {
                         Op_Pending = 0x00000000;
                         Token_Counter = Token_Counter + 1;
                         Found_Flag = 0x00000001;
+                        }
                         }
                     }
                     }
@@ -2329,6 +2528,11 @@ function Scan_Word_Loop() {
                         Token_Counter = Token_Counter + 1;
                         Found_Flag = 0x00000001;
                         } else {
+                        if (Op_Pending == 0x00000090) {
+                        // веха-12б: цифра-множитель 'ml' — честное кольцо
+                        Ml_Mult = Lit_Value;
+                        run Emit_Ml_Ring();
+                        } else {
                         // честная операция (TKT-050 + TKT-052 веха-3): acc = (acc ОП
                         // Lit_Value); режим честно из Op_Pending (0x14 ad / 0x16 eq /
                         // 0x17 su / 0x1A gt / 0x1B lt) — OP_LOAD 0x12 + режим + BE32
@@ -2344,6 +2548,7 @@ function Scan_Word_Loop() {
                         Op_Pending = 0x00000000;
                         Token_Counter = Token_Counter + 1;
                         Found_Flag = 0x00000001;
+                        }
                         }
                     }
                     }
@@ -2451,6 +2656,11 @@ function Scan_Word_Loop() {
                         Token_Counter = Token_Counter + 1;
                         Found_Flag = 0x00000001;
                         } else {
+                        if (Op_Pending == 0x00000090) {
+                        // веха-12б: цифра-множитель 'ml' — честное кольцо
+                        Ml_Mult = Lit_Value;
+                        run Emit_Ml_Ring();
+                        } else {
                         // честная операция (TKT-050 + TKT-052 веха-3): acc = (acc ОП
                         // Lit_Value); режим честно из Op_Pending (0x14 ad / 0x16 eq /
                         // 0x17 su / 0x1A gt / 0x1B lt) — OP_LOAD 0x12 + режим + BE32
@@ -2466,6 +2676,7 @@ function Scan_Word_Loop() {
                         Op_Pending = 0x00000000;
                         Token_Counter = Token_Counter + 1;
                         Found_Flag = 0x00000001;
+                        }
                         }
                     }
                     }
@@ -2573,6 +2784,11 @@ function Scan_Word_Loop() {
                         Token_Counter = Token_Counter + 1;
                         Found_Flag = 0x00000001;
                         } else {
+                        if (Op_Pending == 0x00000090) {
+                        // веха-12б: цифра-множитель 'ml' — честное кольцо
+                        Ml_Mult = Lit_Value;
+                        run Emit_Ml_Ring();
+                        } else {
                         // честная операция (TKT-050 + TKT-052 веха-3): acc = (acc ОП
                         // Lit_Value); режим честно из Op_Pending (0x14 ad / 0x16 eq /
                         // 0x17 su / 0x1A gt / 0x1B lt) — OP_LOAD 0x12 + режим + BE32
@@ -2588,6 +2804,7 @@ function Scan_Word_Loop() {
                         Op_Pending = 0x00000000;
                         Token_Counter = Token_Counter + 1;
                         Found_Flag = 0x00000001;
+                        }
                         }
                     }
                     }
@@ -2695,6 +2912,11 @@ function Scan_Word_Loop() {
                         Token_Counter = Token_Counter + 1;
                         Found_Flag = 0x00000001;
                         } else {
+                        if (Op_Pending == 0x00000090) {
+                        // веха-12б: цифра-множитель 'ml' — честное кольцо
+                        Ml_Mult = Lit_Value;
+                        run Emit_Ml_Ring();
+                        } else {
                         // честная операция (TKT-050 + TKT-052 веха-3): acc = (acc ОП
                         // Lit_Value); режим честно из Op_Pending (0x14 ad / 0x16 eq /
                         // 0x17 su / 0x1A gt / 0x1B lt) — OP_LOAD 0x12 + режим + BE32
@@ -2710,6 +2932,7 @@ function Scan_Word_Loop() {
                         Op_Pending = 0x00000000;
                         Token_Counter = Token_Counter + 1;
                         Found_Flag = 0x00000001;
+                        }
                         }
                     }
                     }
