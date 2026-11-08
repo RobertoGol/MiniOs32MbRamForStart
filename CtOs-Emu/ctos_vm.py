@@ -113,6 +113,22 @@ class CtOsVm:
         # снимок состояния ЯДРА (планировщика) на момент RESTORE — точка возврата
         # для честного WORK_CTX_YIELD; None = ядерный контекст не установлен
         self.kernel_ctx = None
+        # честный вытесняющий таймер (TKT-055 спринт Б, NID 0x153/0x154):
+        # источник тиков — честный счётчик шагов VM (аналог аппаратного
+        # таймера); механика тика в VM, политика планирования — в ядре
+        self.tick_armed = False       # честный таймер заведён (TIMER_ARM)
+        self.tick_quantum = 0         # честный интервал между тиками, в шагах
+        self.tick_next = 0            # честный порог следующего тика (op_count)
+        self.tick_trap_block = 0      # честный блок 'TCK1' для IRQ-кадра
+        self.tick_trap_entry = 0      # честный вход обработчика тика в ядре
+        self.tick_pending = False     # честный флаг: тик доставлен, TIMER_RET не было
+        # честное окно статик-ячеек стадии-0 (TKT-055 спринт Б): общая память
+        # "регистров" задач, объявляется ядром в блоке 'TMR1' (+4 base, +5 count).
+        # Честный ABI: тик сохраняет окно в кадр 'TCK1', ядро переносит в
+        # блок 'CTX1' (+166 count +167 base +170.. ячейки), RESTORE восстанавливает.
+        # Без этого handler честно затирает общие ячейки прерванной задачи.
+        self.tick_st_base = 0         # честная база окна статиков (VAR_ZONE)
+        self.tick_st_count = 0        # честный размер окна (ячеек, 0 = нет статики)
 
     # ---------- лог ----------
     def log(self, line):
@@ -126,25 +142,39 @@ class CtOsVm:
 
     # ---------- честный контекст задач: блок сохранения в ячейках (TKT-055) ----------
     # Раскладка блока по честному указателю (адрес из Stream_Emit):
-    #   +0 magic 'CTX1' +1 pc +2 acc +3 rts_len +4.. rts-слова.
+    #   +0 magic +1 pc +2 acc +3 rts_len +4.. rts-слова.
     # rts хранится снизу вверх (как в списке VM) — порядок честно восстанавливается.
-    WORK_CTX_MAGIC = 0x43545831   # 'CTX1' BE
+    WORK_CTX_MAGIC = 0x43545831   # 'CTX1' BE — блок контекста задачи
+    TIMER_FRAME_MAGIC = 0x54434B31  # 'TCK1' BE — честный кадр тика (IRQ trap frame)
     WORK_CTX_RTS_MAX = 0x80       # честная глубина стека в блоке (128 слов)
 
-    def _work_ctx_write(self, ptr, save_pc):
-        self.cells[ptr] = self.WORK_CTX_MAGIC
+    def _ctx_write(self, ptr, save_pc, magic):
+        """Честный снимок контекста (pc+acc+rts) по указателю; magic выбирает
+        смысл блока: 'CTX1' — контекст задачи, 'TCK1' — честный IRQ-кадр."""
+        if len(self.rts) > self.WORK_CTX_RTS_MAX:
+            raise VmFault("WORK_CTX: честный брак — глубина стека вызовов %d "
+                          "сверх честного лимита %d (снимок перезаписал бы "
+                          "соседние слова блока)"
+                          % (len(self.rts), self.WORK_CTX_RTS_MAX))
+        self.cells[ptr] = magic
         self.cells[ptr + 1] = save_pc & 0xFFFFFFFF
-        self.cells[ptr + 2] = getattr(self, "_acc", 0) & 0xFFFFFFFF
+        self.cells[ptr + 2] = self._acc & 0xFFFFFFFF
         self.cells[ptr + 3] = len(self.rts) & 0xFFFFFFFF
         base = ptr + 4
         for i, ret in enumerate(self.rts):
             self.cells[base + i] = ret & 0xFFFFFFFF
 
-    def _work_ctx_read(self, ptr):
-        magic = self.cells.get(ptr, 0) & 0xFFFFFFFF
-        if magic != self.WORK_CTX_MAGIC:
-            raise VmFault("WORK_CTX: честный брак — блок 0x%08X не имеет магии "
-                          "CTX1 (контекст не инициализирован / испорчен)" % ptr)
+    def _work_ctx_write(self, ptr, save_pc):
+        self._ctx_write(ptr, save_pc, self.WORK_CTX_MAGIC)
+
+    def _ctx_read(self, ptr, magic):
+        found = self.cells.get(ptr, 0) & 0xFFFFFFFF
+        if found != magic:
+            raise VmFault("WORK_CTX: честный брак — блок 0x%08X имеет магию "
+                          "0x%08X, а ожидалась %s (контекст не инициализирован "
+                          "/ испорчен)" % (ptr, found,
+                                           "'CTX1'" if magic == self.WORK_CTX_MAGIC
+                                           else "'TCK1'"))
         save_pc = self.cells.get(ptr + 1, 0) & 0xFFFFFFFF
         acc = self.cells.get(ptr + 2, 0) & 0xFFFFFFFF
         rts_len = self.cells.get(ptr + 3, 0) & 0xFFFFFFFF
@@ -160,6 +190,78 @@ class CtOsVm:
         for i in range(rts_len):
             rts.append(self.cells.get(base + i, 0) & 0xFFFFFFFF)
         return save_pc, acc, rts
+
+    def _work_ctx_read(self, ptr):
+        return self._ctx_read(ptr, self.WORK_CTX_MAGIC)
+
+    # ---------- честное окно статик-ячеек (TKT-055 спринт Б) ----------
+    # Стадия-0 держит "регистры" задач в ОБЩИХ ячейках (VAR_ZONE..): обработчик
+    # тика и ядро честно их затирают. Честный ABI callee-saved: окно (base/count
+    # из блока 'TMR1' +4/+5) снимается в блок формата:
+    #   [off] count, [off+1] base, [off+4 .. off+3+count] ячейки окна;
+    # для кадра 'TCK1' off=132 (после rts-части 4..131): +132 count, +133 base,
+    # +134/135 резерв, ячейки окна честно с +136; для 'CTX1' off=166
+    # (meta: +160..165 заняты, ячейки окна честно в 170.. до 255).
+    STATICS_COUNT_MAX = 0x50      # честный лимит окна (80 ячеек, влезает в ctx)
+    # Честная зона статиков стадии-0 — обязана соответствовать VAR_ZONE кодгена
+    # (Python_compiler/codegen.py: единая раскладка ячеек бирепозитория).
+    STATIC_ZONE = 0x00F00000
+
+    def _statics_save(self, ptr, off):
+        """Честный снимок окна статиков в блок по указателю (armed-режим)."""
+        n = self.tick_st_count
+        if not n:
+            return
+        self.cells[ptr + off] = n & 0xFFFFFFFF
+        self.cells[ptr + off + 1] = self.tick_st_base & 0xFFFFFFFF
+        for i in range(n):
+            v = self.cells.get(self.tick_st_base + i * 4, 0) & 0xFFFFFFFF
+            self.cells[ptr + off + 4 + i] = v
+        self.log("SCHED-STSAVE: честный снимок окна -> блок 0x%08X off=%d "
+                 "(n=%d, base=0x%08X) окна: %s"
+                 % (ptr, off, n, self.tick_st_base,
+                    " ".join("%08X" % (self.cells.get(
+                        ptr + off + 4 + i, 0) & 0xFFFFFFFF)
+                        for i in range(n))))
+
+    def _statics_load(self, ptr, off):
+        """Честное восстановление окна статиков из блока; честный брак —
+        count сверх лимита или base без count."""
+        n = self.cells.get(ptr + off, 0) & 0xFFFFFFFF
+        if not n:
+            return
+        if n > self.STATICS_COUNT_MAX:
+            raise VmFault("статик-окно: честный брак — count %d сверх честного "
+                          "лимита %d (блок 0x%08X испорчен/подменён)"
+                          % (n, self.STATICS_COUNT_MAX, ptr))
+        base = self.cells.get(ptr + off + 1, 0) & 0xFFFFFFFF
+        if not base:
+            raise VmFault("статик-окно: честный брак — count %d без базы "
+                          "(блок 0x%08X испорчен/подменён)" % (n, ptr))
+        for i in range(n):
+            self.cells[base + i * 4] = self.cells.get(
+                ptr + off + 4 + i, 0) & 0xFFFFFFFF
+
+    def _timer_tick(self, at_pc):
+        """Честная механика IRQ-тика (спринт Б): сохранить кадр прерванной
+        задачи в блок 'TCK1' и прыгнуть на вход обработчика ядра. Выбор задач
+        и возврат (TIMER_RET или RESTORE) — честно в коде ядра."""
+        if self.tick_pending:
+            raise VmFault("честный тик: предыдущий тик не завершён "
+                          "(нет TIMER_RET) — nested IRQ не является частью "
+                          "честного контракта спринта Б")
+        self.tick_pending = True
+        self._ctx_write(self.tick_trap_block, at_pc, self.TIMER_FRAME_MAGIC)
+        self._statics_save(self.tick_trap_block, 132)
+        self.pc = self.jump_target(self.tick_trap_entry)
+        self.log("SCHED-TICK: честный IRQ-тик: кадр задачи -> блок 0x%08X "
+                 "(pc=0x%08X, rts=%d, st=%d), вход в обработчик ядра pc=0x%08X "
+                 "окно: %s"
+                 % (self.tick_trap_block, at_pc, len(self.rts),
+                    self.tick_st_count, self.pc,
+                    " ".join("%08X" % (self.cells.get(
+                        self.tick_st_base + i * 4, 0) & 0xFFFFFFFF)
+                        for i in range(self.tick_st_count))))
 
     # ---------- разбор заголовка ----------
     def read_header(self):
@@ -216,6 +318,17 @@ class CtOsVm:
                           "0x%08X (файл 0x%08X байт) — OP_TERM не встретился"
                           % (pc, len(b)))
         op = b[pc]
+
+        # честный IRQ-тик (TKT-055 спринт Б): доставляется МЕЖДУ инструкциями
+        # (текущий pc ещё не исполнен), только после первого RESTORE эпохи
+        # (kernel_ctx установлен = исполняется задача; ядерный код честно
+        # без тика); счётчик шагов VM = честный аналог аппаратного таймера.
+        if (self.tick_armed and self.kernel_ctx is not None
+                and self.op_count >= self.tick_next
+                and not self.tick_pending):
+            self._timer_tick(pc)
+            self.tick_next = self.op_count + self.tick_quantum
+            return True   # честный тик занимает шаг VM (честная накладка IRQ)
         self.op_count += 1
 
         # 1) тривиальные без аргументов
@@ -427,6 +540,7 @@ class CtOsVm:
                     raise VmFault("WORK_CTX_SAVE: честный брак — нет открытого "
                                   "протокола аргумента (Stream_Emit пуст)")
                 self._work_ctx_write(ptr, pc + 5)
+                self._statics_save(ptr, 166)
                 self.log("OP_SYSCALL[WORK_CTX_SAVE]: контекст -> блок 0x%08X "
                          "(pc=0x%08X, acc, rts=%d)" % (ptr, pc + 5, len(self.rts)))
             elif nid == 0x00000151:   # WORK_CTX_RESTORE — загрузить контекст и продолжить
@@ -444,29 +558,12 @@ class CtOsVm:
                 self.rts = new_rts
                 self._acc = new_acc
                 self.pc = self.jump_target(new_pc)
+                self._statics_load(ptr, 166)
                 ctx_jump = True
                 self.log("OP_SYSCALL[WORK_CTX_RESTORE]: переключение c блока 0x%08X "
-                         "-> pc=0x%08X (rts=%d, ядерный контекст переустановлен)"
-                         % (ptr, self.pc, len(self.rts)))
-            elif nid == 0x00000151:   # WORK_CTX_RESTORE — загрузить контекст и продолжить
-                ptr = self.cells.get(stream_cell, 0) & 0xFFFFFFFF
-                if ptr == 0:
-                    raise VmFault("WORK_CTX_RESTORE: честный брак — нет открытого "
-                                  "протокола аргумента (Stream_Emit пуст)")
-                new_pc, new_acc, new_rts = self._work_ctx_read(ptr)
-                # честная переустановка ядерного контекста КАЖДУЮ эпоху: RESTORE
-                # всегда фиксирует точку планировщика после syscall как честную
-                # точку возврата WORK_CTX_YIELD (per-epoch контракт TKT-055)
-                self.kernel_ctx = (pc + 5,
-                                   self._acc & 0xFFFFFFFF,
-                                   list(self.rts))
-                self.rts = new_rts
-                self._acc = new_acc
-                self.pc = self.jump_target(new_pc)
-                ctx_jump = True
-                self.log("OP_SYSCALL[WORK_CTX_RESTORE]: переключение c блока 0x%08X "
-                         "-> pc=0x%08X (rts=%d, ядерный контекст переустановлен)"
-                         % (ptr, self.pc, len(self.rts)))
+                         "-> pc=0x%08X (rts=%d, st=%d, ядерный контекст переустановлен)"
+                         % (ptr, self.pc, len(self.rts),
+                            self.cells.get(ptr + 166, 0) & 0xFFFFFFFF))
             elif nid == 0x00000152:   # WORK_CTX_YIELD — вернуть управление ядру (TKT-055)
                 ptr = self.cells.get(stream_cell, 0) & 0xFFFFFFFF
                 if ptr == 0:
@@ -477,6 +574,7 @@ class CtOsVm:
                     # контекст задачи сохраняется ПОЛНОСТЬЮ (включая кадр вызова),
                     # а кадр снимается — возврат в точку после run-вызова ядра
                     self._work_ctx_write(ptr, pc + 5)
+                    self._statics_save(ptr, 166)
                     ret_pc = self.rts.pop()
                     self._acc = 0
                     self.pc = self.jump_target(ret_pc)
@@ -488,12 +586,86 @@ class CtOsVm:
                     old_pc, old_acc, old_rts = self.kernel_ctx
                     self.kernel_ctx = None
                     self._work_ctx_write(ptr, pc + 5)
+                    self._statics_save(ptr, 166)
                     self.rts = old_rts
                     self._acc = old_acc
                     self.pc = self.jump_target(old_pc)
                     ctx_jump = True
                     self.log("OP_SYSCALL[WORK_CTX_YIELD]: задача -> блок 0x%08X, "
                              "возврат в ядро pc=0x%08X" % (ptr, self.pc))
+            elif nid == 0x00000153:   # TIMER_ARM — честный вытесняющий таймер (спринт Б)
+                # Аргумент-блок через Stream_Emit ('TMR1'):
+                #   +0 magic 'TMR1' 0x544D5231, +1 квант (шаги VM между тиками),
+                #   +2 trap-блок 'TCK1' (кадр прерванной задачи),
+                #   +3 trap_entry (адрес входа обработчика тика в ядре).
+                # Механика тика в VM, политика планирования — честно в ядре.
+                ptr = self.cells.get(stream_cell, 0) & 0xFFFFFFFF
+                if ptr == 0:
+                    raise VmFault("TIMER_ARM: честный брак — нет открытого "
+                                  "протокола аргумента (Stream_Emit пуст)")
+                if self.cells.get(ptr, 0) & 0xFFFFFFFF != 0x544D5231:
+                    raise VmFault("TIMER_ARM: честный брак — блок 0x%08X не имеет "
+                                  "магии 'TMR1'" % ptr)
+                quant = self.cells.get(ptr + 1, 0) & 0xFFFFFFFF
+                trap_block = self.cells.get(ptr + 2, 0) & 0xFFFFFFFF
+                trap_entry = self.cells.get(ptr + 3, 0) & 0xFFFFFFFF
+                st_base = self.cells.get(ptr + 4, 0) & 0xFFFFFFFF
+                st_count = self.cells.get(ptr + 5, 0) & 0xFFFFFFFF
+                if quant == 0:
+                    raise VmFault("TIMER_ARM: честный брак — квант 0 "
+                                  "(таймер без интервала)")
+                if trap_block == 0:
+                    raise VmFault("TIMER_ARM: честный брак — trap-блок не указан")
+                if st_count and st_base != self.STATIC_ZONE:
+                    raise VmFault("TIMER_ARM: честный брак — база статик-окна "
+                                  "0x%08X вне честной зоны статиков "
+                                  "STATIC_ZONE (0x%08X)" % (st_base, self.STATIC_ZONE))
+                if st_count > self.STATICS_COUNT_MAX:
+                    raise VmFault("TIMER_ARM: честный брак — окно статиков %d "
+                                  "сверх честного лимита %d"
+                                  % (st_count, self.STATICS_COUNT_MAX))
+                if st_count:
+                    st_hi = st_base + st_count * 4
+                    tb_hi = trap_block + 136 + st_count
+                    if st_base < tb_hi and trap_block < st_hi:
+                        raise VmFault("TIMER_ARM: честный брак — окно статики "
+                                      "[0x%08X..0x%08X) перекрывает trap-блок "
+                                      "[0x%08X..0x%08X)"
+                                      % (st_base, st_hi, trap_block, tb_hi))
+                self.jump_target(trap_entry)   # честная проверка входа обработчика
+                if self.tick_pending:
+                    raise VmFault("TIMER_ARM: честный брак — тик ещё не завершён "
+                                  "(нет TIMER_RET), перевзвод запрещён")
+                self.tick_armed = True
+                self.tick_quantum = quant
+                self.tick_next = self.op_count + quant
+                self.tick_trap_block = trap_block
+                self.tick_trap_entry = trap_entry
+                self.tick_st_base = st_base
+                self.tick_st_count = st_count
+                self.log("OP_SYSCALL[TIMER_ARM]: честный таймер заведён "
+                         "(квант %d шагов VM, trap-блок 0x%08X, обработчик "
+                         "0x%08X, статик-окно base=0x%08X count=%d)"
+                         % (quant, trap_block, trap_entry, st_base, st_count))
+            elif nid == 0x00000154:   # TIMER_RET — честный IRET из обработчика тика
+                ptr = self.cells.get(stream_cell, 0) & 0xFFFFFFFF
+                if not self.tick_pending:
+                    raise VmFault("TIMER_RET: честный брак — открытого тика нет "
+                                  "(соответствует IRET без IRQ)")
+                if ptr == 0:
+                    raise VmFault("TIMER_RET: честный брак — нет открытого "
+                                  "протокола аргумента (Stream_Emit пуст)")
+                new_pc, new_acc, new_rts = self._ctx_read(
+                    ptr, self.TIMER_FRAME_MAGIC)
+                self._acc = new_acc
+                self.rts = new_rts
+                self.pc = self.jump_target(new_pc)
+                self._statics_load(ptr, 132)
+                self.tick_pending = False
+                ctx_jump = True
+                self.log("OP_SYSCALL[TIMER_RET]: честный IRET: возобновление "
+                         "прерванной задачи pc=0x%08X (rts=%d)"
+                         % (self.pc, len(self.rts)))
             else:
                 raise VmFault("OP_SYSCALL: NID 0x%08X — честный драйвер не зарегистрирован "
                               "(файл-слой зарегистрирован: NID 0x00000130..0x00000137, "

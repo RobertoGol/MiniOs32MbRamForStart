@@ -105,7 +105,21 @@ class KitiiCodegen:
         """макрос -> переменная -> 0xHEX -> число; иначе честный сбой."""
         t = name.strip()
         if t in self.macro_table:
-            return self.macro_table[t]
+            v = self.macro_table[t]
+            if isinstance(v, str):
+                # честная поздняя привязка: имя функции из #define ->
+                # честный адрес из таблицы вызовов. В СУХОМ проходе
+                # (call_targets is None) честный placeholder 0 того же
+                # размера — он живёт только в выбрасываемом буфере измерения.
+                if self.call_targets is not None:
+                    if v in self.call_targets:
+                        return self.call_targets[v]
+                    self.fail(f"честный брак: #define '{t}' ссылается на "
+                              f"'{v}', но это не имя функции этого файла "
+                              f"(адрес функции честно резолвится только во "
+                              f"2-м проходе)", code="D012")
+                return 0x00000000
+            return v
         if t in self.var_table:
             return self.var_table[t]
         if t.startswith('0x'):
@@ -160,7 +174,14 @@ class KitiiCodegen:
                     if macro_val.startswith('0x'):
                         self.macro_table[macro_name] = int(macro_val, 16)
                     else:
-                        self.macro_table[macro_name] = int(macro_val)
+                        try:
+                            self.macro_table[macro_name] = int(macro_val)
+                        except ValueError:
+                            # честная поздняя привязка: значение — ИМЯ функции
+                            # (адрес честно резолвится во 2-м проходе из
+                            # таблицы вызовов; честная ловля иного мусора —
+                            # в resolve(), честный D010 по месту применения)
+                            self.macro_table[macro_name] = macro_val
             elif directive.type == 'TOKEN_VARIABLE_DECL':
                 # формат парсера: "static cell NAME = VAL"
                 raw = directive.value.strip()
