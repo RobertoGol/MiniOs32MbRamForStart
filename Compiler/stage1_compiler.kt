@@ -304,14 +304,14 @@ pub entry main(cell:raw args) {
     Op_Pending = 0;      // честный pending сравнения пуст
     Num_Pending = 0;     // честное открытое число пусто (веха-7)
     Op_Position = 0;     // честная позиция eq сброшена
-    If_Site_1 = 0;      // honestly нет if-сайтов
+    If_Site_1 = 0;      // честный слот JZ №1 пуст
     If_Site_2 = 0;       // честный слот JZ №2 пуст
     Jmp_Slot_2 = 0;      // честный слот JMP №2 пуст
     Else_Join_2 = 0;     // честное else-тело №2 пусто
     If_Count = 0;        // честный счёт if пуст
     Jmp_Count = 0;       // честный счёт else пуст
-    Jmp_Slot_1 = 0;     // honestly нет es-сайтов
-    Else_Join_1 = 0;    // honestly нет else-сращений
+    Jmp_Slot_1 = 0;     // честный слот JMP №1 пуст
+    Else_Join_1 = 0;    // честное else-тело №1 пусто
     JP_Site_Term = 0;     // честная позиция байта TERM пуста
     Node_Brace_Depth = 0;
     Node_Paren_Depth = 0;
@@ -1488,7 +1488,7 @@ function Scan_Word_Loop() {
                 Found_Flag = 0x00000001;
             }
 
-            // 'cp' (веха-13): честное сравнение С ЯЧЕЙКОЙ —_VM-mode 0x18
+            // 'cp' (веха-13): честное сравнение С ЯЧЕЙКОЙ — режим VM 0x18
             // уже честен (stage-0 тесты), в слово-языке триггера не было:
             // `nb X cp` эмитит OP_LOAD 0x12 + режим 0x18 + BE32(Num_Acc)
             // [1+1+4 = 6 Б] → acc = (acc == cell[X]). Словарное сравнение
