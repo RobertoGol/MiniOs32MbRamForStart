@@ -155,6 +155,8 @@
 #define: BRK_EM_NO_NUM 0x00000011 // 'em' без открытого nb-числа — честный брак fail-fast (веха-12в)
 #define: KW_WO 0x00006F77 // 'wo' = word out: OP_OUTCELL(STREAM, N) + OP_SYSCALL(FILE_PUT) = 14 Б; ВМЕСТО пары 'em'+sc 0x131 (~5 слов языка → 1 слово) (веха-12г)
 #define: BRK_WO_NO_NUM 0x00000012 // 'wo' без открытого nb-числа — честный брак fail-fast (веха-12г)
+#define: KW_CP 0x00007063 // 'cp' = cell compare: ДЕВЯТЫЙ поглотитель nb — acc = (acc == cell[Num_Acc]): OP_LOAD 0x12 + режим 0x18 + BE32(адрес) = 6 Б (веха-13, честный словарь word-компилятора)
+#define: BRK_CP_NO_NUM 0x00000013 // 'cp' без открытого nb-числа — честный брак fail-fast (веха-13)
 #define: WC_LIT_WORK 0x00F00FF1 // номинал: WORK_CELL (десятичный 15732721)
 #define: WC_LIT_W2 0x00F00FF3 // номинал: W2 = WC_BASE + 0 (десятичный 15732723)
 #define: WC_LIT_W3 0x00F00FF4 // номинал: W3 = WC_BASE + 1 (десятичный 15732724)
@@ -1477,6 +1479,39 @@ function Scan_Word_Loop() {
                 } else {
                     if (Error_Flag == 0x00000000) {
                         Fail_Code = BRK_WO_NO_NUM;
+                        Fail_Position = Word_Index;
+                        Error_Flag = 0x00000001;
+                        Word_Index = MAX_SOURCE_WORDS;
+                    }
+                }
+                Token_Counter = Token_Counter + 1;
+                Found_Flag = 0x00000001;
+            }
+
+            // 'cp' (веха-13): честное сравнение С ЯЧЕЙКОЙ —_VM-mode 0x18
+            // уже честен (stage-0 тесты), в слово-языке триггера не было:
+            // `nb X cp` эмитит OP_LOAD 0x12 + режим 0x18 + BE32(Num_Acc)
+            // [1+1+4 = 6 Б] → acc = (acc == cell[X]). Словарное сравнение
+            // word-компилятора: word-code против ячейки с KW_* (многознач-
+            // ный честный литерал живёт в ячейке через 'nb d..X ne' + 'sv').
+            // ДЕВЯТЫЙ поглотитель nb; 'cp' без открытого nb — fail-fast
+            // BRK_CP_NO_NUM 0x13.
+            if (Current_Char == KW_CP) {
+                if (Num_Pending == 0x00000001) {
+                    out_cell(STREAM_EMIT_CELL, OP_LOAD_CODE);
+                    sys_call(FILE_U8);
+                    Emitted_Bytes = Emitted_Bytes + 1;
+                    out_cell(STREAM_EMIT_CELL, 0x00000018);
+                    sys_call(FILE_U8);
+                    Emitted_Bytes = Emitted_Bytes + 1;
+                    log_cell(STREAM_EMIT_CELL, Num_Acc);
+                    sys_call(FILE_PUT);
+                    Emitted_Bytes = Emitted_Bytes + 4;
+                    Num_Pending = 0x00000000;
+                    Num_Acc = 0x00000000;
+                } else {
+                    if (Error_Flag == 0x00000000) {
+                        Fail_Code = BRK_CP_NO_NUM;
                         Fail_Position = Word_Index;
                         Error_Flag = 0x00000001;
                         Word_Index = MAX_SOURCE_WORDS;
