@@ -154,6 +154,7 @@
 #define: BRK_SC_NO_NUM 0x00000010 // 'sc' без открытого nb-числа — честный брак fail-fast (веха-12в)
 #define: BRK_EM_NO_NUM 0x00000011 // 'em' без открытого nb-числа — честный брак fail-fast (веха-12в)
 #define: KW_WO 0x00006F77 // 'wo' = word out: OP_OUTCELL(STREAM, N) + OP_SYSCALL(FILE_PUT) = 14 Б; ВМЕСТО пары 'em'+sc 0x131 (~5 слов языка → 1 слово) (веха-12г)
+#define: KW_OW 0x0000776F // 'ow' = out word-slot: OP_OUTCELL_V(STREAM, W_Current) + OP_SYSCALL(FILE_PUT) = 14 Б; честный канал «значение слота → файл» — эмиссия-runtime значения вместо литерал-константы (веха-14v2); 'ow' НЕ поглотитель nb — открытый nb честно бракует 0x0C
 #define: BRK_WO_NO_NUM 0x00000012 // 'wo' без открытого nb-числа — честный брак fail-fast (веха-12г)
 #define: KW_CP 0x00007063 // 'cp' = cell compare: ДЕВЯТЫЙ поглотитель nb — acc = (acc == cell[Num_Acc]): OP_LOAD 0x12 + режим 0x18 + BE32(адрес) = 6 Б (веха-13, честный словарь word-компилятора)
 #define: BRK_CP_NO_NUM 0x00000013 // 'cp' без открытого nb-числа — честный брак fail-fast (веха-13)
@@ -1535,6 +1536,46 @@ function Scan_Word_Loop() {
                 log_cell(STREAM_EMIT_CELL, W_Current);
                 sys_call(FILE_PUT);
                 Emitted_Bytes = Emitted_Bytes + 4;
+                Token_Counter = Token_Counter + 1;
+                Found_Flag = 0x00000001;
+            }
+
+            // 'ow' (веха-14v2): честный канал «ЗНАЧЕНИЕ СЛОТА → ФАЙЛ» — то же
+            // тело 0x54, что у 'pr', но порт-получатель = STREAM_EMIT_CELL
+            // (0x00F00FF0, ячейка-аргумент syscall), затем runtime-syscall
+            // FILE_PUT в потоке (0x13 + BE32 0x131) — ячейка-источник
+            // FILE_PUT честно получает cell[W_Current]. Итог байткода:
+            // 0x54 + BE32(0x00F00FF0) + BE32(W_Current) [9 Б] + 0x13 +
+            // BE32(0x131) [5 Б] = 14 Б. Слово НЕ поглотитель nb: открытый
+            // nb-числитель без потребителя — честный fail-fast
+            // BRK_NB_NO_CONS 0x0C (веха-8 модель, форма как у структурных).
+            if (Current_Char == KW_OW) {
+                if (Num_Pending == 0x00000001) {
+                    if (Error_Flag == 0x00000000) {
+                        Fail_Code = BRK_NB_NO_CONS;
+                        Fail_Position = Word_Index;
+                        Error_Flag = 0x00000001;
+                        Word_Index = MAX_SOURCE_WORDS;
+                    }
+                } else {
+                    // конверт: 0x54 (байт) + адрес Stream (слово)
+                    out_cell(STREAM_EMIT_CELL, OP_OUTCELL_V_CODE);
+                    sys_call(FILE_U8);
+                    Emitted_Bytes = Emitted_Bytes + 1;
+                    out_cell(STREAM_EMIT_CELL, STREAM_EMIT_CELL);
+                    sys_call(FILE_PUT);
+                    Emitted_Bytes = Emitted_Bytes + 4;
+                    log_cell(STREAM_EMIT_CELL, W_Current);
+                    sys_call(FILE_PUT);
+                    Emitted_Bytes = Emitted_Bytes + 4;
+                    // хвост: runtime-syscall FILE_PUT 0x131 в потоке
+                    out_cell(STREAM_EMIT_CELL, OP_SYSCALL_CODE);
+                    sys_call(FILE_U8);
+                    Emitted_Bytes = Emitted_Bytes + 1;
+                    out_cell(STREAM_EMIT_CELL, FILE_PUT);
+                    sys_call(FILE_PUT);
+                    Emitted_Bytes = Emitted_Bytes + 4;
+                }
                 Token_Counter = Token_Counter + 1;
                 Found_Flag = 0x00000001;
             }
