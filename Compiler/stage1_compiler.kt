@@ -239,6 +239,9 @@ set static Else_Join_1     = 0x00000000; // честное начало else-т�
 set static If_Site_2      = 0x00000000; // честный слот JZ №2 (TKT-050)
 set static Jmp_Slot_2     = 0x00000000; // честный слот JMP №2 (TKT-050)
 set static Else_Join_2    = 0x00000000; // честное else-тело №2 (TKT-050)
+set static If_Site_3      = 0x00000000; // честный слот JZ №3 (веха-21а: аддитив)
+set static Jmp_Slot_3     = 0x00000000; // честный слот JMP №3 (веха-21а)
+set static Else_Join_3    = 0x00000000; // честное else-тело №3 (веха-21а)
 set static If_Count       = 0x00000000; // честный счёт if-слотов
 set static Jmp_Count      = 0x00000000; // честный счёт else-слотов
 set static Patch_Target     = 0x00000000; // честный target патча JZ (pereklich корней)
@@ -325,6 +328,9 @@ pub entry main(cell:raw args) {
     If_Site_2 = 0;       // честный слот JZ №2 пуст
     Jmp_Slot_2 = 0;      // честный слот JMP №2 пуст
     Else_Join_2 = 0;     // честное else-тело №2 пусто
+    If_Site_3 = 0;       // честный слот JZ №3 пуст (веха-21а)
+    Jmp_Slot_3 = 0;      // честный слот JMP №3 пуст (веха-21а)
+    Else_Join_3 = 0;     // честное else-тело №3 пусто (веха-21а)
     If_Count = 0;        // честный счёт if пуст
     Jmp_Count = 0;       // честный счёт else пуст
     Jmp_Slot_1 = 0;     // честный слот JMP №1 пуст
@@ -786,6 +792,22 @@ Mark_Pos = 0x00000000;
         sys_call(FILE_PUT);
         If_Site_2 = 0x00000000;
         Else_Join_2 = 0x00000000;
+    }
+    // честное if-ветвление №3 (веха-21а: аддитив, поведение №1/№2 неизменно)
+    if (If_Site_3 == 0x00000000) {
+        // честно: if-ветвление №3 не было
+    } else {
+        if (Else_Join_3 == 0x00000000) {
+            Patch_Target = JP_Site_Term;     // честно без else: обход до TERM
+        } else {
+            Patch_Target = Else_Join_3;      // честно с else: вход в else-тело
+        }
+        Stream_Emit = If_Site_3 + 20;
+        sys_call(FILE_SEEK);
+        Stream_Emit = Patch_Target + 20;
+        sys_call(FILE_PUT);
+        If_Site_3 = 0x00000000;
+        Else_Join_3 = 0x00000000;
     }
     // честные else-переходы №1 и №2 (TKT-050): схождение ветвей на TERM
     if (Jmp_Slot_1 == 0x00000000) {
@@ -1885,8 +1907,9 @@ function Scan_Word_Loop() {
                         Word_Index = MAX_SOURCE_WORDS;
                     }
                 } else {
-                if (If_Count == 0x00000002) {
-                    // честный отказ ДО эмиссии: оба if-слота заняты (TKT-050)
+                if (If_Count == 0x00000003) {
+                    // честный отказ ДО эмиссии: все три if-слота заняты
+                    // (TKT-050; веха-21а: аддитивный слот №3)
                     if (Error_Flag == 0x00000000) {
                         Fail_Code = BRK_PATCH_OVERFLOW;
                         Fail_Position = Word_Index;
@@ -1901,7 +1924,11 @@ function Scan_Word_Loop() {
                     if (If_Count == 0x00000000) {
                         If_Site_1 = Emitted_Bytes;
                     } else {
-                        If_Site_2 = Emitted_Bytes;
+                        if (If_Count == 0x00000001) {
+                            If_Site_2 = Emitted_Bytes;
+                        } else {
+                            If_Site_3 = Emitted_Bytes;
+                        }
                     }
                     If_Count = If_Count + 1;
                     out_cell(STREAM_EMIT_CELL, 0x00000000);
@@ -1928,8 +1955,9 @@ function Scan_Word_Loop() {
                         Word_Index = MAX_SOURCE_WORDS;
                     }
                 } else {
-                if (Jmp_Count == 0x00000002) {
-                    // честный отказ ДО эмиссии: оба else-слота заняты (TKT-050)
+                if (Jmp_Count == 0x00000003) {
+                    // честный отказ ДО эмиссии: все три else-слота заняты
+                    // (TKT-050; веха-21а: аддитивный слот №3)
                     if (Error_Flag == 0x00000000) {
                         Fail_Code = BRK_PATCH_OVERFLOW;
                         Fail_Position = Word_Index;
@@ -1944,7 +1972,11 @@ function Scan_Word_Loop() {
                     if (Jmp_Count == 0x00000000) {
                         Jmp_Slot_1 = Emitted_Bytes;
                     } else {
-                        Jmp_Slot_2 = Emitted_Bytes;
+                        if (Jmp_Count == 0x00000001) {
+                            Jmp_Slot_2 = Emitted_Bytes;
+                        } else {
+                            Jmp_Slot_3 = Emitted_Bytes;
+                        }
                     }
                     Jmp_Count = Jmp_Count + 1;
                     out_cell(STREAM_EMIT_CELL, 0x00000000);
@@ -1955,7 +1987,11 @@ function Scan_Word_Loop() {
                     if (Jmp_Count == 0x00000001) {
                         Else_Join_1 = Emitted_Bytes;
                     } else {
-                        Else_Join_2 = Emitted_Bytes;
+                        if (Jmp_Count == 0x00000002) {
+                            Else_Join_2 = Emitted_Bytes;
+                        } else {
+                            Else_Join_3 = Emitted_Bytes;
+                        }
                     }
                     Token_Counter = Token_Counter + 1;
                     Found_Flag = 0x00000001;
