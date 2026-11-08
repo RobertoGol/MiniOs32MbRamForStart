@@ -90,6 +90,8 @@
 #define: OP_OUTCELL_V_CODE 0x00000054 // 0x54 OP_OUTCELL_V — вывод ЗНАЧЕНИЯ ячейки в порт (TKT-052 веха-4 'pr')
 #define: OP_INCELL_IND_CODE 0x00000052 // 0x52 OP_INCELL_IND acc = cell[cell[arg]] — честная косвенность (TKT-052 веха-6)
 #define: OP_STORE_IND_CODE 0x00000053 // 0x53 OP_STORE_IND cell[cell[arg]] = acc — честная косвенная запись (TKT-052 веха-6)
+#define: OP_SYSCALL_CODE 0x00000013 // 0x13 OP_SYSCALL — честный syscall-канал слова 'sc' (веха-12в)
+#define: OP_OUTCELL_CODE 0x00000051 // 0x51 OP_OUTCELL cell[arg] = val — честная запись КОНСТАНТЫ в ячейку слова 'em' (веха-12в)
 #define: SYM_LIT_BASE  0x00000030 // '0': база честного литерального ряда '0'..'9'
 #define: LIT_D0        0x00000030 // '0' — слово однозначного литерала (сим2==0)
 #define: LIT_D1        0x00000031 // '1'
@@ -145,6 +147,12 @@
 #define: TMP_CNT 0x00F00FF9 // честная TMP-ячейка: счётчик кольца 'ml' (веха-12б)
 #define: TMP_ACC 0x00F00FFA // честная TMP-ячейка: накопитель произведения 'ml' (веха-12б)
 #define: BRK_JB_NO_MARK 0x0000000E // 'jb' без честной метки 'mk' — честный брак fail-fast (веха-12а)
+// Веха-12в (TKT-052): честный «эмиттер-минима» — syscall и запись константы
+// в произвольную ячейку. Аддитивные слова: ничего из сделанного не тронуто.
+#define: KW_SC 0x00006373 // 'sc' = syscall: OP_SYSCALL 0x13 + BE32(N) = 5 Б; ШЕСТОЙ поглотитель nb-числа (веха-12в)
+#define: KW_EM 0x00006D65 // 'em' = emit: OP_OUTCELL 0x51 + BE32(STREAM_EMIT_CELL) + BE32(N) = 9 Б; СЕДЬМОЙ поглотитель nb-числа (веха-12в)
+#define: BRK_SC_NO_NUM 0x00000010 // 'sc' без открытого nb-числа — честный брак fail-fast (веха-12в)
+#define: BRK_EM_NO_NUM 0x00000011 // 'em' без открытого nb-числа — честный брак fail-fast (веха-12в)
 #define: WC_LIT_WORK 0x00F00FF1 // номинал: WORK_CELL (десятичный 15732721)
 #define: WC_LIT_W2 0x00F00FF3 // номинал: W2 = WC_BASE + 0 (десятичный 15732723)
 #define: WC_LIT_W3 0x00F00FF4 // номинал: W3 = WC_BASE + 1 (десятичный 15732724)
@@ -1359,6 +1367,74 @@ function Scan_Word_Loop() {
                 out_cell(STREAM_EMIT_CELL, OP_RET_CODE);
                 sys_call(FILE_U8);
                 Emitted_Bytes = Emitted_Bytes + 1;
+                Token_Counter = Token_Counter + 1;
+                Found_Flag = 0x00000001;
+            }
+
+            // 'sc' (веха-12в, TKT-052): честный syscall-канал слово-языка —
+            // OP_SYSCALL 0x13 + BE32(N) = 5 Б, где N — открытое nb-число
+            // (NID syscall: FILE_* 0x130-0x137 и далее). Дефолта по образцу
+            // 'sv' у syscall нет ЧЕСТНО: NID без открытого числа — fail-fast
+            // брак (в отличие от sv, дефолт которого = текущий слот).
+            if (Current_Char == KW_SC) {
+                if (Num_Pending == 0x00000001) {
+                    // веха-12в: 'sc' честно ШЕСТОЙ поглотитель nb-числа
+                    // (вехи-8 список поглотителей sv/va/gp/sp/wc -> +sc):
+                    // 'nb X sc' эмитит OP_SYSCALL 0x13 + BE32(X)
+                    out_cell(STREAM_EMIT_CELL, OP_SYSCALL_CODE);
+                    sys_call(FILE_U8);
+                    Emitted_Bytes = Emitted_Bytes + 1;
+                    log_cell(STREAM_EMIT_CELL, Num_Acc);
+                    sys_call(FILE_PUT);
+                    Emitted_Bytes = Emitted_Bytes + 4;
+                    Num_Pending = 0x00000000;
+                    Num_Acc = 0x00000000;
+                } else {
+                    if (Error_Flag == 0x00000000) {
+                        Fail_Code = BRK_SC_NO_NUM;
+                        Fail_Position = Word_Index;
+                        Error_Flag = 0x00000001;
+                        Word_Index = MAX_SOURCE_WORDS;
+                    }
+                }
+                Token_Counter = Token_Counter + 1;
+                Found_Flag = 0x00000001;
+            }
+
+            // 'em' (веха-12в, TKT-052): честная запись КОНСТАНТЫ в
+            // произвольную ячейку по образцу out_cell стадии-0 —
+            // OP_OUTCELL 0x51 + BE32(адрес) + BE32(значение) = 9 Б.
+            // АЦК НЕ ТРОГАЕТСЯ (0x51 пишет значение мимо акумулятора —
+            // честно по VM-контракту). Значение честно из открытого
+            // nb-числа; по умолчанию адреса = STREAM_EMIT_CELL — syscall-
+            // аргумент (0x00F00FF0), что открывает путь к эмиттеру-миниме
+            // самосборки на слово-языке.
+            if (Current_Char == KW_EM) {
+                if (Num_Pending == 0x00000001) {
+                    // веха-12в: 'em' честно СЕДЬМОЙ поглотитель nb-числа:
+                    // 'nb X em' эмитит 0x51 + BE32(Stream_Emit) + BE32(X)
+                    out_cell(STREAM_EMIT_CELL, OP_OUTCELL_CODE);
+                    sys_call(FILE_U8);
+                    Emitted_Bytes = Emitted_Bytes + 1;
+                    // адрес-операнд = константа Stream_Emit — честный
+                    // out_cell (стадия-0 D015/D016: константа -> out_cell,
+                    // переменная -> log_cell); дальше значение из nb.
+                    out_cell(STREAM_EMIT_CELL, STREAM_EMIT_CELL);
+                    sys_call(FILE_PUT);
+                    Emitted_Bytes = Emitted_Bytes + 4;
+                    log_cell(STREAM_EMIT_CELL, Num_Acc);
+                    sys_call(FILE_PUT);
+                    Emitted_Bytes = Emitted_Bytes + 4;
+                    Num_Pending = 0x00000000;
+                    Num_Acc = 0x00000000;
+                } else {
+                    if (Error_Flag == 0x00000000) {
+                        Fail_Code = BRK_EM_NO_NUM;
+                        Fail_Position = Word_Index;
+                        Error_Flag = 0x00000001;
+                        Word_Index = MAX_SOURCE_WORDS;
+                    }
+                }
                 Token_Counter = Token_Counter + 1;
                 Found_Flag = 0x00000001;
             }
