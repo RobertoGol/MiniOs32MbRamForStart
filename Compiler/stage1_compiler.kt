@@ -155,6 +155,9 @@
 #define: BRK_EM_NO_NUM 0x00000011 // 'em' без открытого nb-числа — честный брак fail-fast (веха-12в)
 #define: KW_WO 0x00006F77 // 'wo' = word out: OP_OUTCELL(STREAM, N) + OP_SYSCALL(FILE_PUT) = 14 Б; ВМЕСТО пары 'em'+sc 0x131 (~5 слов языка → 1 слово) (веха-12г)
 #define: KW_OW 0x0000776F // 'ow' = out word-slot: OP_OUTCELL_V(STREAM, W_Current) + OP_SYSCALL(FILE_PUT) = 14 Б; честный канал «значение слота → файл» — эмиссия-runtime значения вместо литерал-константы (веха-14v2); 'ow' НЕ поглотитель nb — открытый nb честно бракует 0x0C
+#define: KW_AA 0x00006161 // 'aa' = add acc cell: OP_LOAD 0x12 + режим 0x15 (acc += cell[X]) + BE32(X) = 6 Б; ДЕСЯТЫЙ поглотитель nb (веха-14v3); честный режим 0x15 есть в VM (ctos_vm.py:395); без открытого nb — fail-fast 0x0C
+#define: KW_AS 0x00007361 // 'as' = add slot: acc += cell[W_Current]; cell[W_Current] = acc — OP_LOAD 0x12 + режим 0x15 + BE32(W_Current) [6 Б] + OP_STORE_AT 0x55 + BE32(W_Current) [5 Б] = 11 Б (веха-14v3); честный слот-аккумулятор; НЕ поглотитель nb — открытый nb честно бракует 0x0C
+#define: KW_VW 0x00007776 // 'vw' = value word: W_Current -> STREAM_EMIT_CELL -> FILE_PUT = 4 Б в поток (веха-14v3); честный КОМПИЛ-ВРЕМЕННЫЙ канал: в артефакт честно ложится АДРЕС СЛОТА-константа BE32(W_Current), а НЕ runtime-значение ячейки (проба pos_vw1: факт байтов "00 F0 0F F5"); runtime-значение честно даёт только 'ow' (веха-14v2) — потому wc14v3 честно берёт 'ow'; честный var_addr-близнец 'pr'/'ow' без конверта 0x54; НЕ поглотитель nb — открытый nb честно бракует 0x0C
 #define: BRK_WO_NO_NUM 0x00000012 // 'wo' без открытого nb-числа — честный брак fail-fast (веха-12г)
 #define: KW_CP 0x00007063 // 'cp' = cell compare: ДЕВЯТЫЙ поглотитель nb — acc = (acc == cell[Num_Acc]): OP_LOAD 0x12 + режим 0x18 + BE32(адрес) = 6 Б (веха-13, честный словарь word-компилятора)
 #define: BRK_CP_NO_NUM 0x00000013 // 'cp' без открытого nb-числа — честный брак fail-fast (веха-13)
@@ -1517,6 +1520,106 @@ function Scan_Word_Loop() {
                         Error_Flag = 0x00000001;
                         Word_Index = MAX_SOURCE_WORDS;
                     }
+                }
+                Token_Counter = Token_Counter + 1;
+                Found_Flag = 0x00000001;
+            }
+
+            // 'aa' (веха-14v3): честное СЛОЖЕНИЕ СО ЗНАЧЕНИЕМ ЯЧЕЙКИ —
+            // acc = acc + cell[X], где X — открытое nb-число. Байткод:
+            // OP_LOAD 0x12 + режим 0x15 + BE32(X) = 6 Б. Честный режим
+            // 0x15 уже есть в VM (acc += cell[arg], ctos_vm.py:395) —
+            // новых опкодов честно НЕ требуется. ДЕСЯТЫЙ поглотитель
+            // nb-числа (вехи-8..13 непоглотителей; по образцу 'va'/'gp'/
+            // 'sp'); 'aa' без открытого nb — честный fail-fast
+            // BRK_NB_NO_CONS 0x0C. Смысл: снятие честной границы v2
+            // (слот целевого артефакта вычисляется честно из цифры).
+            if (Current_Char == KW_AA) {
+                if (Num_Pending == 0x00000001) {
+                    // честный сложитель по образцу 'gp': OP_LOAD (байт) +
+                    // режим 0x15 (байт) + адрес X из nb (слово)
+                    out_cell(STREAM_EMIT_CELL, OP_LOAD_CODE);
+                    sys_call(FILE_U8);
+                    Emitted_Bytes = Emitted_Bytes + 1;
+                    out_cell(STREAM_EMIT_CELL, 0x00000015);
+                    sys_call(FILE_U8);
+                    Emitted_Bytes = Emitted_Bytes + 1;
+                    log_cell(STREAM_EMIT_CELL, Num_Acc);
+                    sys_call(FILE_PUT);
+                    Emitted_Bytes = Emitted_Bytes + 4;
+                    Num_Pending = 0x00000000;
+                    Num_Acc = 0x00000000;
+                } else {
+                    if (Error_Flag == 0x00000000) {
+                        Fail_Code = BRK_NB_NO_CONS;
+                        Fail_Position = Word_Index;
+                        Error_Flag = 0x00000001;
+                        Word_Index = MAX_SOURCE_WORDS;
+                    }
+                }
+                Token_Counter = Token_Counter + 1;
+                Found_Flag = 0x00000001;
+            }
+
+            // 'as' (веха-14v3): честное СЛОЖЕНИЕ СО СЛОТОМ + ЗАПИСЬ ОБРАТНО —
+            // acc = acc + cell[W_Current]; cell[W_Current] = acc. Байткод:
+            // OP_LOAD 0x12 + режим 0x15 (acc += cell[arg]) + BE32(W_Current)
+            // [6 Б] + OP_STORE_AT 0x55 + BE32(W_Current) [5 Б] = 11 Б.
+            // Честный режим 0x15 уже есть в VM (ctos_vm.py:395). Смысл:
+            // слот-аккумулятор — база (F3-48) + ASCII-цифра = честный адрес
+            // слота. НЕ поглотитель nb: открытый nb → fail-fast 0x0C.
+            if (Current_Char == KW_AS) {
+                if (Num_Pending == 0x00000001) {
+                    if (Error_Flag == 0x00000000) {
+                        Fail_Code = BRK_NB_NO_CONS;
+                        Fail_Position = Word_Index;
+                        Error_Flag = 0x00000001;
+                        Word_Index = MAX_SOURCE_WORDS;
+                    }
+                } else {
+                    out_cell(STREAM_EMIT_CELL, OP_LOAD_CODE);
+                    sys_call(FILE_U8);
+                    Emitted_Bytes = Emitted_Bytes + 1;
+                    out_cell(STREAM_EMIT_CELL, 0x00000015);
+                    sys_call(FILE_U8);
+                    Emitted_Bytes = Emitted_Bytes + 1;
+                    log_cell(STREAM_EMIT_CELL, W_Current);
+                    sys_call(FILE_PUT);
+                    Emitted_Bytes = Emitted_Bytes + 4;
+                    out_cell(STREAM_EMIT_CELL, OP_STORE_AT_CODE);
+                    sys_call(FILE_U8);
+                    Emitted_Bytes = Emitted_Bytes + 1;
+                    log_cell(STREAM_EMIT_CELL, W_Current);
+                    sys_call(FILE_PUT);
+                    Emitted_Bytes = Emitted_Bytes + 4;
+                }
+                Token_Counter = Token_Counter + 1;
+                Found_Flag = 0x00000001;
+            }
+
+            // 'vw' (веха-14v3): честный КОМПИЛ-ВРЕМЕННЫЙ примитив «АДРЕС
+            // ТЕКУЩЕГО СЛОТА → 4 БАЙТА ПОТОКА» — без 14-байтного конверта
+            // 'ow'. Тело ровно var_addr-часть 'ow': log_cell(STREAM_EMIT_CELL,
+            // W_Current) + sys_call(FILE_PUT) → в артефакт честно ложатся
+            // 4 байта ЧИСЛА-АДРЕСА (константа компилятора W_Current), а НЕ
+            // runtime-значение ячейки. Факт пробы pos_vw1 (nb 5 ne wc 2 sv
+            // wc 2 vw te): в потоке "00 F0 0F F5" — адрес F5, не 5. Runtime
+            // -> FILE_PUT честно даёт только 'ow' (веха-14v2) — его и взял
+            // слово-компилятор wc14v3 (в артефакте ему нужны runtime-байты
+            // уже ВЫЧИСЛЕННОГО слота, а не константа). НЕ поглотитель nb:
+            // открытый nb → fail-fast 0x0C.
+            if (Current_Char == KW_VW) {
+                if (Num_Pending == 0x00000001) {
+                    if (Error_Flag == 0x00000000) {
+                        Fail_Code = BRK_NB_NO_CONS;
+                        Fail_Position = Word_Index;
+                        Error_Flag = 0x00000001;
+                        Word_Index = MAX_SOURCE_WORDS;
+                    }
+                } else {
+                    log_cell(STREAM_EMIT_CELL, W_Current);
+                    sys_call(FILE_PUT);
+                    Emitted_Bytes = Emitted_Bytes + 4;
                 }
                 Token_Counter = Token_Counter + 1;
                 Found_Flag = 0x00000001;
