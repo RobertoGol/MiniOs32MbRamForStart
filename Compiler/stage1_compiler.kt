@@ -42,7 +42,7 @@
 #define: SOURCE_CODE_BUFFER 0x00A00000 // Адрес начала исходного текста в памяти
 #define: TOKEN_STREAM_BUFFER 0x01000000 // Адрес, куда нативный лексер сложит токены
 #define: OUTPUT_BINARY_PORT  0x3F0050C0 // Физический порт для записи готового бинарника
-#define: MAX_SOURCE_WORDS    0x00000040 // Честная граница прохода: максимум слов (64; веха-9, было 0x10)
+#define: MAX_SOURCE_WORDS    0x00000080 // Честная граница прохода: максимум слов (128; веха-9: 16→64, веха-12г: 64→128 — word-эмиттеру заголовка нужно ~90 токенов, лимит 62 = честный OVERFLOW)
 
 // Двухсимвольные сигнатуры: слово = символ1 + символ2*256 (ASCII,
 // честная кодировка; одиночный символ несет в младшем байте)
@@ -153,6 +153,8 @@
 #define: KW_EM 0x00006D65 // 'em' = emit: OP_OUTCELL 0x51 + BE32(STREAM_EMIT_CELL) + BE32(N) = 9 Б; СЕДЬМОЙ поглотитель nb-числа (веха-12в)
 #define: BRK_SC_NO_NUM 0x00000010 // 'sc' без открытого nb-числа — честный брак fail-fast (веха-12в)
 #define: BRK_EM_NO_NUM 0x00000011 // 'em' без открытого nb-числа — честный брак fail-fast (веха-12в)
+#define: KW_WO 0x00006F77 // 'wo' = word out: OP_OUTCELL(STREAM, N) + OP_SYSCALL(FILE_PUT) = 14 Б; ВМЕСТО пары 'em'+sc 0x131 (~5 слов языка → 1 слово) (веха-12г)
+#define: BRK_WO_NO_NUM 0x00000012 // 'wo' без открытого nb-числа — честный брак fail-fast (веха-12г)
 #define: WC_LIT_WORK 0x00F00FF1 // номинал: WORK_CELL (десятичный 15732721)
 #define: WC_LIT_W2 0x00F00FF3 // номинал: W2 = WC_BASE + 0 (десятичный 15732723)
 #define: WC_LIT_W3 0x00F00FF4 // номинал: W3 = WC_BASE + 1 (десятичный 15732724)
@@ -1430,6 +1432,51 @@ function Scan_Word_Loop() {
                 } else {
                     if (Error_Flag == 0x00000000) {
                         Fail_Code = BRK_EM_NO_NUM;
+                        Fail_Position = Word_Index;
+                        Error_Flag = 0x00000001;
+                        Word_Index = MAX_SOURCE_WORDS;
+                    }
+                }
+                Token_Counter = Token_Counter + 1;
+                Found_Flag = 0x00000001;
+            }
+
+            // 'wo' (веха-12г): честный word-эмиттер — пара 'em' + 'sc 0x131'
+            // свернута в одно слово языка: OP_OUTCELL 0x51 +
+            // BE32(STREAM_EMIT_CELL) + BE32(Num_Acc) [9 Б] + OP_SYSCALL
+            // 0x13 + BE32(FILE_PUT 0x131) [5 Б] = 14 Б. Смысл во времени:
+            // во время работы cell(Stream_Emit) = N, затем FILE_PUT
+            // записывает это слово в артефакт как 4 байта BE. Контакт с
+            // acc отсутствует (OP_OUTCELL честно не трогает acc).
+            // Открытое nb-число поглощается честно (ВОСЬМОЙ поглотитель
+            // nb в языке); 'wo' без открытого nb — fail-fast
+            // BRK_WO_NO_NUM 0x12.
+            if (Current_Char == KW_WO) {
+                if (Num_Pending == 0x00000001) {
+                    // пара 1-2: OP_OUTCELL 0x51 (байт) + адрес Stream (слово)
+                    out_cell(STREAM_EMIT_CELL, OP_OUTCELL_CODE);
+                    sys_call(FILE_U8);
+                    Emitted_Bytes = Emitted_Bytes + 1;
+                    out_cell(STREAM_EMIT_CELL, STREAM_EMIT_CELL);
+                    sys_call(FILE_PUT);
+                    Emitted_Bytes = Emitted_Bytes + 4;
+                    // пара 3: значение N из открытого nb-числа (слово)
+                    log_cell(STREAM_EMIT_CELL, Num_Acc);
+                    sys_call(FILE_PUT);
+                    Emitted_Bytes = Emitted_Bytes + 4;
+                    // пара 4-5: runtime-syscall FILE_PUT 0x131 в потоке
+                    // (честно как у 'sc': байт-код 0x13 + слово NID)
+                    out_cell(STREAM_EMIT_CELL, OP_SYSCALL_CODE);
+                    sys_call(FILE_U8);
+                    Emitted_Bytes = Emitted_Bytes + 1;
+                    out_cell(STREAM_EMIT_CELL, FILE_PUT);
+                    sys_call(FILE_PUT);
+                    Emitted_Bytes = Emitted_Bytes + 4;
+                    Num_Pending = 0x00000000;
+                    Num_Acc = 0x00000000;
+                } else {
+                    if (Error_Flag == 0x00000000) {
+                        Fail_Code = BRK_WO_NO_NUM;
                         Fail_Position = Word_Index;
                         Error_Flag = 0x00000001;
                         Word_Index = MAX_SOURCE_WORDS;
