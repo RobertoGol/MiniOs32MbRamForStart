@@ -1,0 +1,1 @@
+nb 2 5 1 9 8 ne wc 0 sv nb 4 6 ne wc 1 sv nb 1 0 4 8 5 7 6 0 ne wc 4 sv mk nb 3 1 1 sc nb 1 5 7 3 2 7 2 2 va eq 0 if nb 1 5 7 3 2 7 2 0 va wc 4 sp va ad 4 sv jb es nb 1 0 4 8 5 7 6 0 va nb 1 5 7 3 2 7 2 3 cp sv pr nb 1 0 4 8 5 7 6 0 va nb 1 5 7 3 2 7 2 4 cp sv pr te
