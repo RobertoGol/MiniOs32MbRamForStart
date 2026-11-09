@@ -899,6 +899,15 @@ target'ам нужна честная сегрегация (веха-15+)» (v4)
   tracked IDENTICAL + NEW (target_sp0..9 md5 70b4c02e..39737fa9;
   neg_sp2 'wc 0 sp zz' → 0xFE FC=1@3 md5 edaa4227) + ПОЛКА
   as+va+ow+sp 40/40 байт-в-байт + кросс-молчания + cold IDENTICAL.
+- **Спринт 6 (`W-26`) — том 'if':** окно 'if' (51 Б, окно 6 Б,
+  probe28) = OP 0x06 (U8 6) + BE32 25 + хвост 05 FF; СЛОТ-КАНАЛА
+  НЕТ — artifact d-независим (md5-серия константная bb0a0c7d ×10,
+  подтверждено приёмкой); PB = 26217 (0x6669); INIT полный
+  (474 ток ≤ 510). wc14v8if_build.py → pos_wc14v8if.words; том
+  635 Б md5 50fac32b. Приёмка regr26 (base regr25): REGRESS OK —
+  tracked IDENTICAL + NEW (target_if0..9 md5 bb0a0c7d ×10;
+  neg_if2 'wc 0 if zz' → 0xFE FC=1@3 md5 04a1e74f) + ПОЛКА
+  as+va+ow+sp+if 50/50 байт-в-байт + кросс-молчания + cold IDENTICAL.
 
 
 - Регресс `Python_compiler\regr19.py` (база regr18; head = 6d11eec):

@@ -712,3 +712,6 @@ regr23 REGRESS OK: 10 va-целей байт-в-байт (md5 ad410305..0e4696a8
 Спринт 5 (W-25): том 'sp' (487 ток, 652 Б md5 641f7f2c) — приёмка
 regr25 REGRESS OK: 10 sp-целей байт-в-байт (md5 70b4c02e..39737fa9),
 полка as+va+ow+sp 40/40 + кросс-молчания, tracked/cold IDENTICAL.
+Спринт 6 (W-26): том 'if' (474 ток, 635 Б md5 50fac32b, без слот-
+канала — md5 bb0a0c7d ×10) — приёмка regr26 REGRESS OK: полка
+as+va+ow+sp+if 50/50 байт-в-байт + кросс-молчания, tracked/cold.
