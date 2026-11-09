@@ -983,6 +983,19 @@ target'ам нужна честная сегрегация (веха-15+)» (v4)
   REGRESS OK — tracked IDENTICAL + NEW (0xFF 757d418c;
   target_t3pr0..9 md5 серия; neg_t3pr 0xFE 23c4d31d) + полка
   4-словных 80/80 + T3-полка 20/20 + кросс-молчания + cold.
+- **Спринт 12 (`W-32`) — Token-3 том 'as':** окно 'as' Token-3
+  (11 Б, probe30) = U16 4629 (0x1215) + слот BE32(F3+d) + U8 85
+  (0x55) + повтор слота + вердец FF (каркас probe33); окно 4-
+  словного as = то же + страддл-хвост; PB = 29537 (0x7361);
+  PC = 46. wc14v9as_build.py → pos_wc14v9as.words (443 ток ≤ 510);
+  том 647 Б md5 0f8467c0. Приёмка probe31 as: 10/10 'wc d as'
+  байт-в-байт (md5 23942602..aeea23e3); неги 'wc 0 as as' /
+  'wc 0 pr te' / 'wc 0 as zz' — МОЛЧАНИЕ; stage1-эталон neg md5
+  5eae9fa0 = tracked neg_as2.words (тот же литерал — отдельный
+  neg-файл честно НЕ дублируем). Приёмка regr32 (base regr31):
+  REGRESS OK — tracked IDENTICAL + NEW (0xFF 0f8467c0;
+  target_t3as0..9) + полка 4-словных 80/80 + T3-полка 30/30 +
+  кросс-молчания + cold.
 
 
 - Регресс `Python_compiler\regr19.py` (база regr18; head = 6d11eec):
