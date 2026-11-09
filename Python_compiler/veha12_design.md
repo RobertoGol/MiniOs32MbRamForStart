@@ -970,6 +970,19 @@ target'ам нужна честная сегрегация (веха-15+)» (v4)
   молчания В ОБЕ стороны (4-словные тома молчат на Token-3-
   цели, te3-том молчит на 4-словных) + cold. Бэклог Token-3:
   pr/as/va/ow/sp/if/sv/vw — окна из probe30, рецепт доказан.
+- **Спринт 11 (`W-31`) — Token-3 том 'pr':** окно 'pr' Token-3
+  (9 Б, probe30/probe34) = U8 84 (0x54) + BE32 1056985280
+  (0x3F0050C0) + слот BE32(F3+d) + вердец FF; окно 4-словного
+  pr = U8 85 + то же + хвост 05; PB = 29296 (0x7270); PC = 46.
+  wc14v9pr_build.py → pos_wc14v9pr.words (441 ток ≤ 510); том
+  633 Б md5 757d418c. Приёмка probe31 pr: 10/10 'wc d pr'
+  байт-в-байт (md5 4c30de2d..1be8f7ac); неги 'wc 0 pr pr' /
+  'wc 0 pr te' / 'wc 0 pr zz' — МОЛЧАНИЕ; stage1-эталон neg md5
+  23c4d31d (neg_t3pr.words — для 4-словного pr neg-файла не
+  было, честно tracked вперые). Приёмка regr31 (base regr30):
+  REGRESS OK — tracked IDENTICAL + NEW (0xFF 757d418c;
+  target_t3pr0..9 md5 серия; neg_t3pr 0xFE 23c4d31d) + полка
+  4-словных 80/80 + T3-полка 20/20 + кросс-молчания + cold.
 
 
 - Регресс `Python_compiler\regr19.py` (база regr18; head = 6d11eec):
