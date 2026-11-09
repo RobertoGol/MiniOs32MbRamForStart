@@ -908,6 +908,16 @@ target'ам нужна честная сегрегация (веха-15+)» (v4)
   tracked IDENTICAL + NEW (target_if0..9 md5 bb0a0c7d ×10;
   neg_if2 'wc 0 if zz' → 0xFE FC=1@3 md5 04a1e74f) + ПОЛКА
   as+va+ow+sp+if 50/50 байт-в-байт + кросс-молчания + cold IDENTICAL.
+- **Спринт 7 (`W-27`) — том 'te':** окно 'te' (47 Б, окно 2 Б,
+  probe28) = OP 0x05 (U8 5) + хвост 05 FF — самое дешёвое окно
+  полки; СЛОТ-КАНАЛА НЕТ (md5-серия константная 6b6227af ×10);
+  PB = 25972 (0x6574); NOTE: PB = PC — CHECK сверяет word3='te'
+  и word4='te' одной константой (цели 'wc d te te'); INIT полный
+  (470 ток ≤ 510). wc14v8te_build.py → pos_wc14v8te.words; том
+  621 Б md5 5f27f5f1. Приёмка regr27 (base regr26): REGRESS OK —
+  tracked IDENTICAL + NEW (target_te0..9 md5 6b6227af ×10;
+  neg_te2 'wc 0 te zz' → 0xFE FC=1@3 md5 86f32377) + ПОЛКА
+  as+va+ow+sp+if+te 60/60 байт-в-байт + кросс-молчания + cold.
 
 
 - Регресс `Python_compiler\regr19.py` (база regr18; head = 6d11eec):
