@@ -718,3 +718,6 @@ as+va+ow+sp+if 50/50 байт-в-байт + кросс-молчания, tracked
 Спринт 7 (W-27): том 'te' (470 ток, 621 Б md5 5f27f5f1, окно 2 Б,
 PB=PC=25972, md5 6b6227af ×10) — приёмка regr27 REGRESS OK: полка
 as+va+ow+sp+if+te 60/60 байт-в-байт + кросс-молчания, tracked/cold.
+Спринт 8 (W-28): том 'sv' (487 ток, 652 Б md5 8cf43f2b) — приёмка
+regr28 REGRESS OK: 10 sv-целей байт-в-байт (md5 e719b5ad..1854ca43),
+полка 70/70 + кросс-молчания, tracked/cold IDENTICAL.
