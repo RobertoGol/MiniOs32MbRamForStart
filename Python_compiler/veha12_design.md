@@ -1008,6 +1008,19 @@ target'ам нужна честная сегрегация (веха-15+)» (v4)
   REGRESS OK — tracked IDENTICAL + NEW (0xFF 05d46b14;
   target_t3va0..9) + полка 4-словных 80/80 + T3-полка 40/40 +
   кросс-молчания + cold.
+- **Спринт 14 (`W-34`) — Token-3 том 'ow':** окно 'ow' Token-3
+  (14 Б, probe30) = U8 84 (0x54) + BE32 15732720 (0x00F00FF0) +
+  слот BE32(F3+d) + BE32 318767105 (0x13000001) + U8 49 + вердец
+  FF (каркас probe33; окно 4-словного ow = то же + 05 FF);
+  PB = 30575 (0x776F); PC = 46; INIT полный — elide W-24 тут не
+  нужен (459 ток ≤ 510). wc14v9ow_build.py → pos_wc14v9ow.words;
+  том 661 Б md5 bb6a41a3. Приёмка probe31 ow: 10/10 'wc d ow'
+  байт-в-байт (md5 4fb71313..36820674); неги 'wc 0 ow ow' /
+  'wc 0 pr te' / 'wc 0 ow zz' — МОЛЧАНИЕ; stage1-neg md5
+  30f2b201 = tracked neg_ow2.words (тот же литерал). Приёмка
+  regr34 (base regr33): REGRESS OK — tracked IDENTICAL + NEW
+  (0xFF bb6a41a3; target_t3ow0..9) + полка 4-словных 80/80 +
+  T3-полка 50/50 + кросс-молчания + cold.
 
 
 - Регресс `Python_compiler\regr19.py` (база regr18; head = 6d11eec):
