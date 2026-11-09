@@ -875,6 +875,22 @@ target'ам нужна честная сегрегация (веха-15+)» (v4)
   0e4696a8; neg_va2 'wc 0 va zz' → 0xFE, Token 3, FC=1@3, md5 5ed0477b)
   + ПОЛКА as+va: 20/20 прогонов байт-в-байт, кросс-молчания (va-том
   на pr/as-целях, as-том на pr/va-целях), cold IDENTICAL.
+- **Спринт 4 (`W-24`) — том 'ow' + cargo-fix W-22:** окно 'ow'
+  (60 Б, probe28) = U8 84 + BE32 15732720 (0x00F00FF0) + слот
+  BE32(F3+d) + BE32 318767105 (0x13000001) + U8 49 + хвост 05 FF —
+  самое длинное окно полки (два const-слота + два U8). Без
+  сжатия 517 ток > 510; честный elide INIT-нулей PA/PD (wc 6/wc 9):
+  обе ячейки CHECK записывает до первого чтения → elide доказуемо
+  не меняет поведение (поток данных) → 505 ток ≤ 510;
+  wc14v8ow_build.py → pos_wc14v8ow.words; том 674 Б md5 9a1ac095.
+  Приёмка regr24 (base regr23): REGRESS OK — tracked IDENTICAL +
+  NEW (target_ow0..9 md5 13f56e28..48d85e74; neg_ow2 'wc 0 ow zz'
+  → 0xFE FC=1@3 md5 30f2b201) + ПОЛКА as+va+ow 30/30 байт-в-байт
+  + кросс-молчания всех пар + cold IDENTICAL. Cargo-fix: в W-22
+  (0b12b6c) литеральный range в pwsh не развернулся —
+  wc14v8as_build.py, pos_wc14v8as.words, neg_as2.words, regr22.py
+  упущены из push; добавлены байт-в-байт в W-24 (push-историю
+  честно не переписываем).
 
 
 - Регресс `Python_compiler\regr19.py` (база regr18; head = 6d11eec):
