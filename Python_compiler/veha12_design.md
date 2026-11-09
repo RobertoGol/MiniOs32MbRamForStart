@@ -891,6 +891,14 @@ target'ам нужна честная сегрегация (веха-15+)» (v4)
   wc14v8as_build.py, pos_wc14v8as.words, neg_as2.words, regr22.py
   упущены из push; добавлены байт-в-байт в W-24 (push-историю
   честно не переписываем).
+- **Спринт 5 (`W-25`) — том 'sp':** окно 'sp' (51 Б, окно 6 Б,
+  probe28) = U8 83 (0x53) + слот BE32(F3+d) + хвост 05 FF;
+  PB = 28787 (0x7073). INIT полный (elide PA/PD из W-24 не нужен:
+  487 ток ≤ 510). wc14v8sp_build.py → pos_wc14v8sp.words; том
+  652 Б md5 641f7f2c. Приёмка regr25 (base regr24): REGRESS OK —
+  tracked IDENTICAL + NEW (target_sp0..9 md5 70b4c02e..39737fa9;
+  neg_sp2 'wc 0 sp zz' → 0xFE FC=1@3 md5 edaa4227) + ПОЛКА
+  as+va+ow+sp 40/40 байт-в-байт + кросс-молчания + cold IDENTICAL.
 
 
 - Регресс `Python_compiler\regr19.py` (база regr18; head = 6d11eec):

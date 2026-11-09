@@ -709,3 +709,6 @@ regr23 REGRESS OK: 10 va-целей байт-в-байт (md5 ad410305..0e4696a8
 10 ow-целей байт-в-байт (md5 13f56e28..48d85e74), полка as+va+ow
 30/30 + кросс-молчания, tracked/cold; + cargo-fix: файлы W-22
 (build/pos/neg/regr22) добавлены байт-в-байт.
+Спринт 5 (W-25): том 'sp' (487 ток, 652 Б md5 641f7f2c) — приёмка
+regr25 REGRESS OK: 10 sp-целей байт-в-байт (md5 70b4c02e..39737fa9),
+полка as+va+ow+sp 40/40 + кросс-молчания, tracked/cold IDENTICAL.
