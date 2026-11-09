@@ -996,6 +996,18 @@ target'ам нужна честная сегрегация (веха-15+)» (v4)
   REGRESS OK — tracked IDENTICAL + NEW (0xFF 0f8467c0;
   target_t3as0..9) + полка 4-словных 80/80 + T3-полка 30/30 +
   кросс-молчания + cold.
+- **Спринт 13 (`W-33`) — Token-3 том 'va':** окно 'va' Token-3
+  (5 Б, probe30) = U16 4633 (0x1219) + слот BE32(F3+d) + вердец
+  FF (каркас probe33; окно 4-словного va = то же + 05 FF);
+  PB = 24950 (0x6176); PC = 46. wc14v9va_build.py →
+  pos_wc14v9va.words (431 ток ≤ 510); том 619 Б md5 05d46b14.
+  Приёмка probe31 va: 10/10 'wc d va' байт-в-байт
+  (md5 1fc64288..d6fe81cf); неги 'wc 0 va va' / 'wc 0 pr te' /
+  'wc 0 va zz' — МОЛЧАНИЕ; stage1-neg md5 5ed0477b = tracked
+  neg_va2.words (тот же литерал). Приёмка regr33 (base regr32):
+  REGRESS OK — tracked IDENTICAL + NEW (0xFF 05d46b14;
+  target_t3va0..9) + полка 4-словных 80/80 + T3-полка 40/40 +
+  кросс-молчания + cold.
 
 
 - Регресс `Python_compiler\regr19.py` (база regr18; head = 6d11eec):
