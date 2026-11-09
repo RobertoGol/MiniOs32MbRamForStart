@@ -926,6 +926,21 @@ target'ам нужна честная сегрегация (веха-15+)» (v4)
   NEW (target_sv0..9 md5 e719b5ad..1854ca43; neg_sv2 'wc 0 sv zz'
   → 0xFE FC=1@3 md5 bbdb0170) + ПОЛКА as/va/ow/sp/if/te/sv
   70/70 байт-в-байт + кросс-молчания + cold IDENTICAL.
+- **Спринт 9 (`W-29`) — том 'vw', ФИНАЛ серии «все 7 подряд»**:
+  окно 'vw' (50 Б, окно 5 Б, probe28) = слот BE32(F3+d) + хвост
+  05 FF — БЕЗ конст-каналов (самое «чистое» слот-окно полки);
+  PB = 30582 (0x7776); INIT полный (478 ток ≤ 510).
+  wc14v8vw_build.py → pos_wc14v8vw.words; том 638 Б md5 be2c8bb8.
+  Приёмка regr29 (base regr28): REGRESS OK — tracked IDENTICAL +
+  NEW (target_vw0..9 md5 c7168aac..3ea4addb; neg_vw2 'wc 0 vw zz'
+  → 0xFE FC=1@3 md5 9c9a7be6) + ПОЛКА 8 томов (as/va/ow/sp/if/
+  te/sv/vw) 80/80 байт-в-байт + кросс-молчания всех пар + cold.
+  **Итог вехи-21а:** словарь приёмки (probe20) покрыт полностью —
+  полка (pr=v7, as, va, ow, sp, if, te, sv, vw) = 9 лексем × 10
+  цифр = 90 целей, тома байт-в-байт = stage1-эталонам, отказы
+  честны (молчание). Честный бэклог: 3-словные цели 'wc d L'
+  (stage1 сам принимает 0xFF/Token 3, тома молчат — разрыв слоёв
+  хвоста, как v4-граница вехи-14).
 
 
 - Регресс `Python_compiler\regr19.py` (база regr18; head = 6d11eec):
