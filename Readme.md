@@ -804,3 +804,9 @@ REGRESS OK: t1sp 1/1 (136a0e4c) + кросс-молчания, neg_t1sp
 md5 f870db2e, окно 5 Б = U8 06 + BE32 20) — приёмка regr46
 REGRESS OK: t1if 1/1 (70ebbc7c) + кросс-молчания, neg_t1if
 ('if zz' 0xFE a9a763b7), tracked/cold.
+Спринт 27 (W-47): том Shape-T1 'sv' 1-словный (339 ток, 520 Б
+md5 e18b5473, окно 5 Б = U8 85 + BE32 F1) — приёмка regr47
+REGRESS OK: t1sv 1/1 (16f23df2) + кросс-молчания, neg_t1sv
+('sv zz' 0xFE a860536c); regr-скамья честно глушила
+CP1251-шум декодера (text→cp1251 в jc/ls-files — вердикты не
+зависели, 3 прогона OK), tracked/cold.

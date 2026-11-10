@@ -1217,6 +1217,25 @@ target'ам нужна честная сегрегация (веха-15+)» (v4)
   REGRESS OK — tracked IDENTICAL + NEW (0xFF f870db2e;
   target_t1if 70ebbc7c; neg_t1if 0xFE a9a763b7) + все прежние
   полки + t1if 1/1 + кросс-молчания + cold.
+- **Спринт 27 (`W-47`) — том Shape-T1 'sv' (1-словный):**
+  окно 'sv' T1 (5 Б, probe37) = U8 85 (0x55) + BE32 0x00F00FF1 —
+  слот-канала нет (хвост-слот честная конста F1); PB = 30323
+  (0x7673); PC = 46 (word1 = '.'); CHECK = p0 & p1 == 2 с честным
+  F5-сбросом. wc14v1sv_build.py → pos_wc14v1sv.words (339 ток
+  ≤ 510); том 520 Б md5 e18b5473 (0xFF). Приёмка probe41 t1sv:
+  'sv' байт-в-байт (md5 16f23df2); неги 'sv zz' (0xFE FC=1@1 md5
+  a860536c — honest neg_t1sv.words, литерал 'sv zz' впервые) /
+  'sv sv' (T2 c66b7bd7) / 'sv 5' (T2 098cc813) / 'te' / 'pr' /
+  'as' / 'va' / 'ow' / 'sp' / 'if' (чужие T1) / 'zz' / '0' /
+  'wc 0 sv' (T3-цель eeee2e3e) — МОЛЧАНИЕ. Приёмка regr47
+  (base regr46): REGRESS OK — tracked IDENTICAL + NEW (0xFF
+  e18b5473; target_t1sv 16f23df2; neg_t1sv 0xFE a860536c) + все
+  прежние полки + t1sv 1/1 + кросс-молчания + cold. Честный
+  гигиенический фикс самой regr-скамьи (без изменения вердиктов):
+  захваты подпроцессов VM переписаны text→cp1251 — VM пишет
+  прогресс «чек: NN» в CP1251, UTF-8-декодер шумаил исключениями
+  в reader-thread (по .out-файлам вердикты не зависели; три
+  прогона regr47 — OK).
 
 
 - Регресс `Python_compiler\regr19.py` (база regr18; head = 6d11eec):
