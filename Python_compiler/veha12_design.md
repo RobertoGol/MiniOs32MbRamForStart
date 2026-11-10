@@ -1059,6 +1059,24 @@ target'ам нужна честная сегрегация (веха-15+)» (v4)
   REGRESS OK — tracked IDENTICAL + NEW (0xFF b1e0e0ea;
   target_t3sv0..9) + полка 4-словных 80/80 + T3-полка 80/80 +
   кросс-молчания + cold. Бэклог Token-3: только 'vw'.
+- **Спринт 18 (`W-38`) — Token-3 том 'vw', ФИНАЛ полки:** окно
+  'vw' Token-3 (4 Б, probe30) = ТОЛЬКО слот BE32(F3+d) без
+  ведущей консты + вердец FF (каркас probe33; у 4-словного vw
+  окно то же + хвост 05 FF); артефакт 49 = 20+4+1+4+20;
+  PB = 30582 (0x7776); PC = 46. wc14v9vw_build.py →
+  pos_wc14v9vw.words (420 ток ≤ 510); том 605 Б md5 1e417d1b.
+  Приёмка probe31 vw: 10/10 'wc d vw' байт-в-байт (md5
+  7385672e..ca29d3c5 — совпало с probe30-пином); неги
+  'wc 0 vw vw' / 'wc 0 pr te' / 'wc 0 vw zz' — МОЛЧАНИЕ;
+  stage1-neg md5 9c9a7be6 = tracked neg_vw2.words (тот же
+  литерал). Приёмка regr38 (base regr37): REGRESS OK — tracked
+  IDENTICAL + NEW (0xFF 1e417d1b; target_t3vw0..9) + полка
+  4-словных 80/80 + **Token-3-полка 90/90 — BACKLOG CLOSED** +
+  кросс-молчания + cold. Итог вехи-21а: ОБА слоя словаря полны
+  (4-словные pr=v7 + as/va/ow/sp/if/te/sv/vw = 90 целей,
+  Token-3 te/pr/as/va/ow/sp/if/sv/vw = 90 целей, суммарно 180
+  'wc d L'-целей байт-в-байт = stage1, отказы через тома честные
+  МОЛЧАНИЕ в обе стороны).
 
 
 - Регресс `Python_compiler\regr19.py` (база regr18; head = 6d11eec):
