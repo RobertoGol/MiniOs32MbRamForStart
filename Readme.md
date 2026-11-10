@@ -792,3 +792,7 @@ neg_t1as ('as zz' 0xFE 42014c38), tracked/cold.
 md5 5252a4e5, окно 6 Б = U16 4633 + BE32 F1) — приёмка regr43
 REGRESS OK: t1va 1/1 (2e1d1bb3) + кросс-молчания, neg_t1va
 ('va zz' 0xFE 9ce59336), tracked/cold.
+Спринт 24 (W-44): том Shape-T1 'ow' 1-словный (369 ток, 562 Б
+md5 d8e648b2, окно 14 Б = U8 84 + BE32 F0 + F1 + BE32 13000001
++ U8 49) — приёмка regr44 REGRESS OK: t1ow 1/1 (7f34e3c8) +
+кросс-молчания, neg_t1ow ('ow zz' 0xFE 0dad689b), tracked/cold.

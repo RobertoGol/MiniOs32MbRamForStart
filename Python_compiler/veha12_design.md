@@ -1174,6 +1174,21 @@ target'ам нужна честная сегрегация (веха-15+)» (v4)
   5252a4e5; target_t1va 2e1d1bb3; neg_t1va 0xFE 9ce59336) + все
   прежние полки (80/80, 90/90, t2d 10/10, t1te 1/1, t1pr 1/1,
   t1as 1/1) + t1va 1/1 + кросс-молчания + cold.
+- **Спринт 24 (`W-44`) — том Shape-T1 'ow' (1-словный):**
+  окно 'ow' T1 (14 Б, probe37) = U8 84 (0x54) + BE32 0x00F00FF0
+  + BE32 0x00F00FF1 + BE32 0x13000001 + U8 49 (0x31) — слот-
+  канала нет (хвост-слот честная конста F1 внутри окна);
+  PB = 30575 (0x776F); PC = 46 (word1 = '.'); CHECK = p0 & p1 == 2
+  с честным F5-сбросом. wc14v1ow_build.py → pos_wc14v1ow.words
+  (369 ток ≤ 510); том 562 Б md5 d8e648b2 (0xFF). Приёмка
+  probe41 t1ow: 'ow' байт-в-байт (md5 7f34e3c8); неги 'ow zz'
+  (0xFE FC=1@1 md5 0dad689b — honest neg_t1ow.words, литерал
+  'ow zz' впервые) / 'ow ow' (T2 2b130c42) / 'ow 5' (T2
+  2614d768) / 'te' / 'pr' / 'as' / 'va' (чужие T1) / 'zz' / '0' /
+  'wc 0 ow' (T3-цель 4fb71313) — МОЛЧАНИЕ. Приёмка regr44
+  (base regr43): REGRESS OK — tracked IDENTICAL + NEW (0xFF
+  d8e648b2; target_t1ow 7f34e3c8; neg_t1ow 0xFE 0dad689b) + все
+  прежние полки + t1ow 1/1 + кросс-молчания + cold.
 
 
 - Регресс `Python_compiler\regr19.py` (база regr18; head = 6d11eec):
