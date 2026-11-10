@@ -818,3 +818,10 @@ tracked/cold. Итог A-серии: 9/9 томов Shape-T1 (te, pr, as, va,
 ow, sp, if, sv, vw) — все байт-в-байт = stage1, честные neg-пины
 'L zz' tracked. Остаток 21б: B-серия 'wc L', G 'wc d L L L',
 E digit-tail 'wc d L d3'.
+Спринт 29 (W-49): том Shape-B 'wc pr' 2-словный (391 ток, 557 Б
+md5 03548e9d, окно = pr-T1, Token 2) — честный разговор
+B-семейства пойман байт-дифом (FC=8@0 и rep[3]=1 — консты всех
+'wc L', CRC пересчитывается по ним; первый том 0/0 → после
+честного fill IDENTICAL) — приёмка regr49 REGRESS OK: t2pr 1/1
+(470eaa9e) + кросс-молчания, neg_t2pr ('wc pr zz' 0xFE
+91ef5a1a), tracked/cold.
