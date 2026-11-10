@@ -1285,6 +1285,22 @@ target'ам нужна честная сегрегация (веха-15+)» (v4)
   (0xFF 03548e9d; target_t2pr 470eaa9e; neg_t2pr 0xFE 91ef5a1a)
   + все прежние полки (80/80, 90/90, t2d 10/10, T1 9×1/1) +
   t2pr 1/1 + кросс-молчания + cold.
+- **Спринт 30 (`W-50`) — том Shape-B 'wc te' (2-словный):**
+  окно = te-T1 окно (1 Б OP 05); PB = 25972 (0x6574) в word1;
+  CHECK = p0('wc', F4) & p1 & p2(46) == 3 с честным F5-сбросом;
+  отчёт несёт B-консты rep[3] = 1 / FC = 8@0 (открыты байт-дифом
+  в regr49, CRC пересчитывается по ним). wc14v2te_build.py →
+  pos_wc14v2te.words (368 ток ≤ 510); том 529 Б md5 190891dd
+  (0xFF). Приёмка probe41 t2te: 'wc te' байт-в-байт (md5
+  11c0d87c); неги 'wc te zz' (0xFE T2 FC=1@2 md5 efd4bdf9 —
+  honest neg_t2te.words, литерал впервые) / 'wc pr' (чужой
+  T2-цель B-семейства 470eaa9e) / 'te' (T1 c0d17eb9) /
+  'wc te te' (T3-цель 792382c6, честно FC=8@0) / 'wc 0 te' и
+  'wc te 0' (T3 digit-tail — ОБА md5 bac85372, честная
+  приригинность sur-order) / 'zz' / '0' — МОЛЧАНИЕ. Приёмка
+  regr50 (base regr49): REGRESS OK — tracked IDENTICAL + NEW
+  (0xFF 190891dd; target_t2te 11c0d87c; neg_t2te 0xFE efd4bdf9)
+  + все прежние полки + t2te 1/1 + кросс-молчания + cold.
 
 
 - Регресс `Python_compiler\regr19.py` (база regr18; head = 6d11eec):

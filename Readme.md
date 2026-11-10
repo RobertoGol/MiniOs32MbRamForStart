@@ -825,3 +825,8 @@ B-семейства пойман байт-дифом (FC=8@0 и rep[3]=1 — к
 честного fill IDENTICAL) — приёмка regr49 REGRESS OK: t2pr 1/1
 (470eaa9e) + кросс-молчания, neg_t2pr ('wc pr zz' 0xFE
 91ef5a1a), tracked/cold.
+Спринт 30 (W-50): том Shape-B 'wc te' 2-словный (368 ток, 529 Б
+md5 190891dd, окно = te-T1 1 Б OP 05) — приёмка regr50
+REGRESS OK: t2te 1/1 (11c0d87c) + кросс-молчания ('wc pr',
+'wc te te' 792382c6), честная рифма: 'wc te 0' ≡ 'wc 0 te'
+(bac85372), neg_t2te ('wc te zz' 0xFE efd4bdf9), tracked/cold.
