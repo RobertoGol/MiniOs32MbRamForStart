@@ -810,3 +810,11 @@ REGRESS OK: t1sv 1/1 (16f23df2) + кросс-молчания, neg_t1sv
 ('sv zz' 0xFE a860536c); regr-скамья честно глушила
 CP1251-шум декодера (text→cp1251 в jc/ls-files — вердикты не
 зависели, 3 прогона OK), tracked/cold.
+Спринт 28 (W-48): том Shape-T1 'vw' 1-словный, ФИНАЛ A-СЕРИИ
+(330 ток, 506 Б md5 2849e1a7, окно 4 Б = только BE32 F1, самое
+короткое лексемное окно) — приёмка regr48 REGRESS OK: t1vw 1/1
+(fd4969d1) + кросс-молчания, neg_t1vw ('vw zz' 0xFE e62c6437),
+tracked/cold. Итог A-серии: 9/9 томов Shape-T1 (te, pr, as, va,
+ow, sp, if, sv, vw) — все байт-в-байт = stage1, честные neg-пины
+'L zz' tracked. Остаток 21б: B-серия 'wc L', G 'wc d L L L',
+E digit-tail 'wc d L d3'.

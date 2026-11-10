@@ -1236,6 +1236,28 @@ target'ам нужна честная сегрегация (веха-15+)» (v4)
   прогресс «чек: NN» в CP1251, UTF-8-декодер шумаил исключениями
   в reader-thread (по .out-файлам вердикты не зависели; три
   прогона regr47 — OK).
+- **Спринт 28 (`W-48`) — том Shape-T1 'vw' (1-словный), ФИНАЛ
+  A-СЕРИИ:** окно 'vw' T1 (4 Б, probe37) = ТОЛЬКО BE32
+  0x00F00FF1 — самое короткое лексемное окно (одна честная
+  конста F1, слот-канала нет); PB = 30582 (0x7776); PC = 46
+  (word1 = '.'); CHECK = p0 & p1 == 2 с честным F5-сбросом.
+  wc14v1vw_build.py → pos_wc14v1vw.words (330 ток ≤ 510);
+  том 506 Б md5 2849e1a7 (0xFF). Приёмка probe41 t1vw: 'vw'
+  байт-в-байт (md5 fd4969d1); неги 'vw zz' (0xFE FC=1@1 md5
+  e62c6437 — honest neg_t1vw.words, литерал 'vw zz' впервые) /
+  'vw vw' (T2 246b3314) / 'vw 5' (T2 98ba0d4c) / 'te' / 'pr' /
+  'as' / 'va' / 'ow' / 'sp' / 'if' / 'sv' (чужие T1) / 'zz' /
+  '0' / 'wc 0 vw' (T3-цель 7385672e) — МОЛЧАНИЕ. Приёмка regr48
+  (base regr47): REGRESS OK — tracked IDENTICAL + NEW (0xFF
+  2849e1a7; target_t1vw fd4969d1; neg_t1vw 0xFE e62c6437) + все
+  прежние полки + t1vw 1/1 + кросс-молчания + cold. ИТОГ A-серии
+  (веха-21б, слой 1-словных): 9/9 томов Shape-T1 на полке —
+  te/pr (W-40/W-41), as/va (W-42/W-43), ow/sp (W-44/W-45),
+  if/sv (W-46/W-47), vw (W-48) — все байт-в-байт = stage1, свои
+  neg-пины «L zz» честно tracked (48a38725, 03a2235e, 42014c38,
+  9ce59336, 0dad689b, 3d5edb9f, a9a763b7, a860536c, e62c6437).
+  Остаток вехи-21б: B-серия 'wc L' (9 × T2 FC=8), G-серия
+  'wc d L L L' (T5, окна ×3), E-series digit-tail (9×10, 15-OP).
 
 
 - Регресс `Python_compiler\regr19.py` (база regr18; head = 6d11eec):
