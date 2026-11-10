@@ -830,3 +830,13 @@ md5 190891dd, окно = te-T1 1 Б OP 05) — приёмка regr50
 REGRESS OK: t2te 1/1 (11c0d87c) + кросс-молчания ('wc pr',
 'wc te te' 792382c6), честная рифма: 'wc te 0' ≡ 'wc 0 te'
 (bac85372), neg_t2te ('wc te zz' 0xFE efd4bdf9), tracked/cold.
+Спринт 31 (W-51): ФИНАЛ B-серии 'wc L' — 7 томов as/va/ow/sp/if/
+sv/vw одним честным генератором wc14v2_gen.py (токены 400..370,
+тома 529..585 Б); честный изъян генерата пойман вербатрейсом
+(PB = значение лексемы вместо адреса ячейки 15732730 → CHECK
+не пропускал, все 7 честно молчали) и закрыт ('PB = 15732730')
+— приёмка bsweep: все 7 IDENTICAL (3078ad75..acde33b3) + неги
+молчат = BSWEEP OK — приёмка regr51 REGRESS OK: t2as..t2vw
+7×1/1 + tracked/cold, neg_t2as..neg_t2vw ('wc <L> zz' 0xFE)
+a8402229..e4ca421a tracked. B-серия 'wc L' = 9/9. Остаток 21б:
+G 'wc d L L L' (T5), E digit-tail 'wc d L d3' (9×10).
