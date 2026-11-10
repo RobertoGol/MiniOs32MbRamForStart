@@ -1360,6 +1360,47 @@ target'ам нужна честная сегрегация (веха-15+)» (v4)
   (base regr51): REGRESS OK — tracked IDENTICAL + NEW ×24 +
   все прежние полки (80/80, 90/90, t2d 10/10, T1/T2 17×1/1) +
   t5gpr 1/1 + кросс-молчания + cold.
+- **Спринт 33 (`W-53`) — E-полка digit-tail 'wc d L d3' (9 лексем):**
+  честная карта probe43/44/45: stage1 принимает 'wc d L d3' =
+  0xFF/Token 4/FC=0@0/rep [4,0,0,0,0,0]; окно = L-T1 окно с честным
+  BE32-F1-слотом, заменённым на BE32(F3 + d) ('wc 0 ow', INIT
+  F3 - 48 = 15732675); хвост честно = U8 21 + BE32(d3) — d3 живёт
+  в ячейке wc2 через 'wc 2 sv' ПОСЛЕ честных F5-cp, эмит 'wc 2 ow'.
+  Один честный генератор wc14v3_gen.py → 9 билдеров →
+  pos_wc14v3{L}.words (токены te 452/va 458/sp 456/sv 456/pr 468/
+  as 470/ow 486/if 456/vw 447 ≤ 510) → тома 689 (te a4f15985 /
+  vw 7a490a74), 703 (va 54945537 / sp 972ac158 / sv 8377a868 /
+  pr 5151f053 / if a03ccb0f), 731 (as 7965dbe4), 745 (ow 2a9b7c08)
+  Б, вердец 0xFF. Приёмка probe45-bsweep: 90/90 refs байт-ok
+  (word1 = 5, d3 = 0..9; md5-карта t4_md5.py), неги честно молчат
+  на всех 9 томах, 14 честных пинов probe43/44 сходятся (rhyme
+  d-spread: 'wc 3 te 1' 6a650f6e, 'wc 7 as 2' 36c2c8b9,
+  'wc 1 ow 9' 4372c123, 'wc 0 pr 0/3' f37c4b6a/d8c9196d,
+  'wc 9 pr 9/as 9' ea5f8343/968ded3a, 'wc 5 if/vw/sp/sv 3'
+  5f97427c/77e58387/d6e6b1d6/d0efc383). **Честный дефект генерата,
+  пойманный pr-пилотом приёмки:** EMIT-окна несли U8 21 без
+  BE32(d3) — все цели −4 Б против stage1; фикс 'wc 2 ow' (3 токена)
+  во всех 9 окнах → pr-пилот байт-ok (pr 7 = 0bde2719). Честные
+  неги stage1 (0xFE): fail@1 'wc 10 pr 3' = 'wc 10' = 29ba6852
+  (reuse neg_t2c.words); fail@2 'wc 5 zz 3' = 4ff7c705 (new
+  neg_t4zz.words); fail@3 per-L: 'wc 5 sv 03' = 8f94a026 (new
+  neg_t4sv.words), 'wc 5 if zz' = 04a1e74f (reuse neg_if2.words),
+  'wc 5 pr 07' = '…12' = '…00' = 5d5795e5 (fail content-free
+  относительно цифры d3); fail@4 per-L: 'wc 5 pr 3 zz' = 33944ce4 /
+  'wc 5 vw 3 zz' = 1a8afff3 / 'wc 5 sp 3 z' = 1831e55c (new
+  neg_t4pr/vw/sp.words). Честный факт digit-хвоста (probe45-x4):
+  stage1 ПРОДЛЕВАЕТ хвост лишними одноцифровыми словами +5 Б
+  (U8 21 + BE32(d4)): 'wc 5 pr 3 7' = 0xFF Token=5 64 Б a0e18826,
+  'wc 5 te 3 7' = 4bba7803, 'wc 5 pr 7 7' = eb2d5d40 — T4-том
+  честно молчит (слой = ровно 4 слова, честный слой-контракт
+  regr39..52). tracked: pos (0xFF a4f15985..7a490a74),
+  target_t4<L>0..9 ('wc 5 L d3', честные refs), neg_t4zz/sv/pr/
+  vw/sp (0xFE). Приёмка regr53 (base regr52): REGRESS OK —
+  tracked IDENTICAL + NEW ×104 (9 pos + 90 target_t4 + 5 neg) +
+  все прежние полки (80/80, 90/90, t2d 10/10, t1×9 1/1, t2×9 1/1,
+  t5gpr 1/1) + T4-shelf 90/90 + T4 digit-tail cross-silences +
+  cold. Остаток вехи-21б: честные словарные полки T1..T5 закрыты
+  digit-tail; открыт веха-22 (много-стейтментные).
 
 
 - Регресс `Python_compiler\regr19.py` (база regr18; head = 6d11eec):
