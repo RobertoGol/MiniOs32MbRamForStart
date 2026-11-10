@@ -796,3 +796,7 @@ REGRESS OK: t1va 1/1 (2e1d1bb3) + кросс-молчания, neg_t1va
 md5 d8e648b2, окно 14 Б = U8 84 + BE32 F0 + F1 + BE32 13000001
 + U8 49) — приёмка regr44 REGRESS OK: t1ow 1/1 (7f34e3c8) +
 кросс-молчания, neg_t1ow ('ow zz' 0xFE 0dad689b), tracked/cold.
+Спринт 25 (W-45): том Shape-T1 'sp' 1-словный (339 ток, 520 Б
+md5 a074ca28, окно 5 Б = U8 83 + BE32 F1) — приёмка regr45
+REGRESS OK: t1sp 1/1 (136a0e4c) + кросс-молчания, neg_t1sp
+('sp zz' 0xFE 3d5edb9f), tracked/cold.
