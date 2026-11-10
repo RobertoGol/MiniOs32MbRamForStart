@@ -788,3 +788,7 @@ tracked/cold.
 md5 f11a97cb, окно 11 Б = U16 4629 + F1 + U8 85 + F1) — приёмка
 regr42 REGRESS OK: t1as 1/1 (96a4d92a) + кросс-молчания,
 neg_t1as ('as zz' 0xFE 42014c38), tracked/cold.
+Спринт 23 (W-43): том Shape-T1 'va' 1-словный (341 ток, 520 Б
+md5 5252a4e5, окно 6 Б = U16 4633 + BE32 F1) — приёмка regr43
+REGRESS OK: t1va 1/1 (2e1d1bb3) + кросс-молчания, neg_t1va
+('va zz' 0xFE 9ce59336), tracked/cold.

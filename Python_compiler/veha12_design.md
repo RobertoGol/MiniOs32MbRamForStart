@@ -1159,6 +1159,21 @@ target'ам нужна честная сегрегация (веха-15+)» (v4)
   96a4d92a; neg_t1as 0xFE 42014c38) + все прежние полки
   (80/80, 90/90, t2d 10/10, t1te 1/1, t1pr 1/1) + t1as 1/1 +
   кросс-молчания + cold.
+- **Спринт 23 (`W-43`) — том Shape-T1 'va' (1-словный):**
+  окно 'va' T1 (6 Б, probe37) = U16 4633 (0x1219) + BE32
+  0x00F00FF1 — слот-канала нет (хвост-слот честная конста F1);
+  PB = 24950 (0x6176); PC = 46 (word1 = '.'); CHECK = p0 & p1 == 2
+  с честным F5-сбросом. wc14v1va_build.py → pos_wc14v1va.words
+  (341 ток ≤ 510); том 520 Б md5 5252a4e5 (0xFF). Приёмка
+  probe41 t1va: 'va' байт-в-байт (md5 2e1d1bb3); неги 'va zz'
+  (0xFE FC=1@1 md5 9ce59336 — honest neg_t1va.words, литерал
+  'va zz' впервые) / 'va va' (T2 63cc73f4) / 'va 5' (T2
+  dca716ad) / 'te' / 'pr' / 'as' (чужие T1) / 'zz' / '0' /
+  'wc 0 va' (T3-цель 1fc64288) — МОЛЧАНИЕ. Приёмка regr43
+  (base regr42): REGRESS OK — tracked IDENTICAL + NEW (0xFF
+  5252a4e5; target_t1va 2e1d1bb3; neg_t1va 0xFE 9ce59336) + все
+  прежние полки (80/80, 90/90, t2d 10/10, t1te 1/1, t1pr 1/1,
+  t1as 1/1) + t1va 1/1 + кросс-молчания + cold.
 
 
 - Регресс `Python_compiler\regr19.py` (база regr18; head = 6d11eec):
