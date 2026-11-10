@@ -1128,6 +1128,21 @@ target'ам нужна честная сегрегация (веха-15+)» (v4)
   target_t1te c0d17eb9; neg_t1te 0xFE 48a38725) + полка
   4-словных 80/80 + T3-полка 90/90 + микро t2d 10/10 + t1te 1/1
   + кросс-молчания + cold.
+- **Спринт 21 (`W-41`) — том Shape-T1 'pr' (1-словный):**
+  окно 'pr' T1 (9 Б, probe37) = U8 84 + BE32 0x3F0050C0 +
+  BE32 0x00F00FF1 — слот-канала нет, хвост-слот честная конста
+  F1; PB = 29296 (0x7270); PC = 46 (word1 = '.'); CHECK = p0 &
+  p1 == 2 с честным F5-сбросом (рецепт regr40). В среднем томе
+  351 ток ≤ 510. wc14v1pr_build.py → pos_wc14v1pr.words;
+  том 534 Б md5 33c8d8eb. Приёмка probe41 t1pr: 'pr' байт-в-байт
+  (md5 80d530cd); неги 'pr zz' (0xFE FC=1@1 md5 03a2235e —
+  honest neg_t1pr.words, литерал 'pr zz' впервые) / 'pr pr'
+  (T2 55215a2d) / 'pr 5' (T2 84911fee) / 'te' / 'zz' / '0' /
+  'wc 0 pr' — МОЛЧАНИЕ. Приёмка regr41 (base regr40): REGRESS
+  OK — tracked IDENTICAL + NEW (0xFF 33c8d8eb; target_t1pr
+  80d530cd; neg_t1pr 0xFE 03a2235e) + все прежние полки
+  (80/80, 90/90, t2d 10/10, t1te 1/1) + t1pr 1/1 + кросс-
+  молчания + cold.
 
 
 - Регресс `Python_compiler\regr19.py` (база regr18; head = 6d11eec):
