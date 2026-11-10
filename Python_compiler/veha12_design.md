@@ -1203,6 +1203,20 @@ target'ам нужна честная сегрегация (веха-15+)» (v4)
   OK — tracked IDENTICAL + NEW (0xFF a074ca28; target_t1sp
   136a0e4c; neg_t1sp 0xFE 3d5edb9f) + все прежние полки + t1sp
   1/1 + кросс-молчания + cold.
+- **Спринт 26 (`W-46`) — том Shape-T1 'if' (1-словный):**
+  окно 'if' T1 (5 Б, probe37) = U8 6 (0x06) + BE32 20
+  (0x00000014) — слот-канала нет; PB = 26217 (0x6669); PC = 46
+  (word1 = '.'); CHECK = p0 & p1 == 2 с честным F5-сбросом.
+  wc14v1if_build.py → pos_wc14v1if.words (332 ток ≤ 510);
+  том 520 Б md5 f870db2e (0xFF). Приёмка probe41 t1if: 'if'
+  байт-в-байт (md5 70ebbc7c); неги 'if zz' (0xFE FC=1@1 md5
+  a9a763b7 — honest neg_t1if.words, литерал 'if zz' впервые) /
+  'if if' (T2 d8109b7b) / 'if 5' (T2 c1e4a4af) / 'te' / 'pr' /
+  'as' / 'va' / 'ow' / 'sp' (чужие T1) / 'zz' / '0' / 'wc 0 if'
+  (T3-цель c9f750ed) — МОЛЧАНИЕ. Приёмка regr46 (base regr45):
+  REGRESS OK — tracked IDENTICAL + NEW (0xFF f870db2e;
+  target_t1if 70ebbc7c; neg_t1if 0xFE a9a763b7) + все прежние
+  полки + t1if 1/1 + кросс-молчания + cold.
 
 
 - Регресс `Python_compiler\regr19.py` (база regr18; head = 6d11eec):

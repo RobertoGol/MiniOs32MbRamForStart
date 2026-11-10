@@ -800,3 +800,7 @@ md5 d8e648b2, окно 14 Б = U8 84 + BE32 F0 + F1 + BE32 13000001
 md5 a074ca28, окно 5 Б = U8 83 + BE32 F1) — приёмка regr45
 REGRESS OK: t1sp 1/1 (136a0e4c) + кросс-молчания, neg_t1sp
 ('sp zz' 0xFE 3d5edb9f), tracked/cold.
+Спринт 26 (W-46): том Shape-T1 'if' 1-словный (332 ток, 520 Б
+md5 f870db2e, окно 5 Б = U8 06 + BE32 20) — приёмка regr46
+REGRESS OK: t1if 1/1 (70ebbc7c) + кросс-молчания, neg_t1if
+('if zz' 0xFE a9a763b7), tracked/cold.
