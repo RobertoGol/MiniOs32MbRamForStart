@@ -1045,6 +1045,20 @@ target'ам нужна честная сегрегация (веха-15+)» (v4)
   литерал). Приёмка regr36 (base regr35): REGRESS OK — tracked
   IDENTICAL + NEW (0xFF 7b3659ae; target_t3if0..9) + полка
   4-словных 80/80 + T3-полка 70/70 + кросс-молчания + cold.
+- **Спринт 17 (`W-37`) — Token-3 том 'sv':** окно 'sv' Token-3
+  (5 Б, probe30) = U8 85 (0x55) + слот BE32(F3+d) + вердец FF
+  (каркас probe33; окно 4-словного sv = то же + 05 FF);
+  PB = 30323 (0x7673); PC = 46. wc14v9sv_build.py →
+  pos_wc14v9sv.words (429 ток ≤ 510); том 619 Б md5 b1e0e0ea.
+  Приёмка probe31 sv: 10/10 'wc d sv' байт-в-байт (md5
+  eeee2e3e..9db0f777 — честная свежая серия; ранний пин
+  e719b5ad.. был ошибкой переноса из 4-словной серии SV,
+  probe30-хвост обрезан); неги 'wc 0 sv sv' / 'wc 0 pr te' /
+  'wc 0 sv zz' — МОЛЧАНИЕ; stage1-neg md5 bbdb0170 = tracked
+  neg_sv2.words (тот же литерал). Приёмка regr37 (base regr36):
+  REGRESS OK — tracked IDENTICAL + NEW (0xFF b1e0e0ea;
+  target_t3sv0..9) + полка 4-словных 80/80 + T3-полка 80/80 +
+  кросс-молчания + cold. Бэклог Token-3: только 'vw'.
 
 
 - Регресс `Python_compiler\regr19.py` (база regr18; head = 6d11eec):
