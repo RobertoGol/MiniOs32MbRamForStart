@@ -784,3 +784,7 @@ md5 33c8d8eb, окно 9 Б = U8 84 + BE32 0x3F0050C0 + F1-конста,
 слот-канала нет) — приёмка regr41 REGRESS OK: t1pr 1/1
 (80d530cd) + кросс-молчания, neg_t1pr ('pr zz' 0xFE 03a2235e),
 tracked/cold.
+Спринт 22 (W-42): том Shape-T1 'as' 1-словный (360 ток, 548 Б
+md5 f11a97cb, окно 11 Б = U16 4629 + F1 + U8 85 + F1) — приёмка
+regr42 REGRESS OK: t1as 1/1 (96a4d92a) + кросс-молчания,
+neg_t1as ('as zz' 0xFE 42014c38), tracked/cold.

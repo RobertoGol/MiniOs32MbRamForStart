@@ -1143,6 +1143,22 @@ target'ам нужна честная сегрегация (веха-15+)» (v4)
   80d530cd; neg_t1pr 0xFE 03a2235e) + все прежние полки
   (80/80, 90/90, t2d 10/10, t1te 1/1) + t1pr 1/1 + кросс-
   молчания + cold.
+- **Спринт 22 (`W-42`) — том Shape-T1 'as' (1-словный):**
+  окно 'as' T1 (11 Б, probe37) = U16 4629 (0x1215) + BE32
+  0x00F00FF1 + U8 85 (0x55) + BE32 0x00F00FF1 — слот-канала нет
+  (хвост-слоты честные консты F1); PB = 29537 (0x7361); PC = 46
+  (word1 = '.'); CHECK = p0 & p1 == 2 с честным F5-сбросом.
+  wc14v1as_build.py → pos_wc14v1as.words (360 ток ≤ 510);
+  том 548 Б md5 f11a97cb (0xFF). Приёмка probe41 t1as: 'as'
+  байт-в-байт (md5 96a4d92a); неги 'as zz' (0xFE FC=1@1 md5
+  42014c38 — honest neg_t1as.words, литерал 'as zz' впервые) /
+  'as as' (T2 40c93a71) / 'as 5' (T2 f420c55e) / 'te' / 'pr'
+  (чужие T1 c0d17eb9, 80d530cd) / 'zz' / '0' / 'wc 0 as' (T3-цель
+  23942602) — МОЛЧАНИЕ. Приёмка regr42 (base regr41): REGRESS
+  OK — tracked IDENTICAL + NEW (0xFF f11a97cb; target_t1as
+  96a4d92a; neg_t1as 0xFE 42014c38) + все прежние полки
+  (80/80, 90/90, t2d 10/10, t1te 1/1, t1pr 1/1) + t1as 1/1 +
+  кросс-молчания + cold.
 
 
 - Регресс `Python_compiler\regr19.py` (база regr18; head = 6d11eec):
