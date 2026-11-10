@@ -1331,6 +1331,35 @@ target'ам нужна честная сегрегация (веха-15+)» (v4)
   regr50): REGRESS OK — tracked IDENTICAL + NEW ×21 + все прежние
   полки (80/80, 90/90, t2d 10/10, T1 9×1/1, t2pr/t2te 1/1) +
   t2as..t2vw 7×1/1 + кросс-молчания + cold.
+- **Спринт 32 (`W-52`) — том Shape-G 'wc d pr pr pr' (честный
+  ток-бюджет):** первый 5-словный том честной Shape-серии —
+  слово1 = цифра d (честный digit-block тома-C: 6 × su 8 + gt 9,
+  bad в PF = wc 10, valid = (bad == 0)), word2..4 == 'pr' (PB =
+  15732730), word5 == '.' (PC = 15732731); сумма == 6 ('eq 6',
+  затвор 'if'). Честные экономии ток-бюджета (533 → 512 → 468 ≤
+  510): 'cp' НЕ имеет select-режима ('wc 1 cp' честно бракуется —
+  fail-артефакт 178 Б md5 77e27834, fail на токене 110) → все
+  сравнения nb-поглотителем ('nb(F4)/nb(PB)/nb(PC) cp'); 'sv' и
+  'as' честны в select-режиме: valid+p3+p4 сливаются в PA (wc 6)
+  аккумулятором 'wc 6 as' (v3-факт pos_as1: acc = acc + cell +
+  writeback), p2 — в PD ('wc 9 sv'); INIT тримнут до 5 клеток —
+  wc0 = F3 - 48 = 15732675 (база слота), wc1 'wc' (25463), wc4
+  SRC_BUFFER, wc7 'pr', wc8 46, wc9-нулевая линия снята (запись
+  до чтения). Слот честного тома: F3 + d через v3-трюк
+  'nb(SRC_WORD2) va; wc 0 as' → cell[wc0] = F3 + d, эмит честным
+  'wc 0 ow' (3 токена) в каждом из трёх повторов окна (U8 84 +
+  BE32 0x3F0050C0 + BE32 слота). Честная приёмка: том 696 Б md5
+  729befd4 (0xFF, FC = 0@0, rep = [5,0,0,0,0,0], Token 5); цели
+  байт-в-байт: 'wc 5 pr pr pr' = 1a2a0638 (пин вехи-22) и
+  'wc 0 pr pr pr' = f675745d (пин вехи-22), 'wc 9 pr pr pr' =
+  04c0f7bf (новый честный ref, слот 0x00F00FFC); неги честно
+  молчат: 'wc 5 pr pr pr zz' (эталон stage1 0xFE T5 FC=1@5 md5
+  27e9b761 — честный отказ ppunkt-слота word5), 'wc 5 pr pr zz',
+  'wc 5 pr pr te', 'wc pr pr pr pr', 'wc 5 yu pr pr', 'wc pr',
+  'wc te', 'wc 5 te te te', 'zz', '0', 'wc'. Приёмка regr52
+  (base regr51): REGRESS OK — tracked IDENTICAL + NEW ×24 +
+  все прежние полки (80/80, 90/90, t2d 10/10, T1/T2 17×1/1) +
+  t5gpr 1/1 + кросс-молчания + cold.
 
 
 - Регресс `Python_compiler\regr19.py` (база regr18; head = 6d11eec):

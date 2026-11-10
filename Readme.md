@@ -840,3 +840,20 @@ sv/vw одним честным генератором wc14v2_gen.py (токен
 7×1/1 + tracked/cold, neg_t2as..neg_t2vw ('wc <L> zz' 0xFE)
 a8402229..e4ca421a tracked. B-серия 'wc L' = 9/9. Остаток 21б:
 G 'wc d L L L' (T5), E digit-tail 'wc d L d3' (9×10).
+Спринт 32 (W-52): том Shape-G 'wc d pr pr pr' — первый 5-словный
+честный (ток-бюджет 468 ≤ 510, старт 533): 'cp' НЕ имеет
+select-режима ('wc 1 cp' честный брак 77e27834, fail на токене
+110) → сравнения только nb-поглотителем; экономии 'as'-'sv'
+select-форм: valid+p3+p4 сливаются в PA (wc 6) через 'wc 6 as'
+(v3-факт: acc = acc + cell + writeback), p2 — в PD ('wc 9 sv'),
+INIT тримнут (wc0 = F3 - 48 — база слота, wc9-линия снята); слот
+окна = F3+d честным v3-трюком ('nb(SRC_WORD2) va; wc 0 as' →
+cell[wc0]) и эмитам 'wc 0 ow' ×3; том 696 Б md5 729befd4 (0xFF,
+rep [5,0,0,0,0,0]) — приёмка: 'wc 5 pr pr pr' = 1a2a0638 и
+'wc 0 pr pr pr' = f675745d (пины вехи-22), 'wc 9 pr pr pr' =
+04c0f7bf (новый честный ref, слот 0x00F00FFC), неги молчат
+('wc 5 pr pr pr zz' = эталон stage1 0xFE T5 FC=1@5 md5 27e9b761 и
+10 других кроссов) — regr52 REGRESS OK: tracked IDENTICAL +
+NEW ×24 + все полки + t5gpr 1/1 + кросс-молчания + cold. Остаток
+21б: E digit-tail 'wc d L d3' (9×10); открыт веха-22
+(много-стейтментные).
