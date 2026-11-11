@@ -1571,6 +1571,49 @@ target'ам нужна честная сегрегация (веха-15+)» (v4)
   (same-L two-chain) честно ОТКРЫТА** — отвергнутая бюджетом
   вехи-22 (685 > 510), открыта ростом вехи-23 (683 ≤ 1022).
 
+- **СПРИНТ 37 (W-57) FACT — честный СМЕШАННЫЙ pr×te-том
+  (Shape-T4×2 mixed-L pr×te):** база = wc14v3prte_build.py
+  (двойной te-том W-56 + честные окна wc14v3_gen.py). Честный
+  дизайн: C-блоки (v3-слот) УХОДЯТ из CHECK — слот-калькуляция
+  переезжает в секцию эмиссии, т.к. pr-emit ЧИТАЕТ cell[F3]
+  (слот-байт `00 F0 0F F8` = F3+d1): SLOT1 (13 ток, add-only —
+  INIT F3_MINUS_48 pristine, в CHECK больше нет F3-записей) ПЕРЕД
+  pr-окном; SLOT2 (26 ток, RESET cell[F3] = F3_MINUS_48 + re-add
+  на word5) ПОСЛЕ emit1 — честный side-effect стейтмента-2
+  (te-окно слот не читает). CHECK1: p0 (PA+=), valid(d1) 57, p2
+  (word2=='pr', конст F6=wc3, PD+=), valid(d31) 57; CHECK2: p0-2
+  (PA+=), valid(d2) 57, p2-2 (word6=='te', конст PB=wc7, PD+=),
+  valid(d32) 57; RELOAD1 d31 → wc2 ПОСЛЕ последнего F5-cp (B4,
+  прецедент W-56/probe52); E2 d32 в эмиссии. Затвор PA(6)+PD(2)+
+  ppunkt(word8=='.') == 9; Token = 8. Итог: **709 ток** ≤ 1022
+  (дельта над двойным te-томом +26: INIT 'pr' +13, SLOT1+SLOT2
+  +39, C-блоки −39, pr-окно вместо te +15), компил stage1 =
+  **1041 Б 0xFF Token 0x2C5 md5 3ff9a8aa**, детерминизм OK.
+  Честные refs stage1 (probe53, свежий stage1 на каждую цель):
+  'wc 5 pr 3 wc 5 te 3' = 65 Б 1c775e42, emit = 54 3F 00 50 C0
+  00 F0 0F F8 15 BE32(d31) + 05 15 BE32(d32); **СЛОТ-БАЙТ ЖИВ**:
+  'wc 7 pr 3 wc 5 te 3' = 66baed44 (слот FA = F3+7 — d1 честно
+  меняет артефакт, в отличие от te×te W-56); **d2-ИНВАРИАНТНОСТЬ**:
+  'wc 5 pr 3 wc 7 te 3' = ТОТ ЖЕ 1c775e42 (слот стейтмента-2 не
+  доходит до артефакта — te-окно без слота); trailing-dot
+  игнорируется обеими сторонами (= 1c775e42); reversed
+  'wc 5 te 3 wc 5 pr 3' stage1 компилит (3f3634ef) — том обязан
+  молчать (кросс-молчание слоя pr×te). **Честная матрица probe53
+  OK:** 10 смешанных целей BYTE-OK против свежего stage1
+  (1c775e42, 66baed44, d65c1448 0/7, baafe18e 2/8+9/1, 167f6a7d
+  0/0, b0ed0f90 9/5+1/2, 1355d74b 4/6+3/9, 50a1113b 1/2+8/4) +
+  14/14 негов молчат (bad d1/d2/d31/d32, bad L1/L2, bad
+  word0/word4, хвост-мусор, кросс-молчания: reversed te×pr /
+  te×te / pr×pr / single / 3-form). Приёмка **regr57 (base
+  regr56): REGRESS OK** — tracked IDENTICAL + NEW W-57 (том
+  3ff9a8aa + цели 1c775e42/66baed44/d65c1448) + все прежние полки
+  (80/80, T3 90/90, micro ×23 1/1, T4-shelf 90/90 + кросс-молчания)
+  + cold IDENTICAL. tracked: wc14v3prte_build.py,
+  pos_wc14v3prte.words, target_t4prte_53/73/07.words, regr57.py.
+  **Полка honest mixed (L1×L2 pr×te) честно ОТКРЫТА** — соседняя
+  с honest double (W-56) ячейка честной полки L1×L2 вехи-22;
+  первый смешанный том в истории TKT-052.
+
 
 - Регресс `Python_compiler\regr19.py` (база regr18; head = 6d11eec):
   **REGRESS OK** — tracked IDENTICAL (старые tracked-цели честно не
