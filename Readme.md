@@ -1271,3 +1271,37 @@ t5gpr 1/1, T4-shelf 90/90) + T4 multi-statement кросс-молчания (8×
   cold IDENTICAL. tracked: wc14v3t43sp_build.py, pos_wc14v3t43sp.words,
   target_t43sp_33/37/90.words. **Четвёртая ячейка honest cross-полки
   открыта** (te/pr/sv/sp-хвосты T3 в одном слое с T4).
+- **Спринт 43 (W-63) — кросс-формный честный T4×T3-vw-том собран и
+  принят с ПЕРВОГО прогона:** база = `wc14v3t43vw_build.py` (кросс-том
+  W-62 + vw-хвост). Карта probe58/59: stage1 для T4×T3-vw целей = 55 Б
+  0xFF Token 7, emit = 05 15 BE32(d31) + **ГОЛЫЙ BE32(слот)** 00 F0 0F
+  [слот-байт] (10 Б, БЕЗ опкод-U8 — самый дешёвый хвост кросс-полки:
+  4 Б против 5 Б sv/sp); база 'wc 5 te 3 wc 5 vw' = b9a6ae3e. Слот-байт
+  жив (закон общий): 0xF3 + d2 (d2=0 → F3 38310eb9, d2=5 → F8 база,
+  d2=7 → FA 772217e1); reslot из CHECK2 НЕСУЩИЙ; d1-ИНВАРИАНТНОСТЬ
+  ('wc 7 te 3 wc 5 vw' = база); точка = база; Token = 7. Дизайн (= W-62
+  + vw-хвост): CHECK2 pVw = (word6 == LE2('vw') = 0x7776 = 30582, конст
+  cell wc3 = F6 — пятый вид в той же ячейке); RELOAD1 d31 → wc2 после
+  B3; затвор ИДЕНТИЧЕН W-59..W-62 (PA 5 + PD 2 + ppunkt == 8; ключ-
+  развязка: у 8-ток двойников T4×T4-vw/sv/pr word7 = '3' → молчание);
+  VW_TAIL = **'wc 0 ow' — 3 ток** (голый BE32(cell[wc0]), против 12 ток
+  у SV_TAIL/SP_TAIL). Итог: **594 ток** ≤ 1022 (< W-62 603 — честная
+  экономика: том дешевеет с дешевизной хвоста), компил stage1 = **862 Б
+  0xFF Token 0x252 = 594 md5 527005a3**, детерминизм OK. Честная
+  матрица probe59 OK с ПЕРВОГО прогона: **11 целей BYTE-OK против
+  свежего stage1** (b9a6ae3e база+dot+d1-инвариантность, b47bb0f6
+  d31=7, 52b1bce7 d31=9, d68d2502 0/0/0, dd2e8c8a, 16c997de, cb3e52f6,
+  38310eb9 d2=0, 772217e1 d2=7) + **22/22 негов молчат** (ключевые
+  T4×T4-vw 'wc 5 te 3 wc 5 vw 3' / T4×T4-sv fe6aeb2b 8-ток — stage1
+  принимает, том обязан молчать; соседние виды кросс-формы sv b904f09d
+  (W-61) / sp 122ce84e (W-62) / va 18824443 / as eb265d64 / ow
+  36a16cbd / if c46313a6 / pr 26a8b48c (W-60) / te 32448898 (W-59) =
+  свои полки, этот том молчит; reversed W-57 'wc 5 vw 3 wc 5 te 3';
+  голые 'wc vw' / 'wc 0 vw'; сирота-цифра; хвост-мусор; bad d1/d2/d31,
+  bad cells, bad word0/word4; 9-ток). Приёмка **regr63 (base regr62):
+  REGRESS OK** — tracked IDENTICAL + NEW W-63 (том 527005a3 + цели
+  b9a6ae3e/b47bb0f6/cb3e52f6) + все прежние полки (80/80, T3 90/90,
+  micro ×23, T4-shelf 90/90 + кросс-молчания) + cold IDENTICAL.
+  tracked: wc14v3t43vw_build.py, pos_wc14v3t43vw.words,
+  target_t43vw_33/37/90.words. **Пятая ячейка honest cross-полки
+  открыта** (te/pr/sv/sp/vw-хвосты T3 в одном слое с T4).
