@@ -1562,3 +1562,42 @@ t5gpr 1/1, T4-shelf 90/90) + T4 multi-statement кросс-молчания (8×
   cold IDENTICAL. tracked: wc14v3t44pr_build.py,
   pos_wc14v3t44pr.words, target_t44pr_33/37/90.words. **Вторая
   ячейка T4×T4-полки открыта** (осталось 7: sv/sp/vw/va/if/as/ow).
+- **Спринт 50 (W-70) — кросс-формный честный T4×T4-sv-том собран и
+  принят с ПЕРВОГО прогона (третья ячейка полки T4×T4): база =
+  `wc14v3t44sv_build.py` (T4×T4-pr-дизайн W-69 + sv-хвост второго
+  стейтмента). Карта probe58/66 (18 кейсов): stage1 для T4×T4-sv
+  целей = 61 Б 0xFF Token 8, emit = 05 15 BE32(d31) + **55 BE32(слот
+  F3+d2) + 15 BE32(d32)** (16 Б) — закон второго стейтмента честен:
+  sv-kind-tail-T3 = U8 0x55 + BE32(слот) [5 Б] (для te 05 [1 Б],
+  для pr 54 BE32(0x3F0050C0) + BE32(слот) [9 Б]); **слот НЕСУЩИЙ**
+  (d2=0 → F3 ad52cc3d/36709bee, d2=5 → F8 база fe6aeb2b, d2=7 → FA
+  9ff654ae) — reslot CHECK2 несущий (как у pr W-69); U8 0x55
+  константен по всем d1/d2/d31/d32 (85₁₀ = 'nb 8 5'); d32 несущий
+  во втором BE32 (d32=7 → 3896f267, d32=9 → 9ff654ae); d1-
+  инвариантность ('wc 7 te 3 wc 5 sv 3' = база); точка на word8 =
+  база; Token = 8. Дизайн (= W-69 + sv-хвост): CHECK2 pSv2 = (word6
+  == LE2('sv') = 0x7673 = 30323, конста wc3 = F6 — та же ячейка,
+  что kind-консты W-60..W-68; PB остаётся 'te' = 25972); reslot
+  НЕСУЩИЙ; затвор ИДЕНТИЧЕН W-68/W-69; EMIT = chain1 + RELOAD2 (d32
+  → wc2) + SV_TAIL2 (U8 0x55 'nb 8 5' = 85₁₀ + 'wc 0 ow' + U8 0x15
+  + 'wc 2 ow' = 23 ток). Итог: **697 ток** ≤ 1022, компил stage1 =
+  **1027 Б 0xFF Token 0x2B9 md5 3ad5fd51**, детерминизм OK. Честная
+  матрица probe66 OK С ПЕРВОГО ПРОГОНА: **12 целей BYTE-OK против
+  свежего stage1** (fe6aeb2b база+dot+d1-инвар ×3, f325ad4e d31=7,
+  8b32cf39 d31=9, ad52cc3d 0/0/0/0, 4ac7edf5, 608276fb, 22e7a3cb,
+  36709bee d2=0, 9ff654ae d2=7/d32=9, 3896f267 d32=7) + **22/22
+  негов молчат** (ключевые T4×T3-sv 'wc 5 te 3 wc 5 sv' — stage1
+  ПРИНИМАЕТ (56 Б b904f09d, sv-хвост T3 = 5 Б — совпал с картой
+  W-61), том обязан молчать: word7 = 'sv' → valid4 bad; T4×T4-te
+  45188fc1 / T4×T4-pr 3f3634ef 8-ток — свои полки W-68/W-69, этот
+  том молчит; 9-ток 452a8101 / 12-ток 412af84f / reversed 5a6973b5
+  — stage1 принимают, том молчит; голые 'wc sv 3' 9373c053 (слот
+  F1!) и T4-sv-single 'wc 5 sv 3' d0efc383; сирота-цифра 8b2c4a6f;
+  bad d1/d2/d31/d32, bad cells, bad word0/word4/word6). Приёмка
+  **regr70 (base regr69): REGRESS OK** — tracked IDENTICAL + NEW
+  W-70 (том 3ad5fd51 + цели fe6aeb2b/f325ad4e/22e7a3cb) + все
+  прежние полки (80/80, T3 90/90, micro ×23, T4-shelf 90/90 +
+  кросс-молчания) + cold IDENTICAL. tracked: wc14v3t44sv_build.py,
+  pos_wc14v3t44sv.words, target_t44sv_33/37/90.words. **Третья
+  ячейка T4×T4-полки открыта** (закон второго стейтмента честен на
+  трёх видах: te/pr/sv; осталось 6: sp/vw/va/if/as/ow).
