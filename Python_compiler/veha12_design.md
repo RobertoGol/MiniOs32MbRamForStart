@@ -1614,6 +1614,45 @@ target'ам нужна честная сегрегация (веха-15+)» (v4)
   с honest double (W-56) ячейка честной полки L1×L2 вехи-22;
   первый смешанный том в истории TKT-052.
 
+- **СПРИНТ 38 (W-58) FACT — честный ТРОЙНОЙ te-том (Shape-T4×3,
+  honest three-chain):** база = wc14v3te3_build.py (двойной te-том
+  W-56). Честный дизайн: CHECK3 (слова 8..11): p0-3 (word8=='wc',
+  PA+=), valid(d3) 57, reslot3 26 (RESET F3_MINUS_48 + re-add на
+  word9), p2-3 (word10=='te', PD+=), valid(d33) 57; RELOAD1 d31 →
+  wc2 ПОСЛЕ последнего F5-cp (теперь B6); E3 d33 в эмиссии (25) +
+  chain3-em 20. Затвор PA(9)+PD(3)+ppunkt(word12=='.') == 13;
+  Token = 12. **Два честных дефекта, пойманных прогонами probe54:**
+  (1) 'eq' честно берёт ОДНО following-token immediate — 'eq 13' =
+  'eq 1' + сирота '3' (голая цифра вне nb = не-опкод) → fail 0xFE
+  Token 708 (точный индекс сироты); исправлено: конст 13 в cell F6
+  (wc 3) через INIT 'nb 1 3 ne wc 3 sv', сравнение 'cp' против
+  cell[F6] (прецедент ppunkt/PC и F6/'pr' W-57); (2) многозначный
+  nb-литерал обязан быть разрядными токенами: 'nb 12' → fail 0xFE
+  Token 899, исправлено 'nb 1 2' (прецедент EMIT_HEAD). Итог:
+  **930 ток** ≤ 1022 (дельта над двойным te +247: CHECK3 186, E3 25,
+  chain3-em 20, конст-13 INIT +7, cp-затвор +8, разрядный nb +1),
+  компил stage1 = **1327 Б 0xFF Token 0x3A2 md5 b6c1fcb6**,
+  детерминизм OK. Честные refs stage1 (probe54, свежий stage1 на
+  каждую цель): база 'wc 5 te 3 wc 5 te 3 wc 5 te 3' = 63 Б
+  d52f8215 (пин W-56 «3-цепочки аддитивны» подтверждён), emit =
+  05 15 BE32 ×3; **d1/d2-ИНВАРИАНТНОСТЬ te-артефакта** ('wc 7 te 3
+  ...' = d52f8215); trailing-dot игнорируется; 4-цепочка stage1
+  компилит (69 Б efb4c55c, Token 16) — тройной том обязан молчать
+  (гейт 12 ≠ 13). **Честная матрица probe54 OK:** 10 тройных целей
+  BYTE-OK против свежего stage1 (d52f8215 база+dot, 96cf53c6 3/3/7,
+  093b6780 3/9/3, 709a66e7, 91670586 0/0/0, b9f6c3be, b459597d) +
+  17/17 негов молчат (bad d1/d2/d3/d31/d32/d33, bad L1/L2/L3, bad
+  word0/word4/word8, хвост-мусор; кросс-молчания: single / double /
+  4-цепочка / 3-form). Приёмка **regr58 (base regr57): REGRESS
+  OK** — tracked IDENTICAL + NEW W-58 (том b6c1fcb6 + цели
+  d52f8215/96cf53c6/b459597d) + все прежние полки (80/80, T3 90/90,
+  micro ×23, T4-shelf 90/90 + кросс-молчания) + cold IDENTICAL.
+  tracked: wc14v3te3_build.py, pos_wc14v3te3.words,
+  target_t4te3_33/37/90.words, regr58.py. **Полка honest triple
+  (three-chain) честно ОТКРЫТА** — третий честный слой-член; слой-
+  потолок честно измерен: 4-цепочка (16 ток, ~+205 ток скана) даёт
+  ~1135 > 1022 — за границей честного тома вехи-23.
+
 
 - Регресс `Python_compiler\regr19.py` (база regr18; head = 6d11eec):
   **REGRESS OK** — tracked IDENTICAL (старые tracked-цели честно не
