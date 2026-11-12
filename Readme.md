@@ -1939,3 +1939,53 @@ t5gpr 1/1, T4-shelf 90/90) + T4 multi-statement кросс-молчания (8×
   **НОВАЯ кросс-полка T3×T4 открыта** (осталось 8 ячеек pr/sv/sp/vw/
   va/if/as/ow — ожидать [05] + kind-tail-T4 + 15 BE32(d32); снять
   честной картой).
+
+- **Спринт 58 (W-78) — кросс-формный честный T3×T4-pr-том собран и
+  принят С ПЕРВОГО прогона (ВТОРАЯ ячейка кросс-полки T3×T4 — вид
+  pr): направление делегировано пользователем 2026-11-12 («ок
+  продолжай» — продолжение полки T3×T4). База = `wc14v3t34pr_build.py`
+  (T3×T4-te W-77: 7-ток слой, терминатор word7, 'eq 8', БЕЗ B2/
+  RELOAD1 + pr-хвост второго стейтмента W-69). Карта probe78 (49
+  кейсов, свежий stage1 на каждую цель — и позитивы, и неги): stage1
+  для T3×T4-pr целей = 60 Б 0xFF Token 7, emit = **05 + 54
+  BE32(0x3F0050C0 КОНСТА) + BE32(слот F3+d2) + 15 BE32(d32)** (15 Б);
+  база 'wc 5 te wc 5 pr 3' = **8f5455db** (СОВПАЛ с пином probe77 —
+  видовой хвост pr честен). **СЛОТ НЕСУЩИЙ** (d2=0 → F3 60d20bd1,
+  d2=5 → F8 база, d2=7 → FA 6564566c — reslot CHECK2 НЕСУЩИЙ: BE32
+  pr-хвоста честно читает cell[wc0] = 15732723 + d2; в отличие от te
+  W-77); d32 НЕСУЩИЙ (d32=7 → d4655eaf, d32=9 → 77109b30, d32=0 →
+  fdf5255b); d1-инвариантность ('wc 7 te wc 5 pr 3' = база); точка на
+  word7 = база; мусор после точки = база; Token = 7 (честный полный
+  HEX probe78: header CRC 8d3541fc + emit + FF + BE32(7) + 20 нулей).
+  Дизайн: CHECK1 = скан T3 (слова 0..2: p0 23 + valid(d1) 57 + C1
+  слот 13 [НЕ несущий] + pTe1 23 — НЕТ digit-block d31); CHECK2 =
+  скан T4 (слова 3..6: p0-2 23 + valid(d2) 57 + reslot 26 [НЕСУЩИЙ] +
+  pPr2 23 [LE2('pr') = 0x7270 = 29296, конст F6] + valid(d32) 57);
+  RELOAD2 d32 (word6) → wc2 ПОСЛЕ CHECK2 (НЕТ RELOAD1); затвор
+  PA(5)+PD(2)+ppunkt (word7=='.') == 8 ('eq 8'; терминатор WORD8 =
+  10485788); EMIT = TERM1 (05 — T3-te хвост stmt1, БЕЗ chain1) +
+  RELOAD2 + PR_TAIL2 (54 BE32(0x3F0050C0) + BE32(cell[wc0] = слот) +
+  15 BE32(d32), 37 ток — вид W-69) → отчёт (Token = 7). Итог: **615
+  ток** ≤ 1022, компил stage1 = **890 Б 0xFF Token 0x267 md5
+  9812f68b**, детерминизм OK. Честная матрица probe78b OK С ПЕРВОГО
+  ПРОГОНА: **12 целей BYTE-OK против свежего stage1** (8f5455db
+  база+dot+мусор+d1-инвар ×4, d4655eaf d32=7, 77109b30 d32=9,
+  fdf5255b 0/0/0/0, 60d20bd1 d2=0, 6564566c d2=7, ec30146e, 2afd6d75,
+  abdbba57) + **37/37 негов молчат** (T3×T4-te 'wc 5 te wc 5 te 3'
+  df520cf9 — сосед-вид, PD < 2; T4×T4-pr 3f3634ef / T4×T3-pr
+  26a8b48c — word3 = '3' → p0-2 bad; T4×T4-соседы te/sv/sp/vw/va/if/
+  as/ow 45188fc1/fe6aeb2b/1d8ce3fa/cadd33b5/4746dfb8/af49bd85/
+  2855788a/1591c6b2; T3×T4-соседи sv/sp/vw/va/if/as/ow c29827f9/
+  4cf32400/c8e17647/a014b73e/1d69a38a/fe37197e/3f013021 — видовые
+  хвосты СОВПАЛИ с законами W-70..W-76; T3×T3 c49e444f; singles
+  bac85372/495e8056/61957c4c/40bf2183/fb10fa26; 9-ток 'wc 5 te wc 5
+  pr 3 3' d6f1b3a9 (Token = 9) / 11-ток 'wc 5 te wc 5 pr 3 wc 5 pr 3'
+  1e5990ce — word7 ≠ '.'; сирота a3bac192; голые 'wc pr 3' ad66b184
+  (слот F1!) / 'wc 5 te 3 wc pr' 2fed2316; bad d1/d2/d32, bad
+  word0/word2/word3/word5, мусор/zz = FAIL 0xFE). Приёмка **regr78
+  (base regr77): REGRESS OK** — tracked IDENTICAL + NEW W-78 (том
+  9812f68b + цели 8f5455db/d4655eaf/77109b30) + все прежние полки +
+  cold IDENTICAL. tracked: wc14v3t34pr_build.py,
+  pos_wc14v3t34pr.words, target_t34pr_33/37/90.words, regr78.py.
+  **Кросс-полка T3×T4: 2/9** (осталось 7 ячеек sv/sp/vw/va/if/as/ow —
+  ожидать [05] + kind-tail-T4 + 15 BE32(d32); снять честной картой).
