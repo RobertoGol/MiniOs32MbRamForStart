@@ -2903,3 +2903,50 @@ t5gpr 1/1, T4-shelf 90/90) + T4 multi-statement кросс-молчания (8×
   tracked: wc14v3t3333ow_build.py, pos_wc14v3t3333ow.words,
   target_t3333ow_37_55/557/980.words, regr96.py. Дальше — стрим
   (T3×T3×T3×T3 других kinds, 5 стейтментов) к истинной самосборке.
+- **Спринт 77 (W-97) — СТРИМ: вторая ЧЕТЫРЁХстейтментная T3-форма
+  собрана и принята (T3×T3×T3×T3-te 'wc d te wc d te wc d te wc d te'
+  — ЧЕТЫРЕ стейтмента, 12 токенов, терминатор слоя на word12 =
+  ТРИНАДЦАТОЕ слово; ВСЕ ЧЕТЫРЕ хвоста КОНСТАНТНЫ — te-хвост = голый
+  U8 05 (1 Б), d НЕ читается хвостом => d1/d2/d3/d4 честные ИНВАРЫ
+  ×4, tracked-цели ОДИН md5 — прецедент W-86/W-92; НЕТ слотов вовсе —
+  НЕТ chain/reslot/RESLOT4, wc0/wc2=F5/wc3 СВОБОДНЫ; valid через
+  F5-cp — форма W-86): база = `wc14v3t3333te_build.py` (va/as/te-
+  структура W-86..W-96 минус все chain/reslot; EMIT = TERM1..TERM4).
+  Карта probe97 (86 кейсов, свежий stage1 на каждую цель): stage1
+  для te-целей = 49 Б 0xFF Token 12, emit = 05×4 = 4 Б; база 'wc 5
+  te' ×4 = **40dc0e48** (пин probe96 СОВПАЛ; header CRC dd9675d1).
+  ВСЕ 9 носителей = база (d-ИНВАРЫ ×4 — честный инвариант). 5-stmt
+  **511f2235** (Token 15; точка тот же), 6-stmt e1bf059a — том
+  молчит: word12 = 'wc' → pEOF = 0 → S = 12; 3-stmt 5cbeaa9b (пин
+  СОВПАЛ) — S = 10; 2-stmt c49e444f (пин СОВПАЛ) — S = 7;
+  pr/sv/sp/vw/va/ow/if/as-смеси на ВСЕХ ЧЕТЫРЁХ позициях + 32 пин
+  (том молчит: PD = 3 → S = 12); другие kinds ×4 — пины probe96
+  СОВПАЛИ (ow ×4 c39da5d5, as ×4 3f6d8893, sv ×4 05df0915, sp ×4
+  c02a9b43, vw ×4 8669285e, va ×4 917128ff, pr ×4 34f4a890; if ×4
+  0xFE ebe049f9 — stage1 БРАКУЕТ); кресты '… te 3' **1760d9ca** (54
+  Б, digit-tail 15 00000003) / 'wc 5 te 3 …' **137c8370** / '… 3 wc
+  5 te …' **7b74d3db** / '… 3 wc 5 te' **38f2c4b8** (digit МЕЖДУ
+  stmt3 и stmt4) / '… te te' **81728d12** (50 Б, 05×5) / '… te 3 3'
+  **faa6bede** (59 Б); 2-stmt кресты 45188fc1 (= W-68)/6a6f0a94/
+  df520cf9/3dacb5b7; singles/сироты bac85372/**495e8056** (НОВЫЙ,
+  emit 6 Б)/a3bac192/00ce976e/6a16ae85; неги-браки: bad d2 0xFE
+  **06448daf** (пин СОВПАЛ), bad d3 0xFE **dcf812e7** (НОВЫЙ), bad
+  d4 0xFE **c9b55156** (НОВЫЙ), bad word8 0xFE **d692bb98** (НОВЫЙ),
+  bad word11 0xFE **c1ccc2a5** (НОВЫЙ), bad word4 'ow' 0xFE
+  **2e31251b** (НОВЫЙ — stage1 БРАКУЕТ, в отличие от ow-аналога
+  68d64e5f!), bad word7 'ow' 0xFE **b7079cc7** (НОВЫЙ); KEY: 'wc 5
+  te' ×3 + 'wc ow' — stage1 ПРИНИМАЕТ **a374540c** (НОВЫЙ: emit 17 Б
+  = 05×3 + ow-хвост со слотом F8 DEFAULT WORK_CELL) — том молчит:
+  v4 = 0 → PA = 7, pTe4 = 0 → S = 11; ff73c458/29ba6852/4ff7c705/
+  d0059999/f3667180 (пины СОВПАЛИ). Итог: **702 ток** ≤ 1022, компил
+  stage1 = **954 Б 0xFF Token 0x2BE = 702 md5 090a6bec**, детерминизм
+  OK. Приёмка probe97c OK С ПЕРВОГО ПРОГОНА: **15/15 BYTE-OK против
+  свежего stage1** (база 40dc0e48, точка, точка+мусор, 9 носителей +
+  3 tracked — ВСЕ = ОДИН md5 40dc0e48 — честный инвариант d-ИНВАРОВ
+  ×4) + **74/74 негов молчат**. Приёмка **regr97 (base regr96):
+  REGRESS OK** — tracked IDENTICAL + NEW W-97 (том 090a6bec + цели
+  40dc0e48 ×3 — ОДИН md5) + все прежние полки + cold IDENTICAL.
+  tracked: wc14v3t3333te_build.py, pos_wc14v3t3333te.words,
+  target_t3333te_33/37/90.words, regr97.py. Дальше — стрим (T3×T3×T3
+  ×T3 других kinds pr/sv/sp/vw/va/as ×4, 5 стейтментов) к истинной
+  самосборке.
