@@ -2384,5 +2384,51 @@ t5gpr 1/1, T4-shelf 90/90) + T4 multi-statement кросс-молчания (8×
   7924719e + цели c49e444f ×3 — честная инвариантность d1/d2) + все
   прежние полки + cold IDENTICAL. tracked: wc14v3t33te_build.py,
   pos_wc14v3t33te.words, target_t33te_33/37/90.words, regr86.py.
-  Дальше — стрим (T3×T3-pr и другие kinds, 3+ стейтментов) к
-  истинной самосборке.
+- **Спринт 67 (W-87) — СТРИМ: второй вид многостейтментного тома
+  собран и принят (T3×T3-pr 'wc d pr wc d pr' — ОБА хвоста НЕСУЩИЕ,
+  d1/d2 НЕТ инваров): база = `wc14v3t33pr_build.py` (W-86-структура +
+  C1 chain1 + C2 reslot + pr-хвосты; EMIT = PR_TAIL1 + PR_TAIL2).
+  Карта probe87 (32 кейса, свежий stage1 на каждую цель): stage1 для
+  T3×T3-pr целей = 63 Б 0xFF Token 6, emit = [pr-T3-хвост] ×2 = [54
+  BE32(0x3F0050C0 = 1056985280 КОНСТА) + BE32(слот F3+d)] ×2 = 18 Б;
+  база 'wc 5 pr wc 5 pr' = **93d24c79** (пин probe86; честный полный
+  hex: header CRC 45879e04 + emit 543f0050c000f00ff8543f0050c000f00ff8
+  + FF + BE32(6) + 20 нулей). **СЛОТ НЕСУЩИЙ В ОБОИХ ХВОСТАХ**:
+  'wc 7 pr wc 5 pr' = 02089644 (слот1 = FA = F3+d1), 'wc 5 pr wc 7
+  pr' = 9707345d (слот2 = FA), 'wc 7 pr wc 7 pr' = 0144dd04, 'wc 0 pr
+  wc 0 pr' = c0d5c83c (F3 F3), 'wc 1 pr wc 3 pr' = 4f47a406, 'wc 9 pr
+  wc 8 pr' = 76d751a5 — три tracked-цели W-87 дают ТРИ РАЗНЫЕ md5
+  (честное доказательство несущих слотов; в W-86 все три были
+  c49e444f — инвары). Дизайн: CHECK1 = p0 + valid(d1) + C1 chain1:
+  cell[wc0] = F3_MINUS_48 + word1 = 15732723 + d1 (НЕСУЩИЙ для
+  PR_TAIL1) + pPr1 (word2 == LE2('pr') = 29296); CHECK2 = p0-2 +
+  valid(d2) + C2 reslot: cell[wc2] = F3_MINUS_48 + word4 = F3+d2
+  (НЕСУЩИЙ для PR_TAIL2; wc2 = F5 — ПОСЛЕ последнего F5-cp, честный
+  порядок W-84 RELOAD2) + pPr2; НЕТ RELOAD2 (word6 = терминатор);
+  pEOF = eq(word6, 0) + eq(word6, 46) через stash **15732726 (wc3)**
+  (15732723 трогать НЕЛЬЗЯ — там слот; wc3 свободна — в W-84 там был
+  'as'-конст); затвор PA 4 + PD 2 + pEOF == 7 ('eq 7'). Том = **559
+  ток** ≤ 1022. Приёмка **probe87b OK С ПЕРВОГО ПРОГОНА**: компил =
+  **780 Б 0xFF Token 0x22F = 559 md5 b0262abe**, детерминизм OK, **9
+  целей BYTE-OK против свежего stage1** (база 93d24c79, точка,
+  точка+мусор, d1-носитель, d2-носитель, FA FA, F3 F3, 4f47a406,
+  76d751a5) + **23/23 негов молчат** (te/pr-смеси 9ae11899/c0596f7a/
+  c49e444f — pPr = 0; 3/4-stmt pr-потоки ca3af6f2 Token 9 (emit 27 Б =
+  3 pr-хвоста)/34f4a890 (36 Б) — stage1 ПРИНИМАЕТ, том молчит: word6 =
+  'wc' → pEOF = 0; 'wc 5 pr wc 5 pr 3' 3396f4ac (НОВЫЙ пин, emit 23 Б)
+  — word6 = '3'; 'wc 5 pr 3 wc 5 pr' 386f20a5 (НОВЫЙ пин) — word3 =
+  '3' → p0-2 bad; T4×T4-pr a5fa7400 (НОВЫЙ пин); 'wc 5 pr wc 5 pr 3 3'
+  89aa4c61 (НОВЫЙ пин, Token 8); 'wc 5 pr wc 5 pr pr' 42545e00 (НОВЫЙ
+  пин: word6 = 'pr', emit 27 Б) — pEOF = 0; 'wc 5 pr' 61957c4c; сирота
+  'wc 5 pr wc 5' 2d2ebfbf (НОВЫЙ пин); 'wc pr wc 5 pr' = 0xFE 54 Б
+  bd98dd90 (НОВЫЙ пин: слот F1 = default WORK_CELL); 'wc 5 pr wc pr' —
+  stage1 ПРИНИМАЕТ (e60ab79f, emit 18 Б) — том молчит: v2 = 0 → PA =
+  3; bad d1 29ba6852 (= W-86); bad d2 53097fac (НОВЫЙ пин); bad word2
+  4ff7c705 (= W-86); bad word5 ddb5b70d (НОВЫЙ пин); bad word0/мусор
+  f3667180). Приёмка **regr87 (base regr86): REGRESS OK** — tracked
+  IDENTICAL + NEW W-87 (том b0262abe + цели 93d24c79/02089644/
+  76d751a5 — честное доказательство несущих слотов) + все прежние
+  полки + cold IDENTICAL. tracked: wc14v3t33pr_build.py,
+  pos_wc14v3t33pr.words, target_t33pr_33/37/90.words, regr87.py.
+  Дальше — стрим (T3×T3-sv/sp/vw/va/if/as/ow и другие kinds, 3+
+  стейтментов) к истинной самосборке.
