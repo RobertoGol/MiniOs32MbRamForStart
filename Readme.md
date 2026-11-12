@@ -2096,3 +2096,46 @@ t5gpr 1/1, T4-shelf 90/90) + T4 multi-statement кросс-молчания (8×
   target_t34sp_33/37/90.words, regr80.py.
   **Кросс-полка T3×T4: 4/9** (осталось 5 ячеек vw/va/if/as/ow —
   ожидать [05] + kind-tail-T4 + 15 BE32(d32); снять честной картой).
+- **Спринт 61 (W-81) — кросс-формный честный T3×T4-vw-том собран и
+  принят (ПЯТАЯ ячейка кросс-полки T3×T4 — вид vw): база =
+  `wc14v3t34vw_build.py` (T3×T4-sp W-80: 7-ток слой, терминатор word7,
+  'eq 8' + vw-хвост второго стейтмента W-72). Карта probe81 (49
+  кейсов, свежий stage1 на каждую цель): stage1 для T3×T4-vw целей =
+  55 Б 0xFF Token 7, emit = **05 + BE32(слот F3+d2) + 15 BE32(d32)**
+  (10 Б); база 'wc 5 te wc 5 vw 3' = **c8e17647** (СОВПАЛ с пином
+  probe77 — видовой хвост vw честен). **vw-ХВОСТ = BE32(слот) — 4 Б,
+  БЕЗ ведущего U8 — УНИКАЛЬНЫЙ вид** (W-72: у te/pr/sv/sp/va/if/as/ow
+  хвост начинается с U8); **СЛОТ НЕСУЩИЙ** (d2=0 → F3 c3eaffaa, d2=5 →
+  F8 база, d2=7 → FA 53697615 — reslot CHECK2 НЕСУЩИЙ: BE32 vw-хвоста
+  честно читает cell[wc0] = 15732723 + d2 = 0x00F00FF3 + d2; как у
+  pr/sv/sp, в отличие от te W-77); d32 НЕСУЩИЙ (d32=7 → b7c540a4,
+  d32=9 → 3ac76183); d1-ИНВАРИАНТНОСТЬ ('wc 7 te wc 5 vw 3' = база);
+  явная точка/мусор после точки = база; Token = 7 (rep BE32 = 7,
+  честный полный hex: header CRC 463d4db8 + emit 0500f00ff81500000003
+  + FF + BE32(7) + 20 нулей). Том = **594 ток** ≤ 1022 (−9 от sp:
+  снят U8-эмиттер хвоста). Приёмка **probe81b OK С ПЕРВОГО ПРОГОНА**
+  (без параллельного Copy-Item — урок W-80): компил = **862 Б 0xFF
+  Token 0x252 = 594 md5 0bde646b**, детерминизм OK, **12 целей
+  BYTE-OK против свежего stage1** (c8e17647 база+dot+мусор+d1-инвар
+  ×4, b7c540a4 d32=7, 3ac76183 d32=9, d9ce4d47 0/0/0/0, c3eaffaa
+  d2=0, 53697615 d2=7, 92742659, d720ec22, 36f85ba0) + **37/37 негов
+  молчат** (T3×T4-te 'wc 5 te wc 5 te 3' df520cf9 — сосед-вид, PD < 2;
+  T4×T4-vw 8-ток cadd33b5 / T4×T3-vw 7-ток b9a6ae3e (новый пин) —
+  word3 = '3' → p0-2 bad; T4×T4-соседы te/pr/sv/sp/va/if/as/ow
+  45188fc1/3f3634ef/fe6aeb2b/1d8ce3fa/4746dfb8/af49bd85/2855788a/
+  1591c6b2; T3×T4-соседи pr/sv/sp/va/if/as/ow 8f5455db/c29827f9/
+  4cf32400/a014b73e/1d69a38a/fe37197e/3f013021 — видовые хвосты
+  СОВПАЛИ с законами W-69..W-76; T3×T3 c49e444f; singles bac85372/
+  495e8056/**00ce976e** (T3-vw-single 'wc 5 vw' — новый пин)/
+  **77e58387** (T4-vw-single 'wc 5 vw 3' — новый пин)/fb10fa26;
+  9-ток 'wc 5 te wc 5 vw 3 3' 2928bfb9 (Token = 9) / 11-ток 'wc 5 te
+  wc 5 vw 3 wc 5 vw 3' 1a2a0a86 — word7 ≠ '.'; сирота a3bac192; голые
+  'wc vw 3' e5ff04a6 (слот F1!) / 'wc 5 te 3 wc vw' e1b55346; bad
+  d1/d2/d32 (vw 0xFE 50 Б 8265cd3f), bad word0/word2/word3/word5,
+  мусор/zz = FAIL 0xFE). Приёмка **regr81 (base regr80): REGRESS OK**
+  — tracked IDENTICAL + NEW W-81 (том 0bde646b + цели c8e17647/
+  b7c540a4/3ac76183) + все прежние полки + cold IDENTICAL. tracked:
+  wc14v3t34vw_build.py, pos_wc14v3t34vw.words,
+  target_t34vw_33/37/90.words, regr81.py.
+  **Кросс-полка T3×T4: 5/9** (осталось 4 ячейки va/if/as/ow —
+  ожидать [05] + kind-tail-T4 + 15 BE32(d32); снять честной картой).
