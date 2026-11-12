@@ -2041,3 +2041,58 @@ t5gpr 1/1, T4-shelf 90/90) + T4 multi-statement кросс-молчания (8×
   pos_wc14v3t34sv.words, target_t34sv_33/37/90.words, regr79.py.
   **Кросс-полка T3×T4: 3/9** (осталось 6 ячеек sp/vw/va/if/as/ow —
   ожидать [05] + kind-tail-T4 + 15 BE32(d32); снять честной картой).
+
+- **Спринт 60 (W-80) — кросс-формный честный T3×T4-sp-том собран и
+  принят (ЧЕТВЁРТАЯ ячейка кросс-полки T3×T4 — вид sp): направление
+  делегировано пользователем 2026-11-12 («ок продолжай» —
+  продолжение полки T3×T4). База = `wc14v3t34sp_build.py` (T3×T4-sv
+  W-79: 7-ток слой, терминатор word7, 'eq 8' + sp-хвост второго
+  стейтмента W-71). Карта probe80 (49 кейсов, свежий stage1 на каждую
+  цель — и позитивы, и неги): stage1 для T3×T4-sp целей = 56 Б 0xFF
+  Token 7, emit = **05 + 53 BE32(слот F3+d2) + 15 BE32(d32)** (11 Б);
+  база 'wc 5 te wc 5 sp 3' = **4cf32400** (СОВПАЛ с пином probe77 —
+  видовой хвост sp честен). **sp-ХВОСТ = 53 BE32(слот) — 5 Б, БЕЗ
+  консты** (как sv, в отличие от pr: 54 BE32(0x3F0050C0) + BE32(слот),
+  9 Б); **СЛОТ НЕСУЩИЙ** (d2=0 → F3 8451003a, d2=5 → F8 база, d2=7 →
+  FA aa396717 — reslot CHECK2 НЕСУЩИЙ: BE32 sp-хвоста честно читает
+  cell[wc0] = 15732723 + d2 = 0x00F00FF3 + d2; как у pr/sv, в отличие
+  от te W-77); d32 НЕСУЩИЙ (d32=7 → bffd19e5, d32=9 → 6900f01a, d32=0
+  → cdf77b2b); d1-инвариантность ('wc 7 te wc 5 sp 3' = база); точка
+  на word7 = база; мусор после точки = база; Token = 7 (честный
+  полный HEX probe80: header CRC f37d9611 + emit
+  055300f00ff81500000003 + FF + BE32(7) + 20 нулей). Дизайн: CHECK1 =
+  скан T3 (слова 0..2: p0 23 + valid(d1) 57 + C1 слот 13 [НЕ несущий]
+  + pTe1 23 — НЕТ digit-block d31); CHECK2 = скан T4 (слова 3..6:
+  p0-2 23 + valid(d2) 57 + reslot 26 [НЕСУЩИЙ] + pSp2 23 [LE2('sp') =
+  0x7073 = 28787, 's' = 0x73 в МЛАДШЕМ байте, конст F6] + valid(d32)
+  57); RELOAD2 d32 (word6) → wc2 ПОСЛЕ CHECK2 (НЕТ RELOAD1); затвор
+  PA(5)+PD(2)+ppunkt (word7=='.') == 8 ('eq 8'; терминатор WORD8 =
+  10485788); EMIT = TERM1 (05 — T3-te хвост stmt1, БЕЗ chain1) +
+  RELOAD2 + SP_TAIL2 (53 BE32(cell[wc0] = слот) + 15 BE32(d32), 9 ток
+  — вид W-71, БЕЗ консты; 'nb 8 3' = 83₁₀ = 0x53 [урок probe57/W-64])
+  → отчёт (Token = 7). Итог: **603 ток** ≤ 1022, компил stage1 =
+  **876 Б 0xFF Token 0x25b md5 bc8c8a4f**, детерминизм OK. Честная
+  матрица probe80b OK (первый запуск сорван гонкой параллельного
+  Copy-Item с билдером — PermissionError на temp-pos, НЕ билдер;
+  перезапуск без параллельного доступа к файлу): **12 целей BYTE-OK
+  против свежего stage1** (4cf32400 база+dot+мусор+d1-инвар ×4,
+  bffd19e5 d32=7, 6900f01a d32=9, cdf77b2b 0/0/0/0, 8451003a d2=0,
+  aa396717 d2=7, e5415782, 49a6aaee, d6e787ef) + **37/37 негов
+  молчат** (T3×T4-te 'wc 5 te wc 5 te 3' df520cf9 — сосед-вид, PD <
+  2; T4×T4-sp 1d8ce3fa / T4×T3-sp 122ce84e (новый пин) — word3 = '3'
+  → p0-2 bad; T4×T4-соседы te/pr/sv/vw/va/if/as/ow 45188fc1/3f3634ef/
+  fe6aeb2b/cadd33b5/4746dfb8/af49bd85/2855788a/1591c6b2; T3×T4-соседи
+  pr/sv/vw/va/if/as/ow 8f5455db/c29827f9/c8e17647/a014b73e/1d69a38a/
+  fe37197e/3f013021 — видовые хвосты СОВПАЛИ с законами W-69..W-76;
+  T3×T3 c49e444f; singles bac85372/495e8056/87817a4b/d6e6b1d6/
+  fb10fa26; 9-ток 'wc 5 te wc 5 sp 3 3' 935c5dc3 (Token = 9) / 11-ток
+  'wc 5 te wc 5 sp 3 wc 5 sp 3' e5b475f8 — word7 ≠ '.'; сирота
+  a3bac192; голые 'wc sp 3' 2fbcadb1 (слот F1!) / 'wc 5 te 3 wc sp'
+  27556b2e; bad d1/d2/d32 (sp 0xFE 51 Б 9ba919ec), bad
+  word0/word2/word3/word5, мусор/zz = FAIL 0xFE). Приёмка **regr80
+  (base regr79): REGRESS OK** — tracked IDENTICAL + NEW W-80 (том
+  bc8c8a4f + цели 4cf32400/bffd19e5/6900f01a) + все прежние полки +
+  cold IDENTICAL. tracked: wc14v3t34sp_build.py, pos_wc14v3t34sp.words,
+  target_t34sp_33/37/90.words, regr80.py.
+  **Кросс-полка T3×T4: 4/9** (осталось 5 ячеек vw/va/if/as/ow —
+  ожидать [05] + kind-tail-T4 + 15 BE32(d32); снять честной картой).
