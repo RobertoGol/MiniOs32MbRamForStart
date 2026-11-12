@@ -2522,3 +2522,48 @@ t5gpr 1/1, T4-shelf 90/90) + T4 multi-statement кросс-молчания (8×
   target_t33sp_33/37/90.words, regr89.py. Дальше — стрим (T3×T3-vw/
   va/if/as/ow и другие kinds, 3+ стейтментов) к истинной
   самосборке.
+- **Спринт 70 (W-90) — СТРИМ: пятый вид многостейтментного тома
+  собран и принят (T3×T3-vw 'wc d vw wc d vw' — ОБА хвоста НЕСУЩИЕ,
+  d1/d2 НЕТ инваров; vw-хвост 4 Б БЕЗ ведущего U8, уникальный вид
+  W-72): база = `wc14v3t33vw_build.py` (W-89-структура + C1 chain1 +
+  C2 reslot + vw-хвосты; EMIT = VW_TAIL1 + VW_TAIL2). Карта probe90
+  (39 кейса, свежий stage1 на каждую цель): stage1 для T3×T3-vw
+  целей = 53 Б 0xFF Token 6, emit = [vw-T3-хвост] ×2 = [BE32(слот
+  F3+d)] ×2 = 8 Б; база 'wc 5 vw wc 5 vw' = **ab92cdf6** (честный
+  полный hex: header CRC f5326e9b + emit 00f00ff800f00ff8 + FF +
+  BE32(6) + 20 нулей). **СЛОТ НЕСУЩИЙ В ОБОИХ ХВОСТАХ**: 'wc 7 vw
+  wc 5 vw' = debec05a (слот1 = FA = F3+d1), 'wc 5 vw wc 7 vw' =
+  b94e9805 (слот2 = FA), 'wc 7 vw wc 7 vw' = 1b52f57f, 'wc 0 vw wc
+  0 vw' = e885bcd7 (F3 F3), 'wc 1 vw wc 3 vw' = bfd24d86, 'wc 9 vw
+  wc 8 vw' = b12eb84d — три tracked-цели W-90 дают ТРИ РАЗНЫЕ md5.
+  Дизайн = W-89 (chain1 d1→wc0, reslot d2→wc2, stash 15732726/wc3,
+  затвор PA 4 + PD 2 + pEOF == 7; PB = LE2('vw') = 30582 — 0x7776);
+  vw-хвост = 3 ток ('wc N' 'ow') — том = **517 ток** ≤ 1022. Приёмка
+  **probe90b OK С ПЕРВОГО ПРОГОНА**: компил = **724 Б 0xFF Token
+  0x205 = 517 md5 18299c69**, детерминизм OK, **9 целей BYTE-OK
+  против свежего stage1** (база ab92cdf6, точка, точка+мусор,
+  d1-носитель debec05a, d2-носитель b94e9805, FA FA 1b52f57f, F3 F3
+  e885bcd7, bfd24d86, b12eb84d) + **30/30 негов молчат** (te/vw-
+  смеси 100e1e86 = BE32+05 / 0b3dbc7a = 05+BE32; sv/vw-смеси
+  4129034c = BE32+55 / 393c306e = 55+BE32; sp/vw-смеси 1a4c8569 =
+  BE32+53 / 8dfc9673 = 53+BE32; pr/vw-смеси 2d610dec / f82af1d8;
+  3/4-stmt vw-потоки 14a07fc1 Token 9 (emit 12 Б = 3 BE32)/8669285e
+  (16 Б) — stage1 ПРИНИМАЕТ, том молчит: word6 = 'wc' → pEOF = 0;
+  'wc 5 vw wc 5 vw 3' 0bce683b (НОВЫЙ пин: T3-vw×T4-vw, emit 13 Б =
+  BE32×2 + digit-tail 15 00000003) — word6 = '3'; 'wc 5 vw 3 wc 5
+  vw' e595289e (НОВЫЙ пин) — word3 = '3' → p0-2 bad; T4×T4-vw
+  dbb5b0a3 (НОВЫЙ пин, emit 18 Б); 'wc 5 vw wc 5 vw 3 3' 0c35ee83
+  (НОВЫЙ пин, Token 8); 'wc 5 vw wc 5 vw vw' d9eabc11 (НОВЫЙ пин:
+  word6 = 'vw', emit 12 Б) — pEOF = 0; 'wc 5 vw' 00ce976e (НОВЫЙ
+  пин: emit 4 Б без U8); сирота 'wc 5 vw wc 5' 0ddf9034 (НОВЫЙ
+  пин); 'wc 5 sv' 6a16ae85 (пин probe88/89); 'wc vw wc 5 vw' = 0xFE
+  49 Б ff595de2 (НОВЫЙ пин: слот F1 = default WORK_CELL); 'wc 5 vw
+  wc vw' — stage1 ПРИНИМАЕТ (21c2bad7, emit 8 Б) — том молчит: v2 =
+  0 → PA = 3; bad d1 29ba6852 (= W-86..89); bad d2 c4165c69 (НОВЫЙ
+  пин); bad word2 4ff7c705 (= W-86..89); bad word5 95856a78 (НОВЫЙ
+  пин); bad word0/мусор f3667180). Приёмка **regr90 (base regr89):
+  REGRESS OK** — tracked IDENTICAL + NEW W-90 (том 18299c69 + цели
+  ab92cdf6/debec05a/b12eb84d) + все прежние полки + cold IDENTICAL.
+  tracked: wc14v3t33vw_build.py, pos_wc14v3t33vw.words,
+  target_t33vw_33/37/90.words, regr90.py. Дальше — стрим (T3×T3-va/
+  if/as/ow и другие kinds, 3+ стейтментов) к истинной самосборке.
