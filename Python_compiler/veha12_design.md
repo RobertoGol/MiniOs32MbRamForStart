@@ -3882,6 +3882,90 @@ target'ам нужна честная сегрегация (веха-15+)» (v4)
   vw/va/if/as/ow и другие kinds, 3+ стейтментов) к истинной
   самосборке.
 
+  СПРИНТ 69 (веха-23, W-89): **СТРИМ — четвёртый вид многостейтментного
+  тома собран и принят** — T3×T3-sp 'wc d sp wc d sp' (два T3-
+  стейтмента, 6 токенов; терминатор слоя на word6 = ШЕСТОЕ слово);
+  ОБА хвоста НЕСУЩИЕ => d1/d2 НЕТ инваров; sp-хвост 5 Б БЕЗ консты
+  (0x53 = 83₁₀, урок W-80). База = wc14v3t33sp_build.py (W-88-
+  структура + C1 chain1 + C2 reslot + sp-хвосты; EMIT = SP_TAIL1 +
+  SP_TAIL2). Карта probe89 (37 кейса, свежий stage1 на каждую цель):
+  stage1 для T3×T3-sp целей = 55 Б 0xFF Token 6, emit = [sp-T3-хвост]
+  ×2 = [53 BE32(слот F3+d)] ×2 = 10 Б; база 'wc 5 sp wc 5 sp' =
+  **413c7817** (честный полный hex probe89: header CRC e184714f +
+  emit 5300f00ff85300f00ff8 + FF + BE32(6) + 20 нулей). **СЛОТ
+  НЕСУЩИЙ В ОБОИХ ХВОСТАХ**: 'wc 7 sp wc 5 sp' = 55 Б e26eaa96 (emit
+  5300f00ffa5300f00ff8 — слот1 = FA = F3+d1), 'wc 5 sp wc 7 sp' =
+  b8b542f1 (слот2 = FA = F3+d2), 'wc 7 sp wc 7 sp' = fb6bff69 (FA
+  FA), 'wc 0 sp wc 0 sp' = 32d0f715 (F3 F3), 'wc 1 sp wc 3 sp' =
+  7ab6ea01 (F4 F6), 'wc 9 sp wc 8 sp' = 6b5bc372 (FC FB) — три
+  tracked-цели W-89 ДАЮТ ТРИ РАЗНЫЕ md5 (честное доказательство
+  несущих слотов). Честный дизайн: CHECK1 = скан stmt-1 (слова 0..2):
+  p0 (word0 == 'wc', PA = ) + valid(d1) digit-block (word1) + C1
+  chain1: cell[wc0] = F3_MINUS_48 + word1 = 15732723 + d1 (НЕСУЩИЙ
+  для SP_TAIL1; прецедент W-87/W-88 CHECK1 C1) + pSp1 (word2 ==
+  LE2('sp') = 28787, PB = wc 7, PD = ) — БЕЗ digit-block d31 (word3 =
+  'wc' stmt-2); CHECK2 = скан stmt-2 (слова 3..5): p0-2 (word3 ==
+  'wc', PA += ) + valid(d2) digit-block (word4) + C2 reslot: RESET
+  cell[wc2] = F3_MINUS_48 + 'wc 2 as' на word4 → cell[wc2] = F3+d2
+  (НЕСУЩИЙ для SP_TAIL2; wc2 = F5 — ПОСЛЕ последнего F5-cp: valid3
+  сравнился, дальше F5 не читается — честный порядок W-84 RELOAD2) +
+  pSp2 (word5 == PB, PD += ) — БЕЗ digit-block d32; НЕТ RELOAD2
+  (word6 = терминатор слоя). pEOF = eq(word6, 0) + eq(word6, 46)
+  через stash-ячейку **STASH = 15732726 (wc3)** — В W-89 НЕЛЬЗЯ
+  15732723/15732725: там СЛОТЫ d1/d2 (chain1/reslot пишут адреса
+  F3+d1/F3+d2, TERM-фаза читает их 'wc 0 ow'/'wc 2 ow' ПОСЛЕ
+  TAIL_CHECK); wc3 свободна (в W-87/W-88 тоже stash; в W-89 оба вида
+  'sp' → конста одна PB); формы 'nb(STASH), sv' / 'nb(STASH), aa' —
+  честно проверенные 'nb(PF), sv'/'nb(PA), aa'. Затвор: PA (= p0+v1+
+  p0-2+v2 = 4) + PD (= pSp1+pSp2 = 2) + pEOF == 7 ('eq 7'). EMIT =
+  SP_TAIL1 + SP_TAIL2 — по 12 ток ('nb 8 3' 'em' 'nb 3 0 8' 'sc' 'wc
+  N' 'ow') — БЕЗ консты (в отличие от pr 24 ток) + вердец + отчёт
+  (Token = 6) + SEAL/END; INIT = 5 групп (F3_MINUS_48 → wc0; F4
+  LE2('wc') = 25463 → wc1; SRC_BUFFER → wc4; PB LE2('sp') = 28787 →
+  wc7 — 's' = 0x73 в МЛАДШЕМ байте [урок W-65/W-80], 0x7073; PC '.' =
+  46 → wc8). Честные неги (том обязан молчать, ВСЕ пины сняты
+  честно): te/sv/sp/pr-смеси — stage1 ПРИНИМАЕТ ('wc 5 sp wc 5 te' =
+  51 Б 45a1f35e = sp-хвост + 05; 'wc 5 te wc 5 sp' = 51 Б 7438f45d =
+  05 + sp-хвост; 'wc 5 sp wc 5 sv' = 55 Б 5b588746 = 53 + 55; 'wc 5
+  sv wc 5 sp' = 55 Б fffb1aa1 = 55 + 53; 'wc 5 sp wc 5 pr' = 59 Б
+  22cb1d2a = sp-хвост + pr-хвост; 'wc 5 pr wc 5 sp' = 59 Б 8ee21a05 =
+  pr-хвост + sp-хвост; 'wc 5 te wc 5 te' = 47 Б c49e444f база W-86) —
+  том молчит: pSp2/pSp1/обе = 0; потоки 3/4 sp-стейтментов — stage1
+  ПРИНИМАЕТ ('wc 5 sp wc 5 sp wc 5 sp' = 60 Б 0f03bdf1 Token 9, emit
+  15 Б = 3 sp-хвоста; точка-вариант тот же 0f03bdf1; 4-stmt = 65 Б
+  c02a9b43, emit 20 Б) — том молчит: word6 = 'wc' → pEOF = 0; 'wc 5
+  sp wc 5 sp 3' = 60 Б 6296b751 (НОВЫЙ пин: T3-sp×T4-sp, emit 15 Б =
+  53×2 + digit-tail 15 00000003) — том молчит: word6 = '3' → pEOF =
+  0; 'wc 5 sp 3 wc 5 sp' = 60 Б 5193d0b2 (НОВЫЙ пин: T4-sp×T3-sp) —
+  том молчит: word3 = '3' → p0-2 bad; 'wc 5 sp 3 wc 5 sp 3' = 65 Б
+  1e7d8b3e (НОВЫЙ пин: T4×T4-sp, emit 20 Б; точка-вариант тот же
+  1e7d8b3e); 'wc 5 sp wc 5 sp 3 3' = 65 Б e95fd4ab (НОВЫЙ пин, Token
+  8, emit 20 Б) — том молчит: word6 = '3'; 'wc 5 sp wc 5 sp sp' = 60
+  Б 87420d50 (НОВЫЙ пин: word6 = 'sp', emit 15 Б = 3 sp-хвоста) — том
+  молчит: pEOF = 0; singles/сироты: 'wc 5 sp' = 50 Б 87817a4b (пин
+  probe88: emit 5 Б), 'wc 5 sp wc 5' = 50 Б a88f6c3a (НОВЫЙ пин:
+  сирота-цифра, emit 5 Б), 'wc 5 sv' = 50 Б 6a16ae85 (пин probe88),
+  'wc 5 te' = 46 Б bac85372; неги-браки: 'wc sp wc 5 sp' = 0xFE 50 Б
+  f27847f5 (НОВЫЙ пин: bad word1 — emit 5 Б со слотом F1 = 0x00F00FF1
+  = 15732721 DEFAULT WORK_CELL, W_Current не сменился); 'wc 5 sp wc
+  sp' — stage1 ПРИНИМАЕТ (55 Б 1c24d227 0xFF, emit 10 Б — ОБА хвоста
+  со слотом F8 от stmt-1) — том молчит: v2 = 0 → PA = 3; bad d1 =
+  0xFE 45 Б 29ba6852 (= W-86/87/88); bad d2 = 0xFE 50 Б a915cf6e
+  (НОВЫЙ пин); bad word2 = 0xFE 45 Б 4ff7c705 (= W-86/87/88); bad
+  word5 = 0xFE 50 Б bd775853 (НОВЫЙ пин); bad word0/мусор = f3667180.
+  Итог: **535 ток** ≤ 1022, компил stage1 = **752 Б 0xFF Token 0x217
+  = 535 md5 36876876**, детерминизм OK. Честная матрица probe89b OK С
+  ПЕРВОГО ПРОГОНА: **9 целей BYTE-OK против свежего stage1** (база
+  413c7817, точка, точка+мусор, d1-носитель e26eaa96, d2-носитель
+  b8b542f1, FA FA fb6bff69, F3 F3 32d0f715, 7ab6ea01, 6b5bc372) +
+  **28/28 негов молчат**. Приёмка **regr89 (base regr88): REGRESS
+  OK** — tracked IDENTICAL + NEW W-89 (том 36876876 + цели 413c7817/
+  e26eaa96/6b5bc372) + все прежние полки + cold IDENTICAL. tracked:
+  wc14v3t33sp_build.py, pos_wc14v3t33sp.words,
+  target_t33sp_33/37/90.words, regr89.py. Дальше — стрим (T3×T3-vw/
+  va/if/as/ow и другие kinds, 3+ стейтментов) к истинной
+  самосборке.
+
 
 
 - Регресс `Python_compiler\regr19.py` (база regr18; head = 6d11eec):

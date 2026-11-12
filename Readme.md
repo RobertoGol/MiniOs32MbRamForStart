@@ -2477,3 +2477,48 @@ t5gpr 1/1, T4-shelf 90/90) + T4 multi-statement кросс-молчания (8×
   target_t33sv_33/37/90.words, regr88.py. Дальше — стрим (T3×T3-sp/
   vw/va/if/as/ow и другие kinds, 3+ стейтментов) к истинной
   самосборке.
+- **Спринт 69 (W-89) — СТРИМ: четвёртый вид многостейтментного тома
+  собран и принят (T3×T3-sp 'wc d sp wc d sp' — ОБА хвоста НЕСУЩИЕ,
+  d1/d2 НЕТ инваров; sp-хвост 5 Б БЕЗ консты, 0x53 = 83₁₀, урок
+  W-80): база = `wc14v3t33sp_build.py` (W-88-структура + C1 chain1 +
+  C2 reslot + sp-хвосты; EMIT = SP_TAIL1 + SP_TAIL2). Карта probe89
+  (37 кейса, свежий stage1 на каждую цель): stage1 для T3×T3-sp
+  целей = 55 Б 0xFF Token 6, emit = [sp-T3-хвост] ×2 = [53 BE32(слот
+  F3+d)] ×2 = 10 Б; база 'wc 5 sp wc 5 sp' = **413c7817** (честный
+  полный hex: header CRC e184714f + emit 5300f00ff85300f00ff8 + FF +
+  BE32(6) + 20 нулей). **СЛОТ НЕСУЩИЙ В ОБОИХ ХВОСТАХ**: 'wc 7 sp
+  wc 5 sp' = e26eaa96 (слот1 = FA = F3+d1), 'wc 5 sp wc 7 sp' =
+  b8b542f1 (слот2 = FA), 'wc 7 sp wc 7 sp' = fb6bff69, 'wc 0 sp wc 0
+  sp' = 32d0f715 (F3 F3), 'wc 1 sp wc 3 sp' = 7ab6ea01, 'wc 9 sp wc
+  8 sp' = 6b5bc372 — три tracked-цели W-89 дают ТРИ РАЗНЫЕ md5.
+  Дизайн = W-88 (chain1 d1→wc0, reslot d2→wc2, stash 15732726/wc3,
+  затвор PA 4 + PD 2 + pEOF == 7; PB = LE2('sp') = 28787 — 0x7073);
+  sp-хвост = 12 ток ('nb 8 3' 'em' 'nb 3 0 8' 'sc' 'wc N' 'ow') —
+  том = **535 ток** ≤ 1022. Приёмка **probe89b OK С ПЕРВОГО ПРОГОНА**:
+  компил = **752 Б 0xFF Token 0x217 = 535 md5 36876876**, детерминизм
+  OK, **9 целей BYTE-OK против свежего stage1** (база 413c7817,
+  точка, точка+мусор, d1-носитель e26eaa96, d2-носитель b8b542f1, FA
+  FA fb6bff69, F3 F3 32d0f715, 7ab6ea01, 6b5bc372) + **28/28 негов
+  молчат** (te/sp-смеси 45a1f35e = 53+05 / 7438f45d = 05+53; sv/sp-
+  смеси 5b588746 = 53+55 / fffb1aa1 = 55+53; pr/sp-смеси 22cb1d2a /
+  8ee21a05; 3/4-stmt sp-потоки 0f03bdf1 Token 9 (emit 15 Б = 3
+  sp-хвоста)/c02a9b43 (20 Б) — stage1 ПРИНИМАЕТ, том молчит: word6 =
+  'wc' → pEOF = 0; 'wc 5 sp wc 5 sp 3' 6296b751 (НОВЫЙ пин: T3-sp×
+  T4-sp, emit 15 Б = 53×2 + digit-tail 15 00000003) — word6 = '3';
+  'wc 5 sp 3 wc 5 sp' 5193d0b2 (НОВЫЙ пин) — word3 = '3' → p0-2 bad;
+  T4×T4-sp 1e7d8b3e (НОВЫЙ пин); 'wc 5 sp wc 5 sp 3 3' e95fd4ab
+  (НОВЫЙ пин, Token 8); 'wc 5 sp wc 5 sp sp' 87420d50 (НОВЫЙ пин:
+  word6 = 'sp', emit 15 Б) — pEOF = 0; 'wc 5 sp' 87817a4b (пин
+  probe88); сирота 'wc 5 sp wc 5' a88f6c3a (НОВЫЙ пин); 'wc 5 sv'
+  6a16ae85 (пин probe88); 'wc sp wc 5 sp' = 0xFE 50 Б f27847f5
+  (НОВЫЙ пин: слот F1 = default WORK_CELL); 'wc 5 sp wc sp' — stage1
+  ПРИНИМАЕТ (1c24d227, emit 10 Б) — том молчит: v2 = 0 → PA = 3; bad
+  d1 29ba6852 (= W-86/87/88); bad d2 a915cf6e (НОВЫЙ пин); bad word2
+  4ff7c705 (= W-86/87/88); bad word5 bd775853 (НОВЫЙ пин); bad
+  word0/мусор f3667180). Приёмка **regr89 (base regr88): REGRESS OK**
+  — tracked IDENTICAL + NEW W-89 (том 36876876 + цели 413c7817/
+  e26eaa96/6b5bc372) + все прежние полки + cold IDENTICAL. tracked:
+  wc14v3t33sp_build.py, pos_wc14v3t33sp.words,
+  target_t33sp_33/37/90.words, regr89.py. Дальше — стрим (T3×T3-vw/
+  va/if/as/ow и другие kinds, 3+ стейтментов) к истинной
+  самосборке.
