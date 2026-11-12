@@ -2567,3 +2567,52 @@ t5gpr 1/1, T4-shelf 90/90) + T4 multi-statement кросс-молчания (8×
   tracked: wc14v3t33vw_build.py, pos_wc14v3t33vw.words,
   target_t33vw_33/37/90.words, regr90.py. Дальше — стрим (T3×T3-va/
   if/as/ow и другие kinds, 3+ стейтментов) к истинной самосборке.
+- **Спринт 71 (W-91) — СТРИМ: шестой вид многостейтментного тома
+  собран и принят (T3×T3-va 'wc d va wc d va' — ОБА хвоста НЕСУЩИЕ,
+  d1/d2 НЕТ инваров; va-хвост 6 Б — U8 0x12 + U8 0x19 + BE32(слот),
+  закон W-73): база = `wc14v3t33va_build.py` (W-90-структура + C1
+  chain1 + C2 reslot + va-хвосты; EMIT = VA_TAIL1 + VA_TAIL2). Карта
+  probe91 (42 кейса, свежий stage1 на каждую цель): stage1 для
+  T3×T3-va целей = 57 Б 0xFF Token 6, emit = [va-T3-хвост] ×2 = [12
+  19 BE32(слот F3+d)] ×2 = 12 Б; база 'wc 5 va wc 5 va' =
+  **8479bb87** (честный полный hex: header CRC 87c5d320 + emit
+  121900f00ff8121900f00ff8 + FF + BE32(6) + 20 нулей). **СЛОТ
+  НЕСУЩИЙ В ОБОИХ ХВОСТАХ**: 'wc 7 va wc 5 va' = 7cc588d2 (слот1 =
+  FA = F3+d1), 'wc 5 va wc 7 va' = a4423b7a (слот2 = FA), 'wc 7 va
+  wc 7 va' = 07f2c382, 'wc 0 va wc 0 va' = e745eee0 (F3 F3), 'wc 1
+  va wc 3 va' = aaa10b55, 'wc 9 va wc 8 va' = 6f76eaca — три
+  tracked-цели W-91 дают ТРИ РАЗНЫЕ md5. Дизайн = W-90 (chain1
+  d1→wc0, reslot d2→wc2, stash 15732726/wc3, затвор PA 4 + PD 2 +
+  pEOF == 7; PB = LE2('va') = 24950 — 0x6176); va-хвост = 11 ток
+  ('nb 1 8' 'em' 'nb 3 0 8' 'sc' 'nb 2 5' 'em' 'nb 3 0 8' 'sc' 'wc
+  N' 'ow') — том = **553 ток** ≤ 1022. Приёмка **probe91b OK С
+  ПЕРВОГО ПРОГОНА**: компил = **780 Б 0xFF Token 0x229 = 553 md5
+  8eea5ad3**, детерминизм OK, **9 целей BYTE-OK против свежего
+  stage1** (база 8479bb87, точка, точка+мусор, d1-носитель
+  7cc588d2, d2-носитель a4423b7a, FA FA 07f2c382, F3 F3 e745eee0,
+  aaa10b55, 6f76eaca) + **33/33 негов молчат** (te/va-смеси
+  b58c86d8 = 1219BE32+05 / 1eb39153 = 05+1219BE32; sv/va-смеси
+  4822f462 = 1219BE32+55 / 3ab771dd = 55+1219BE32; sp/va-смеси
+  d9166287 = 1219BE32+53 / 1f4468e8 = 53+1219BE32; vw/va-смеси
+  7c27ea4d = 1219BE32+BE32 / e1c55c5c = BE32+1219BE32; pr/va-смеси
+  5bc7a283 / 76abd04d; 3/4-stmt va-потоки 61c72bef Token 9 (emit 18
+  Б = 3 va-хвоста)/917128ff (24 Б) — stage1 ПРИНИМАЕТ, том молчит:
+  word6 = 'wc' → pEOF = 0; 'wc 5 va wc 5 va 3' 223e6120 (НОВЫЙ пин:
+  T3-va×T4-va, emit 17 Б = 1219BE32×2 + digit-tail 15 00000003) —
+  word6 = '3'; 'wc 5 va 3 wc 5 va' a6cf502c (НОВЫЙ пин) — word3 =
+  '3' → p0-2 bad; T4×T4-va 66ed9dd3 (НОВЫЙ пин, emit 22 Б); 'wc 5
+  va wc 5 va 3 3' f2174453 (НОВЫЙ пин, Token 8); 'wc 5 va wc 5 va
+  va' 8db7af23 (НОВЫЙ пин: word6 = 'va', emit 18 Б) — pEOF = 0;
+  'wc 5 va' d4766ef5 (НОВЫЙ пин: emit 6 Б); сирота 'wc 5 va wc 5'
+  7b987a13 (НОВЫЙ пин); 'wc 5 vw' 00ce976e (пин probe90); 'wc va wc
+  5 va' = 0xFE 51 Б cdb8c657 (НОВЫЙ пин: слот F1 = default
+  WORK_CELL); 'wc 5 va wc va' — stage1 ПРИНИМАЕТ (df212a2f, emit 12
+  Б) — том молчит: v2 = 0 → PA = 3; bad d1 29ba6852 (= W-86..90);
+  bad d2 f5435378 (НОВЫЙ пин); bad word2 4ff7c705 (= W-86..90); bad
+  word5 69f882df (НОВЫЙ пин); bad word0/мусор f3667180). Приёмка
+  **regr91 (base regr90): REGRESS OK** — tracked IDENTICAL + NEW
+  W-91 (том 8eea5ad3 + цели 8479bb87/7cc588d2/6f76eaca) + все
+  прежние полки + cold IDENTICAL. tracked: wc14v3t33va_build.py,
+  pos_wc14v3t33va.words, target_t33va_33/37/90.words, regr91.py.
+  Дальше — стрим (T3×T3-if/as/ow и другие kinds, 3+ стейтментов) к
+  истинной самосборке.
