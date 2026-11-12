@@ -2678,3 +2678,49 @@ t5gpr 1/1, T4-shelf 90/90) + T4 multi-statement кросс-молчания (8×
   pos_wc14v3t33if.words, target_t33if_33/37/90.words, regr92.py.
   Дальше — стрим (T3×T3-as/ow и другие kinds, 3+ стейтментов) к
   истинной самосборке.
+- **Спринт 73 (W-93) — СТРИМ: восьмой вид многостейтментного тома
+  собран и принят (T3×T3-as 'wc d as wc d as' — ОБА хвоста НЕСУЩИЕ,
+  d1/d2 НЕТ инваров; as-хвост 11 Б — U8 0x12 + U8 0x15 + BE32(слот) +
+  U8 0x55 + BE32(слот), закон W-75 — ОБА BE32 = СЛОТ): база =
+  `wc14v3t33as_build.py` (va-структура W-91: chain1 d1→wc0 + reslot
+  d2→wc2 + as-хвосты; EMIT = AS_TAIL1 + AS_TAIL2). Карта probe93 (47
+  кейсов, свежий stage1 на каждую цель): stage1 для T3×T3-as целей =
+  67 Б 0xFF Token 6, emit = [as-T3-хвост] ×2 = 22 Б; база 'wc 5 as
+  wc 5 as' = **80a53bb1** (честный полный hex: header CRC 5f5195b0 +
+  emit 121500f00ff85500f00ff8121500f00ff85500f00ff8 + FF + BE32(6) +
+  20 нулей). **СЛОТ НЕСУЩИЙ В ОБОИХ ХВОСТАХ (ОБА BE32)**: 'wc 7 as …'
+  9fcda3d2 (слот1 = FA), '… wc 7 as' a614afd1 (слот2 = FA), FA FA
+  0c496533, F3 F3 69f39501, F4 F6 a72fb2c0, FC FB 980d5ae7 —
+  tracked-цели дают ТРИ РАЗНЫЕ md5 (несущие слоты доказаны). pEOF =
+  eq(word6, 0) + eq(word6, 46) через stash 15732726 (wc3 — НЕЛЬЗЯ
+  15732723/15732725: СЛОТЫ); затвор PA 4 + PD 2 + pEOF == 7. Урок
+  nb-литералов повторён честно: 'nb 1 5' = 15₁₀ = 0x0F ≠ 0x15 —
+  первый прогон probe93c MISMATCH, исправлено на 'nb 2 1' = 21₁₀
+  (урок probe57/W-64). Ключ-развязки: te/sv/sp/vw/va/pr/if-смеси
+  640ebe97/3a7cc82f/4d5be862/bb7fa2d2/97191149/338ce940/5f3f3c87/
+  bc9d255f/bc19bcfc/63cc01fa/404b13d2/9a255d54/5151411a/740e64e3 —
+  том молчит: pAs = 0; 3-stmt as 78 Б 784a64e4 Token 9 (emit 33 Б = 3
+  as-хвоста; точка тот же); 4-stmt as 89 Б 3f6d8893 (emit 44 Б —
+  НОВЫЙ пин: В ОТЛИЧИЕ от if [0xFE ebe049f9], 4 as stage1
+  ПРИНИМАЕТ); кресты 'wc 5 as wc 5 as 3' d0814e42 / 'wc 5 as 3 wc 5
+  as' 2f06bb3b (digit-tail МЕЖДУ хвостами) / T4×T4 5fb8d6c8 / '… 3 3'
+  76767951 (Token 8) / '… as' 52eb2ae5; singles/сироты: 'wc 5 as'
+  1176c0df (пин W-84 СОВПАЛ), 'wc 5 as 3' cbb9ba26 (пин W-84 СОВПАЛ),
+  сирота 'wc 5 as wc 5' 59a9f18d, 'wc 5 vw' 00ce976e, 'wc 5 sv'
+  6a16ae85, 'wc 5 te' bac85372; неги-браки: 'wc as wc 5 as' 0xFE 56 Б
+  9300cf34 (НОВЫЙ пин: слот F1 = 0x00F00FF1 DEFAULT WORK_CELL);
+  'wc 5 as wc as' — stage1 ПРИНИМАЕТ (67 Б c6cdaa69) — том молчит:
+  v2 = 0 → PA = 3; bad d1 29ba6852 (= W-86..92); bad d2 26811567
+  (НОВЫЙ пин, emit 11 Б); bad word2 4ff7c705 (= W-86..92); bad word5
+  a1b1f926 (НОВЫЙ пин, emit 11 Б); bad word0/мусор f3667180. Итог:
+  **577 ток** ≤ 1022, компил stage1 = **836 Б 0xFF Token 0x241 = 577
+  md5 2ff08c44**, детерминизм OK. Приёмка probe93c OK: **9/9 BYTE-OK
+  против свежего stage1** (база 80a53bb1, точка, точка+мусор, 6
+  носителей — ТРИ РАЗНЫЕ md5) + **38/38 негов молчат**. Приёмка
+  **regr93 (base regr92): REGRESS OK** — tracked IDENTICAL + NEW
+  W-93 (том 2ff08c44 + цели 80a53bb1/9fcda3d2/980d5ae7 — ТРИ РАЗНЫЕ
+  md5) + все прежние полки + cold IDENTICAL. tracked:
+  wc14v3t33as_build.py, pos_wc14v3t33as.words,
+  target_t33as_33/37/90.words, regr93.py. Дальше — стрим (T3×T3-ow —
+  последний вид полки, и другие kinds, 3+ стейтментов) к истинной
+  самосборке.

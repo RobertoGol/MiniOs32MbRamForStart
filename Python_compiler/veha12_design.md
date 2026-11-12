@@ -4252,6 +4252,95 @@ target'ам нужна честная сегрегация (веха-15+)» (v4)
   (T3×T3-as/ow и другие kinds, 3+ стейтментов) к истинной
   самосборке.
 
+  СПРИНТ 73 (веха-23, W-93): **СТРИМ — восьмой вид многостейтментного
+  тома собран и принят** — T3×T3-as 'wc d as wc d as' (два T3-
+  стейтмента, 6 токенов; терминатор слоя на word6 = ШЕСТОЕ слово);
+  ОБА хвоста НЕСУЩИЕ => d1/d2 НЕТ инваров; as-хвост 11 Б — U8 0x12
+  (18₁₀ LOAD) + U8 0x15 (21₁₀ ADD) + BE32(слот) + U8 0x55 (85₁₀
+  STORE-конста) + BE32(слот) — закон W-75: ОБА BE32 читают СЛОТ
+  (T3-as-single 'wc 5 as' emit '12 15 BE32(F3+d1) 55 BE32(F3+d1)',
+  пин W-84/probe84). База = wc14v3t33as_build.py (va-структура W-91:
+  chain1 d1→wc0 + reslot d2→wc2 + as-хвосты; EMIT = AS_TAIL1 +
+  AS_TAIL2 — по 33 ток 'nb 1 8' 'em' 'nb 3 0 8' 'sc' 'nb 2 1' 'em'
+  'nb 3 0 8' 'sc' 'wc N' 'ow' 'nb 8 5' 'em' 'nb 3 0 8' 'sc' 'wc N'
+  'ow'). Карта probe93 (47 кейсов, свежий stage1 на каждую цель):
+  stage1 для T3×T3-as целей = 67 Б 0xFF Token 6, emit = [as-T3-хвост]
+  ×2 = 22 Б; база 'wc 5 as wc 5 as' = 80a53bb1 (пин; честный полный
+  hex: header CRC 5f5195b0 + emit 121500f00ff85500f00ff8121500f00ff8
+  5500f00ff8 + FF + BE32(6) + 20 нулей). **СЛОТ НЕСУЩИЙ В ОБОИХ
+  ХВОСТАХ (ОБА BE32)**: 'wc 7 as wc 5 as' = 67 Б 9fcda3d2 (слот1 = FA
+  = F3+d1), 'wc 5 as wc 7 as' = a614afd1 (слот2 = FA), 'wc 7 as wc 7
+  as' = 0c496533 (FA FA), 'wc 0 as wc 0 as' = 69f39501 (F3 F3), 'wc 1
+  as wc 3 as' = a72fb2c0 (F4 F6), 'wc 9 as wc 8 as' = 980d5ae7 (FC
+  FB) — три tracked-цели W-93 ДАЮТ ТРИ РАЗНЫЕ md5 (честное
+  доказательство несущих слотов W-75). pEOF = eq(word6, 0) +
+  eq(word6, 46) через stash-ячейку **STASH = 15732726 (wc3)** (В W-93
+  НЕЛЬЗЯ 15732723/15732725: там СЛОТЫ d1/d2 — chain1/reslot пишут
+  адреса F3+d1/F3+d2, TERM-фаза читает их 'wc 0 ow'/'wc 2 ow' ПОСЛЕ
+  TAIL_CHECK); затвор PA (= p0+v1+p0-2+v2 = 4) + PD (= pAs1+pAs2 =
+  2) + pEOF == 7 ('eq 7'); НЕТ RELOAD2 (digit-tail d32 не существует
+  в T3×T3: word6 = терминатор слоя). Честный дизайн (= W-91
+  va-структура): CHECK1 = скан стейтмента 1 (слова 0..2): p0 +
+  valid(d1) + C1 chain1: cell[wc0] = F3_MINUS_48 + word1-символ =
+  15732723 + d1 (НЕСУЩИЙ для AS_TAIL1) + pAs1 (word2 == LE2('as') =
+  29537, 'a' в МЛАДШЕМ байте [урок W-65/W-67], PB = wc 7); CHECK2 =
+  скан стейтмента 2 (слова 3..5): p0-2 + valid(d2) + C2 reslot: RESET
+  cell[wc2] = F3_MINUS_48 + 'wc 2 as' на word4 → cell[wc2] = F3+d2
+  (НЕСУЩИЙ для AS_TAIL2; wc2 = F5 — ПОСЛЕ последнего F5-cp, честный
+  порядок W-84 RELOAD2) + pAs2 (word5 == PB, PD += ). Урок
+  nb-литералов повторён честно: 'nb 1 5' = 15₁₀ = 0x0F ≠ 0x15 —
+  первый прогон probe93c MISMATCH (том эмитил U8 0x0F вместо 0x15),
+  исправлено на 'nb 2 1' = 21₁₀ (урок probe57/W-64) — приёмка OK
+  после фикса. Ключ-развязки (том обязан молчать, ВСЕ пины сняты
+  честно): te/sv/sp/vw/va/pr/if-смеси — stage1 ПРИНИМАЕТ ('wc 5 as wc
+  5 te' = 57 Б 640ebe97 = as-хвост + 05; 'wc 5 te wc 5 as' = 57 Б
+  3a7cc82f; 'wc 5 as wc 5 sv' = 61 Б 4d5be862; 'wc 5 sv wc 5 as' =
+  bb7fa2d2; 'wc 5 as wc 5 sp' = 61 Б 97191149; 'wc 5 sp wc 5 as' =
+  338ce940; 'wc 5 as wc 5 vw' = 60 Б 5f3f3c87; 'wc 5 vw wc 5 as' =
+  bc9d255f; 'wc 5 as wc 5 va' = 62 Б bc19bcfc; 'wc 5 va wc 5 as' =
+  63cc01fa; 'wc 5 as wc 5 pr' = 65 Б 404b13d2; 'wc 5 pr wc 5 as' =
+  9a255d54; 'wc 5 as wc 5 if' = 61 Б 5151411a; 'wc 5 if wc 5 as' =
+  740e64e3; 'wc 5 te wc 5 te' = 47 Б c49e444f база W-86) — том
+  молчит: pAs2/pAs1/обе = 0; 3/4-stmt as-потоки — stage1 ПРИНИМАЕТ
+  ('wc 5 as wc 5 as wc 5 as' = 78 Б 784a64e4 Token 9, emit 33 Б = 3
+  as-хвоста, точка-вариант тот же 784a64e4; 4-stmt = 89 Б 3f6d8893,
+  emit 44 Б — НОВЫЙ пин W-93: В ОТЛИЧИЕ от if [4 if-стейтмента stage1
+  бракует, 0xFE ebe049f9 W-92], 4 as-стейтмента ПРИНИМАЕТ) — том
+  молчит: word6 = 'wc' → pEOF = 0; кресты: 'wc 5 as wc 5 as 3' = 72 Б
+  d0814e42 (НОВЫЙ пин: T3-as×T4-as, emit 27 Б = as-хвосты ×2 +
+  digit-tail 15 00000003) — word6 = '3' → pEOF = 0; 'wc 5 as 3 wc 5
+  as' = 72 Б 2f06bb3b (НОВЫЙ пин: T4-as×T3-as, digit-tail МЕЖДУ
+  хвостами) — word3 = '3' → p0-2 bad; 'wc 5 as 3 wc 5 as 3' = 77 Б
+  5fb8d6c8 (НОВЫЙ пин: T4×T4-as, emit 32 Б; точка-вариант тот же);
+  'wc 5 as wc 5 as 3 3' = 77 Б 76767951 (НОВЫЙ пин, Token 8, emit 32
+  Б); 'wc 5 as wc 5 as as' = 78 Б 52eb2ae5 (НОВЫЙ пин: word6 = 'as',
+  emit 33 Б = 3 as-хвоста) — том молчит: pEOF = 0; singles/сироты:
+  'wc 5 as' = 56 Б 1176c0df (пин W-84/probe84 — СОВПАЛ, emit 11 Б),
+  'wc 5 as 3' = 61 Б cbb9ba26 (пин W-84 — СОВПАЛ, emit 16 Б), сирота
+  'wc 5 as wc 5' = 56 Б 59a9f18d (НОВЫЙ пин: emit 11 Б), 'wc 5 vw' =
+  49 Б 00ce976e (пин probe90..92), 'wc 5 sv' = 50 Б 6a16ae85 (пин
+  probe88..92), 'wc 5 te' = 46 Б bac85372; неги-браки: 'wc as wc 5
+  as' = 0xFE 56 Б 9300cf34 (НОВЫЙ пин: bad word1 — emit 11 Б со
+  слотом F1 = 0x00F00FF1 = 15732721 DEFAULT WORK_CELL, W_Current не
+  сменился); 'wc 5 as wc as' — stage1 ПРИНИМАЕТ (67 Б c6cdaa69 0xFF,
+  emit 22 Б — ОБА хвоста со слотом F8 от stmt-1) — том молчит: v2 =
+  0 → PA = 3; bad d1 = 0xFE 45 Б 29ba6852 (= W-86..92); bad d2 = 0xFE
+  56 Б 26811567 (НОВЫЙ пин: emit 11 Б — хвост stmt-1); bad word2 =
+  0xFE 45 Б 4ff7c705 (= W-86..92); bad word5 = 0xFE 56 Б a1b1f926
+  (НОВЫЙ пин: emit 11 Б); bad word0/мусор = f3667180. Итог: **577
+  ток** ≤ 1022, компил stage1 = **836 Б 0xFF Token 0x241 = 577 md5
+  2ff08c44**, детерминизм OK. Честная матрица probe93c OK: **9 целей
+  BYTE-OK против свежего stage1** (база 80a53bb1, точка, точка+мусор,
+  d1-носитель 9fcda3d2, d2-носитель a614afd1, FA FA 0c496533, F3 F3
+  69f39501, a72fb2c0, 980d5ae7 — ТРИ РАЗНЫЕ md5 tracked-целей) +
+  **38/38 негов молчат**. Приёмка **regr93 (base regr92): REGRESS
+  OK** — tracked IDENTICAL + NEW W-93 (том 2ff08c44 + цели
+  80a53bb1/9fcda3d2/980d5ae7 — ТРИ РАЗНЫЕ md5) + все прежние полки +
+  cold IDENTICAL. tracked: wc14v3t33as_build.py,
+  pos_wc14v3t33as.words, target_t33as_33/37/90.words, regr93.py.
+  Дальше — стрим (T3×T3-ow — последний вид полки, и другие kinds, 3+
+  стейтментов) к истинной самосборке.
+
 
 
 - Регресс `Python_compiler\regr19.py` (база regr18; head = 6d11eec):
