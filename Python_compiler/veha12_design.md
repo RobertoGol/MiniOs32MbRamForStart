@@ -5100,6 +5100,110 @@ target'ам нужна честная сегрегация (веха-15+)» (v4)
   (T3×T3×T3×T3 других kinds sp/vw/va ×4, 5 стейтментов) к истинной
   самосборке.
 
+  СПРИНТ 81 (веха-23, W-101): **СТРИМ — шестая ЧЕТЫРЁХстейтментная
+  T3-форма собрана и принята** — T3×T3×T3×T3-sp 'wc d sp wc d sp wc d
+  sp wc d sp' (четыре T3-стейтмента, 12 токенов, БЕЗ точки в файле;
+  терминатор слоя на word12 = ТРИНАДЦАТОЕ слово); ВСЕ ЧЕТЫРЕ хвоста
+  НЕСУЩИЕ (sp-хвост 5 Б — U8 0x53 + BE32(слот), БЕЗ консты, закон
+  W-80: ЕДИНСТВЕННЫЙ BE32 читает СЛОТ F3+d => d1/d2/d3/d4 НЕ инвары).
+  ТРИ reslot'а (chain1 d1→wc0 [CHECK1] + reslot d2→wc2 [CHECK2] +
+  reslot3 d3→wc3 [CHECK3]) + **СЛОТ4 = переиспользование wc0 в
+  EMIT-фазе** [RESLOT4 между SP_TAIL3 и SP_TAIL4 — ИДЕОМ
+  W-96/W-98/W-99/W-100: слот1 уже прочитан SP_TAIL1, CHECK-фазы
+  завершены до затвора]; EMIT = SP_TAIL1 + SP_TAIL2 + SP_TAIL3 +
+  RESLOT4 + SP_TAIL4. Урок W-98 применён ДО прогона: КАЖДЫЙ U8 = пара
+  'nb X em' + 'nb 3 0 8 sc' [sc = syscall FILE_U8 308 — пишет 1 Б из
+  STREAM_EMIT_CELL; 'em' ТОЛЬКО кладёт константу в ячейку, без 'sc'
+  байта НЕТ]; U8 0x53 = 83₁₀ = 'nb 8 3' — nb-литералы ДЕСЯТИЧНЫЕ,
+  урок probe57/W-64.
+  База = wc14v3t3333sp_build.py (sv-структура W-100 + честная карта
+  probe101 (86 кейсов, свежий stage1 на каждую цель,
+  G:\\...\\Temp\\opencode\\probe101\\_t101_card.py)):
+  stage1 для T3×T3×T3×T3-sp целей = 65 Б 0xFF Token 12, emit =
+  [sp-T3-хвост] ×4 = 20 Б; база 'wc 5 sp wc 5 sp wc 5 sp wc 5 sp' =
+  c02a9b43 (пин probe96/W-100-карты СОВПАЛ; честный полный hex
+  probe101: header CRC 4a5d9e9c + emit 5300f00ff8 ×4 + FF + BE32(12)
+  + 20 нулей). **BE32 НЕСУЩИЙ В КАЖДОМ ХВОСТЕ (закон W-80 ×4)**: 'wc 7
+  sp …' = e021546d (слот1 = FA), '… wc 7 sp …' = 54814362 (слот2 =
+  FA), '… wc 7 sp …' = 127e7b5e (слот3 = FA), '… wc 5 sp wc 7 sp' =
+  9fc8ada6 (НОВЫЙ пин: слот4 = FA), 'wc 7 sp' ×3 + 'wc 5 sp' =
+  fba6b8ab (FA FA FA), 'wc 0 sp' ×4 = 766b1576 (F3 F3 F3 F3), 'wc 1
+  sp wc 3 sp wc 5 sp wc 9 sp' = f4ab89fb (F4 F6 F8 FC), 'wc 9 sp wc
+  8 sp wc 0 sp wc 1 sp' = c115fc05 (FC FB F3 F4), 'wc 2 sp wc 6 sp
+  wc 4 sp wc 8 sp' = a64c4eaf (F5 F9 F7 FB) — tracked-цели ДАЮТ ТРИ
+  РАЗНЫЕ md5 (beda2984/443df571/c115fc05). Точка/точка+мусор = база.
+  5-stmt sp-поток = 70 Б 832bf061 (emit 25 Б = 5 хвостов, Token 15;
+  точка-вариант тот же) — том молчит: word12 = 'wc' → pEOF = 0 →
+  S = 12; 6-stmt = 75 Б 87d5427a (30 Б) — S = 12; 3-stmt поток = 60 Б
+  0f03bdf1 — том молчит: word9 = 'sp' → p0-4 = 0 → PA = 6, PD = 3,
+  pEOF(word12 = 0) = 1 → S = 10; 2-stmt = 55 Б 413c7817 — S = 7.
+  Ключ-смеси (том обязан молчать, ВСЕ пины сняты честно):
+  te/pr/sv/vw/va/as/if/ow-смеси на ВСЕХ ЧЕТЫРЁХ позициях — stage1
+  ПРИНИМАЕТ (te 01706e53/83894f64/5b31e1d3/573b1ae8; pr 0cc7197a/
+  78ab8837/60cb5c8c/6bc27797; sv 38e201ae/dbdc7d43/eaea97a5/93ffc02b;
+  vw e84b6289/03208a3d/1aae7196/2573697e; va df952284/fdda2e0e/
+  8ecf2f46/2136ff99; ow 938851ac/8a08faff/2ecbc255/7fd8241a; if
+  1032693f/54882613/af81ca4f/ea404a0e; as c0b99717/e62f9b7a/0f3e30dd/
+  5b5b222c) — том молчит: pSpX = 0 → PD = 3 → S = 12; 4-стейтментные
+  потоки других kinds (пины probe96..100 СОВПАЛИ: te ×4 = 49 Б
+  40dc0e48, emit 05×4 = 4 Б; as ×4 = 89 Б 3f6d8893, 44 Б; pr ×4 = 81 Б
+  34f4a890, 36 Б; sv ×4 = 65 Б 05df0915 = W-100, 20 Б; vw ×4 = 61 Б
+  8669285e, 16 Б; va ×4 = 69 Б 917128ff, 24 Б; ow ×4 = 101 Б
+  c39da5d5, 56 Б) — том молчит: PD = 0; if ×4 — stage1 БРАКУЕТ (0xFE
+  60 Б ebe049f9, пин W-92 СОВПАЛ) — том молчит; кресты: 'wc 5 sp' ×4 +
+  '3' = 70 Б 6e3f5191 (НОВЫЙ пин: emit 25 Б = 4 sp-хвоста + digit-tail
+  15 00000003) — word12 = '3' → pEOF = 0; 'wc 5 sp 3 wc 5 sp wc 5 sp
+  wc 5 sp' = 70 Б b92b0cb1 (НОВЫЙ пин: digit-tail ПОСЛЕ хвоста 1 —
+  word3 = '3' → p0-2 bad); 'wc 5 sp wc 5 sp 3 wc 5 sp wc 5 sp' = 70 Б
+  2fb1daf6 (НОВЫЙ пин: digit-tail после хвоста 2 — word6 = '3' →
+  p0-3 bad); 'wc 5 sp wc 5 sp wc 5 sp 3 wc 5 sp' = 70 Б c9135402
+  (НОВЫЙ пин: digit МЕЖДУ stmt3 и stmt4, word9 = '3' → p0-4 bad);
+  'wc 5 sp' ×4 + 'sp' = 70 Б 5b554311 (НОВЫЙ пин: stage1 парсит 13-й
+  ток 'sp' как ПЯТЫЙ sp-стейтмент — emit 25 Б) — том молчит: word12 =
+  'sp' → pEOF = 0; 'wc 5 sp' ×4 + '3 3' = 75 Б 1746381b (НОВЫЙ пин,
+  emit 30 Б = 4 хвоста + digit-tail ×2); 2-stmt кресты СОВПАЛИ W-89:
+  'wc 5 sp 3 wc 5 sp 3' = 65 Б 1e7d8b3e, 'wc 5 sp wc 5 sp 3 3' = 65 Б
+  e95fd4ab, 'wc 5 sp wc 5 sp 3' = 60 Б 6296b751, 'wc 5 sp wc 5 sp sp'
+  = 60 Б 87420d50 (7-й ток 'sp' — stage1 эмитит 3 хвоста) — том
+  молчит: word5 = 'sp' → pSp2 = 1, но p0-3 = 0, pSp3 = 0 → PA = 4,
+  PD = 2, pEOF = 1 → S = 7; singles/сироты: 'wc 5 sp' = 50 Б
+  87817a4b (СОВПАЛ T3-sp-single, пин probe88/W-89-полки: emit 5 Б),
+  'wc 5 sp 3' = 55 Б d6e6b1d6 (НОВЫЙ пин: emit 10 Б = sp-хвост +
+  digit-tail), сирота 'wc 5 sp wc 5' = 50 Б a88f6c3a (СОВПАЛ W-89:
+  emit 5 Б), 'wc 5 vw' = 49 Б 00ce976e (пин), 'wc 5 pr' = 54 Б
+  61957c4c (пин); неги-браки: 'wc ow wc 5 sp wc 5 sp wc 5 sp' = 0xFE
+  59 Б ff73c458 (СОВПАЛ: bad word1 — emit 14 Б = ow-хвост со слотом
+  F1 = 0x00F00FF1 = 15732721 DEFAULT WORK_CELL, W_Current не
+  сменился); bad d1 = 0xFE 45 Б 29ba6852 (СОВПАЛ, emit 0); bad d2 =
+  0xFE 50 Б a915cf6e (НОВЫЙ пин, emit 5 Б); bad d3 = 0xFE 55 Б
+  f19410b0 (НОВЫЙ пин, emit 10 Б); bad d4 = 0xFE 60 Б 3bd3e41a (НОВЫЙ
+  пин, emit 15 Б); bad word2 = 0xFE 45 Б 4ff7c705 (СОВПАЛ); bad word5
+  = 0xFE 50 Б bd775853 (НОВЫЙ пин); bad word8 = 0xFE 55 Б 10b37188
+  (НОВЫЙ пин); bad word11 = 0xFE 60 Б 0ae22675 (НОВЫЙ пин); bad
+  word0/мусор = f3667180 (СОВПАЛ ×2); 'wc 5 sp wc ow wc 5 sp wc 5 sp'
+  = 0xFE 64 Б 077af90c (НОВЫЙ пин: bad word4 'ow' — emit 19 Б =
+  sp-хвост1 + ow-хвост 14 Б — stage1 БРАКУЕТ); 'wc 5 sp wc 5 sp wc ow
+  wc 5 sp' = 0xFE 69 Б 31c1027a (НОВЫЙ пин: bad word7 — emit 24 Б);
+  'wc 5 sp wc 5 sp wc 5 sp wc ow' — stage1 ПРИНИМАЕТ (74 Б 0xFF
+  65dcc080, НОВЫЙ KEY-пин: emit 29 Б = 3 sp-хвоста (15 Б) + ow-хвост
+  14 Б — ЕДИНСТВЕННЫЙ несущий BE32 ow-хвоста = 0x00F00FF8 DEFAULT
+  WORK_CELL, word10 = 'ow' НЕ цифра → слот дефолт) — том молчит: v4 =
+  0 → PA = 7, pSp4 = 0 → S = 11. Итог: **806 ток** ≤ 1022, компил
+  stage1 = **1118 Б 0xFF Token 0x326 = 806 md5 569c6cc0**, детерминизм
+  OK. Честная матрица probe101c OK С ПЕРВОГО ПРОГОНА (урок W-98
+  применён ДО прогона: 'nb 8 3' = 83₁₀ — U8 0x53): **15 целей BYTE-OK
+  против свежего stage1** (база c02a9b43 = пин probe96/W-100-карты,
+  точка, точка+мусор, 9 носителей — РАЗНЫЕ md5 несущих слотов W-80 ×4;
+  + 3 tracked-цели beda2984/443df571/c115fc05) + **74/74 негов
+  молчат**. Приёмка **regr101 (base regr100): REGRESS OK** — tracked
+  IDENTICAL + NEW W-101 (том 569c6cc0 + цели beda2984/443df571/
+  c115fc05 — ТРИ РАЗНЫЕ md5; _90 = c115fc05 СОВПАЛ карта-кейс 10) +
+  все прежние полки (4-word 80/80 + T3 90/90 + micro + T4 90/90 +
+  cross-silences) + cold IDENTICAL. tracked: wc14v3t3333sp_build.py,
+  pos_wc14v3t3333sp.words, target_t3333sp_33/37/90.words, regr101.py.
+  Дальше — стрим (T3×T3×T3×T3 других kinds vw/va ×4, 5 стейтментов) к
+  истинной самосборке.
+
 
 
 - Регресс `Python_compiler\regr19.py` (база regr18; head = 6d11eec):
