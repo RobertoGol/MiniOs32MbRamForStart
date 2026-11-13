@@ -5201,7 +5201,111 @@ target'ам нужна честная сегрегация (веха-15+)» (v4)
   все прежние полки (4-word 80/80 + T3 90/90 + micro + T4 90/90 +
   cross-silences) + cold IDENTICAL. tracked: wc14v3t3333sp_build.py,
   pos_wc14v3t3333sp.words, target_t3333sp_33/37/90.words, regr101.py.
-  Дальше — стрим (T3×T3×T3×T3 других kinds vw/va ×4, 5 стейтментов) к
+  Дальше — стрим (T3×T3×T3×T3 других kinds va ×4, 5 стейтментов) к
+  истинной самосборке.
+
+  СПРИНТ 82 (веха-23, W-102): **СТРИМ — седьмая ЧЕТЫРЁХстейтментная
+  T3-форма собрана и принята** — T3×T3×T3×T3-vw 'wc d vw wc d vw wc d
+  vw wc d vw' (четыре T3-стейтмента, 12 токенов, БЕЗ точки в файле;
+  терминатор слоя на word12 = ТРИНАДЦАТОЕ слово); ВСЕ ЧЕТЫРЕ хвоста
+  НЕСУЩИЕ (vw-хвост 4 Б — ТОЛЬКО BE32(слот), БЕЗ ведущего U8 —
+  уникальный вид W-72: ЕДИНСТВЕННЫЙ BE32 читает СЛОТ F3+d => d1/d2/
+  d3/d4 НЕ инвары). ТРИ reslot'а (chain1 d1→wc0 [CHECK1] + reslot
+  d2→wc2 [CHECK2] + reslot3 d3→wc3 [CHECK3]) + **СЛОТ4 =
+  переиспользование wc0 в EMIT-фазе** [RESLOT4 между VW_TAIL3 и
+  VW_TAIL4 — ИДЕОМ W-96/W-98/W-99/W-100/W-101: слот1 уже прочитан
+  VW_TAIL1, CHECK-фазы завершены до затвора]; EMIT = VW_TAIL1 +
+  VW_TAIL2 + VW_TAIL3 + RESLOT4 + VW_TAIL4. Хвост = 'wc N ow' = 3
+  ток — U8-пара урока W-98 НЕ нужна (хвосту НЕЧЕГО писать U8'ом);
+  PB = LE2('vw') = 30582 ('v' в МЛАДШЕМ байте, 0x7776).
+  База = wc14v3t3333vw_build.py (sp-структура W-101 + честная карта
+  probe102 (86 кейсов, свежий stage1 на каждую цель,
+  G:\\...\\Temp\\opencode\\probe102\\_t102_card.py)):
+  stage1 для T3×T3×T3×T3-vw целей = 61 Б 0xFF Token 12, emit =
+  [vw-T3-хвост] ×4 = 16 Б; база 'wc 5 vw wc 5 vw wc 5 vw wc 5 vw' =
+  8669285e (пин probe96..101-карт СОВПАЛ — снята в probe101 как «vw
+  ×4»; честный полный hex probe102: header CRC f5a80f3c + emit
+  00f00ff8 ×4 + FF + BE32(12) + 20 нулей). **BE32 НЕСУЩИЙ В КАЖДОМ
+  ХВОСТЕ (закон W-72 ×4)**: 'wc 7 vw …' = d24f6fbe (слот1 = FA), '…
+  wc 7 vw …' = 753b2b6f (слот2 = FA), '… wc 7 vw …' = 4fe2453e (слот3
+  = FA), '… wc 5 vw wc 7 vw' = 16763076 (НОВЫЙ пин: слот4 = FA), 'wc
+  7 vw' ×3 + 'wc 5 vw' = cc0290fb (FA FA FA), 'wc 0 vw' ×4 = 574b06eb
+  (F3 F3 F3 F3), 'wc 1 vw wc 3 vw wc 5 vw wc 9 vw' = c50d4cc2 (F4 F6
+  F8 FC), 'wc 9 vw wc 8 vw wc 0 vw wc 1 vw' = 0ae99a72 (FC FB F3 F4),
+  'wc 2 vw wc 6 vw wc 4 vw wc 8 vw' = c5fc65e0 (F5 F9 F7 FB) —
+  tracked-цели ДАЮТ ТРИ РАЗНЫЕ md5 (c1679afd/6ea2be4c/0ae99a72).
+  Точка/точка+мусор = база. 5-stmt vw-поток = 65 Б 44b4ed8e (emit 20
+  Б = 5 хвостов, Token 15; точка-вариант тот же) — том молчит:
+  word12 = 'wc' → pEOF = 0 → S = 12; 6-stmt = 69 Б 95cce12e (24 Б) —
+  S = 12; 3-stmt поток = 57 Б 14a07fc1 (СОВПАЛ W-90) — том молчит:
+  word9 = 'vw' → p0-4 = 0 → PA = 6, PD = 3, pEOF(word12 = 0) = 1 →
+  S = 10; 2-stmt = 53 Б ab92cdf6 (СОВПАЛ W-90) — S = 7.
+  Ключ-смеси (том обязан молчать, ВСЕ пины сняты честно):
+  te/pr/sv/sp/va/if/ow/as-смеси на ВСЕХ ЧЕТЫРЁХ позициях — stage1
+  ПРИНИМАЕТ (te ea88f9cd/44260b7f/e72f9781/5c31cec3; pr 5eb0d628/
+  d6941700/ac6e78e1/ced7c9ba; sv b66e8470/97a24c7e/bf4969f9/d2329bdf;
+  sp e851a742/e6344f84/6643aac9/03106f64; va 9fa6abab/daa7abdb/
+  d9fd0b0e/a6060cd1; ow f656109c/9a1c9643/c002cfcd/28cbf333; if
+  d55f1af7/29da45ef/b3aef29e/80c9462a; as 871daf47/34a3e161/a5c9dd53/
+  7afe99d3) — том молчит: pVwX = 0 → PD = 3 → S = 12; 4-стейтментные
+  потоки других kinds (пины probe96..101 СОВПАЛИ: te ×4 = 49 Б
+  40dc0e48, emit 05×4 = 4 Б; as ×4 = 89 Б 3f6d8893, 44 Б; pr ×4 = 81 Б
+  34f4a890, 36 Б; sv ×4 = 65 Б 05df0915 = W-100, 20 Б; sp ×4 = 65 Б
+  c02a9b43 = W-101, 20 Б; va ×4 = 69 Б 917128ff, 24 Б; ow ×4 = 101 Б
+  c39da5d5, 56 Б) — том молчит: PD = 0; if ×4 — stage1 БРАКУЕТ (0xFE
+  60 Б ebe049f9, пин W-92 СОВПАЛ) — том молчит; кресты: 'wc 5 vw' ×4 +
+  '3' = 66 Б 99c6ba85 (НОВЫЙ пин: emit 21 Б = 4 vw-хвоста + digit-tail
+  15 00000003) — word12 = '3' → pEOF = 0; 'wc 5 vw 3 wc 5 vw wc 5 vw
+  wc 5 vw' = 66 Б 10194aa8 (НОВЫЙ пин: digit-tail ПОСЛЕ хвоста 1 —
+  word3 = '3' → p0-2 bad); 'wc 5 vw wc 5 vw 3 wc 5 vw wc 5 vw' = 66 Б
+  b2e2e257 (НОВЫЙ пин: digit-tail после хвоста 2 — word6 = '3' →
+  p0-3 bad); 'wc 5 vw wc 5 vw wc 5 vw 3 wc 5 vw' = 66 Б b3dc5d38
+  (НОВЫЙ пин: digit МЕЖДУ stmt3 и stmt4, word9 = '3' → p0-4 bad);
+  'wc 5 vw' ×4 + 'vw' = 65 Б e8b78dcd (НОВЫЙ пин: stage1 парсит 13-й
+  ток 'vw' как ПЯТЫЙ vw-стейтмент — emit 20 Б) — том молчит: word12 =
+  'vw' → pEOF = 0; 'wc 5 vw' ×4 + '3 3' = 71 Б fec63912 (НОВЫЙ пин,
+  emit 26 Б = 4 хвоста + digit-tail ×2); 2-stmt кресты СОВПАЛИ W-90:
+  'wc 5 vw 3 wc 5 vw 3' = 63 Б dbb5b0a3, 'wc 5 vw wc 5 vw 3 3' = 63 Б
+  0c35ee83, 'wc 5 vw wc 5 vw 3' = 58 Б 0bce683b, 'wc 5 vw wc 5 vw vw'
+  = 57 Б d9eabc11 (7-й ток 'vw' — stage1 эмитит 3 хвоста) — том
+  молчит: word5 = 'vw' → pVw2 = 1, но p0-3 = 0, pVw3 = 0 → PA = 4,
+  PD = 2, pEOF = 1 → S = 7; singles/сироты: 'wc 5 vw' = 49 Б
+  00ce976e (СОВПАЛ T3-vw-single, пин probe90/W-90-полки: emit 4 Б
+  БЕЗ ведущего U8), 'wc 5 vw 3' = 54 Б 77e58387 (НОВЫЙ пин: emit 9 Б
+  = vw-хвост + digit-tail), сирота 'wc 5 vw wc 5' = 49 Б 0ddf9034
+  (СОВПАЛ W-90: emit 4 Б), 'wc 5 sp' = 50 Б 87817a4b (пин W-89), 'wc
+  5 pr' = 54 Б 61957c4c (пин); неги-браки: 'wc ow wc 5 vw wc 5 vw
+  wc 5 vw' = 0xFE 59 Б ff73c458 (СОВПАЛ: bad word1 — emit 14 Б =
+  ow-хвост со слотом F1 = 0x00F00FF1 = 15732721 DEFAULT WORK_CELL,
+  W_Current не сменился); bad d1 = 0xFE 45 Б 29ba6852 (СОВПАЛ, emit
+  0); bad d2 = 0xFE 49 Б c4165c69 (СОВПАЛ пин W-90: emit = vw-tail1
+  4 Б); bad d3 = 0xFE 53 Б 9700c6d4 (НОВЫЙ пин, emit 8 Б); bad d4 =
+  0xFE 57 Б 34b360e8 (НОВЫЙ пин, emit 12 Б); bad word2 = 0xFE 45 Б
+  4ff7c705 (СОВПАЛ); bad word5 = 0xFE 49 Б 95856a78 (СОВПАЛ пин
+  W-90); bad word8 = 0xFE 53 Б da1f9de7 (НОВЫЙ пин); bad word11 =
+  0xFE 57 Б e94de9b1 (НОВЫЙ пин); bad word0/мусор = f3667180 (СОВПАЛ
+  ×2); 'wc 5 vw wc ow wc 5 vw wc 5 vw' = 0xFE 63 Б 4684f2f1 (НОВЫЙ
+  пин: bad word4 'ow' — emit 18 Б = vw-хвост1 + ow-хвост 14 Б —
+  stage1 БРАКУЕТ); 'wc 5 vw wc 5 vw wc ow wc 5 vw' = 0xFE 67 Б
+  0d22dfbf (НОВЫЙ пин: bad word7 — emit 22 Б); 'wc 5 vw wc 5 vw
+  wc 5 vw wc ow' — stage1 ПРИНИМАЕТ (71 Б 0xFF 07151ce6, НОВЫЙ
+  KEY-пин: emit 26 Б = 3 vw-хвоста (12 Б) + ow-хвост 14 Б —
+  ЕДИНСТВЕННЫЙ несущий BE32 ow-хвоста = 0x00F00FF8 DEFAULT
+  WORK_CELL, word10 = 'ow' НЕ цифра → слот дефолт) — том молчит:
+  v4 = 0 → PA = 7, pVw4 = 0 → S = 11. Итог: **770 ток** ≤ 1022,
+  компил stage1 = **1062 Б 0xFF Token 0x302 = 770 md5 2a47c028**,
+  детерминизм OK. Честная матрица probe102c OK С ПЕРВОГО ПРОГОНА
+  (хвост БЕЗ U8-пары — 3 ток/хвост): **15 целей BYTE-OK против
+  свежего stage1** (база 8669285e = пин probe96..101-карт, точка,
+  точка+мусор, 9 носителей — РАЗНЫЕ md5 несущих слотов W-72 ×4; + 3
+  tracked-цели c1679afd/6ea2be4c/0ae99a72) + **74/74 негов молчат**.
+  Приёмка **regr102 (base regr101): REGRESS OK** — tracked IDENTICAL
+  + NEW W-102 (том 2a47c028 + цели c1679afd/6ea2be4c/0ae99a72 — ТРИ
+  РАЗНЫЕ md5; _90 = 0ae99a72 СОВПАЛ карта-кейс 10) + все прежние
+  полки (4-word 80/80 + T3 90/90 + micro + T4 90/90 + cross-silences)
+  + cold IDENTICAL. tracked: wc14v3t3333vw_build.py,
+  pos_wc14v3t3333vw.words, target_t3333vw_33/37/90.words, regr102.py.
+  Дальше — стрим (T3×T3×T3×T3 других kinds va ×4, 5 стейтментов) к
   истинной самосборке.
 
 
