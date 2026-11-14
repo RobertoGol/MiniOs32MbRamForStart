@@ -6732,6 +6732,63 @@ target'ам нужна честная сегрегация (веха-15+)» (v4)
     Дальше — 24в (kind-диспетчер T3), 24г (if/es/mk/jb + bare),
     24д (фиксепоинт T(S_T)==T).
 
+  Части 3 — СТУПЕНЬ 24в-1 (W-118): T3-формы 'wc d kind' + голые kinds
+  va/sv/gp/sp.
+  - ЕДИНАЯ BARE-KIND МОДЕЛЬ: SLC (cell[100]) = модель W_Current (init
+    0xF00FF1); 'wc d' кладёт номер слота в WCFA (cell[98]); kind-кейс
+    пишет в file-cell F(3+d) — все 10 слотов F3..FC заняты (F3
+    NumAcc, F4 PTR, F5 CNT, F6 RF, F7 EFA, F8 POS, F9 S, FA FCODE,
+    FB gp-рег, FC VCNT). S-машина cell[F9] ∈ {0,1,2}: S' = is_nb +
+    f + 2·wcK (raw sum); f = (S+2·KINDA)==1; neK = (S+2·KINDA)==3;
+    wcK = (3·WCFA+S)==3; k4K = (K4A+S0FA)==2, K4A =
+    SVFA+GPFA+SPFA+VAFA; notbad = (NBFA+S')==2 + DTFA+DGFA+NKFA+K4FA.
+    Скретч: Z0=60, VSC=61, флаги 62..70 (KA=70), SINK=74, ZP-пары
+    75..84 (ZPA=75, ZVA=77, ZNA=79, ACEL=81, POS2=82, HSL=83,
+    ZP2A=84); NBL=99, SLC=100, K4FA=113, POSC=114.
+  - ЗАТВОР PS: te ⟺ bad-leave ИЛИ WCE — направление 'if' БЕЗ второго
+    eq 0 (лишний eq-0 честно инвертировал затвор — ВСЕ кейсы
+    молчали; поймано смоуком W-118). Терминатор потока = ТОЧКА 0x2E
+    (EOFC не успевает, EFASC≡0); WCE ключён на DTFA:
+    (S_pre + 3·DTFA)==5.
+  - ЧЕСТНЫЙ УРОК №1 (трасса probe111): self-конста 'wc' в INIT —
+    'cp' компилится в OP_LOAD[0x18] (сравнение с ЯЧЕЙКОЙ), нужна
+    cell[25463]:=25463, иначе WCFA := 0 и кольцо молчит ВСЕГДА.
+  - УРОК ИСТОЧНИКА: том = СВЕЖИЙ вывод билдера (билдер пишет рабочий
+    источник в probe111 @340), НЕ репо-копия — та была замороженным
+    пином W-117 (3207 Б 85a7caa4 → 2134 Б 818f8b79); первый прогон
+    акки на ней дал FAIL всех T3-кейсов got=None. Репо-копия
+    обновлена свежим источником (3968 Б md5 ddd1a4df).
+  - БЮДЖЕТ: том 1615 ток ≤ 2046 (граница W-116). Компил 2545 Б 0xFF
+    md5 **61204149**.
+  - ПРИЁМКА probe97 acc24v (_t118_acc, acc24v.txt): **110/110 OK** —
+    76 POS BYTE-OK (49 регресс + 27 новых; пины card97/зонд-2:
+    'wc 5 va' d4766ef5 / 'wc 5 sv' 6a16ae85 / 'wc 5 gp' 46b63574 /
+    'wc 5 sp' 87817a4b / 'wc 0 va' 1fc64288 / 'wc 9 va' d6fe81cf /
+    'wc 5 va va' 7e597546 (персистентность W_Current) / 'wc 5 wc 6
+    va' 6c716889 (честный перевыбор) / 'wc 5 nb 7 va' 2414880e
+    (nb-приоритет операнда) / 'nb 7 va wc 5 sv' 22204144 / 'wc 5 va
+    wc 3 sv wc 4 gp wc 6 sp' 5f06fc10 / голые va 2e1d1bb3 sv
+    16f23df2 gp a06da719 sp 136a0e4c / 'wc 5 va nb 2 ne' b4d5842f
+    (слот не трогает NumAcc) / '5 wc 3 va nb 2 ne' 407d844c / '5 5'
+    f75c7627 (двойная голая цифра) / 'wc 5' a154e85f (хвост-квирк
+    stage1 воспроизведён BYTE-OK)) + 19/19 негов честное молчание +
+    **15/15 DIVERG-STRICT** (список: база 24б-3 минус переехавшие в
+    POS голые va/sv/gp/sp + 'wc 8 va' + 'nb 7 ne sv' — кольцо W-118
+    байт-в-байт = stage1, 55 Б c2ac811e; + wc-квиры 'wc'/'wc va',
+    kind при открытом wc, слот-опы eq/as/ow/vw/pr = бэклог 24в-2,
+    'te' в исходнике). Смоук _t118_smoke: SMOKE OK (26 BYTE-OK + 17
+    пасов-молчаний, 0 REAL-BAD). ИСКЛЮЧЕНО: 'nb 15732723 wc va'
+    (веха-10 абс-форма — stage1 паникует rc=1 БЕЗ артефакта даже на
+    валидный слот).
+  - ПРИЁМКА regr117 (base regr116): **REGRESS OK с первого прогона** —
+    tracked IDENTICAL (0 DIFF) + все прежние полки + ring-полка
+    **76/76 BYTE-OK + 19/19 честных молчаний + 15/15 diverg-silence**
+    (том 61204149) + cold IDENTICAL.
+  - tracked: wc14v3ring_build.py, pos_wc14v3ring.words, regr117.py;
+    probe97 (_t118_smoke/_t118_acc) + probe111 (источник билдера) в
+    TMP. Дальше — 24в-2 (слот-опы vw/as/pr/ow/eq/te), 24в-3, 24г
+    (if/es/mk/jb + bare), 24д (фиксепоинт T(S_T)==T).
+
 
 
 - Регресс `Python_compiler\regr19.py` (база regr18; head = 6d11eec):

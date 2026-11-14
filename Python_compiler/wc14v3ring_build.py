@@ -1,9 +1,11 @@
 # -*- coding: utf-8 -*-
-# Том-кольцо 24а+24б+24б-3 (веха-24, спринты 92-96, W-112..W-117, TKT-052):
-# generic 'nb d+ ne' + голые цифры (24а) + A-виды nb-пары sv/sc (24б-1)
-# + gp/sp (24б-2) + B-виды va/cp/aa (24б-3, спринт 96: граница тома
-# поднята W-116 0x400->0x800 по бюджет-приговору W-115). Приёмка:
-# card112/card113 позитивы BYTE-OK, неги = молчание.
+# Том-кольцо 24а+24б+24б-3+24в-1 (веха-24, спринты 92-97, W-112..W-118,
+# TKT-052): generic 'nb d+ ne' + голые цифры (24а) + A-виды nb-пары sv/sc
+# (24б-1) + gp/sp (24б-2) + B-виды va/cp/aa (24б-3, спринт 96: граница тома
+# поднята W-116 0x400->0x800 по бюджет-приговору W-115) + T3-формы
+# 'wc d va|sv|gp|sp' и голые va/sv/gp/sp (24в-1, спринт 97: S-машина
+# 0/1/2, SLC = модель W_Current, единая bare-kind запись). Приёмка:
+# card112/card113/card97 позитивы BYTE-OK, неги = молчание.
 #
 # СТРУКТУРА (позиционные if/es-пары; 'if' = acc!=0 -> then, acc==0 -> es;
 #   'te' = честное завершение программы; es-JMP -> TERM):
@@ -59,6 +61,10 @@ SVWC, SCWC, GPWC, SPWC = 88, 89, 103, 104   # ячейки word-кодов A-в�
 VAWC, CPWC, AAWC = 107, 108, 109            # 24б-3: word-коды B-видов
 TAGTAB, K2FA, KINDA = 90, 101, 102          # TAGTAB = 8 тегов U16 (90..97); K2FA = веса; KINDA = is_kind
 STREAM, POSC = 15732720, 114                # 0x00F00FF0 (ячейка-аргумент syscall); POSC = машина позиций
+# 24в-1 (спринт 97): S-машина 0/1/2 + модель W_Current
+WCW = 25463                                 # 'wc' = 0x6377 ('c'<<8|'w' — первый символ в МЛАДШЕМ байте)
+WCFA, S2DIG, SLC, HSL, K4FA = 98, 99, 100, 83, 113  # is_wc; (S==2 и цифра); слот (init F00FF1); F3A+V; k4-запись
+WC_BASE = 15732723                          # 0x00F00FF3 = F3A (WC_BASE + d, d=0..9 -> F3..FC)
 
 def sel_val(anchor, flag):
     """acc = flag ? cell[candB] : cell[candA]; двойной gp (затирает acc)."""
@@ -103,6 +109,14 @@ INIT += N(1) + ABS(4633, 'sv')             # cell[0x1219] := 1 (is_b: va)
 INIT += N(1) + ABS(4632, 'sv')             # cell[0x1218] := 1 (is_b: cp)
 INIT += N(1) + ABS(4629, 'sv')             # cell[0x1215] := 1 (is_b: aa)
 INIT += N(20) + ABS(POSC, 'sv')            # POSC := 20 (16 шапки + 4 CRC; байт-дифф a318d454)
+# 24в-1: SLC := 0xF00FF1 (WORK_CELL — честный дефолт W_Current stage1;
+#   зонд b_va: голая 'va' на свежем stage1 = [12 19 00F00FF1] 2e1d1bb3)
+INIT += N(15732721) + ABS(SLC, 'sv')
+# 24в-1: self-конста 'wc' — сравнение 'cp' компилится в OP_LOAD[0x18]
+#   (acc == cell[arg]) и ЖИВЁТ только при cell[W] := W (поймано трассой
+#   t_bad: OP_LOAD[0x18] на 0x6377 vs cell[25463]=0 -> WCFA := 0 -> WCK=0
+#   -> S'=0 -> notbad=0 -> BSFA=1 -> кольцо молчало на ВСЕХ 'wc'-кейсах)
+INIT += N(WCW) + ABS(WCW, 'sv')             # cell[25463] := 25463
 
 LB = []
 LB += ABS(311, 'sc')                       # прочесть слово (311 = FILE_GET)
@@ -129,6 +143,11 @@ LB += ['wc', '8', 'gp'] + ABS(SPWC, 'cp') + ABS(SPFA, 'sv')      # is_sp
 LB += ['wc', '8', 'gp'] + ABS(VAWC, 'cp') + ABS(VAFA, 'sv')      # is_va (24б-3)
 LB += ['wc', '8', 'gp'] + ABS(CPWC, 'cp') + ABS(CPFA, 'sv')      # is_cp (24б-3)
 LB += ['wc', '8', 'gp'] + ABS(AAWC, 'cp') + ABS(AAFA, 'sv')      # is_aa (24б-3)
+# 24в-1: is_wc ('wc' = 0x6377) — открытие слота: S 0 -> 2 (WCK: 'wc' при
+#   открытом nb = недопустимое слово -> badsum -> молчание, див/сил);
+#   повторный 'wc' при S==2 = ЧЕСТНОЕ перевыбор (зонд n_dblwc: stage1
+#   'wc 5 wc 6 va' = [12 19 F00FF9] 0xFF — pending заменяется, НЕ брак).
+LB += ['wc', '8', 'gp'] + ABS(WCW, 'cp') + ABS(WCFA, 'sv')       # is_wc (24в-1)
 # взвешенный k = is_sv + 2*is_sc + 3*is_gp + 4*is_sp (БЕЗ ne — ne/цифры дают
 #   k=0 → TAGTAB[0] = 0x15, семантика 24б-1); KINDA = is_kind = is_ne + (k>0)
 #   (ne и A-виды взаимоисключающи — ne не A-вид). ЧЕСТНЫЕ УРОКИ этого
@@ -145,20 +164,57 @@ LB += ABS(VSC, 'va') + ['gt', '9', 'eq', '0'] + ABS(DGFA, 'sv')  # is_dig
 # bareK = (is_dig + (S==0)) == 2
 LB += ['wc', '6', 'va', 'eq', '0'] + ABS(S0FA, 'sv')
 LB += ABS(DGFA, 'va') + ABS(S0FA, 'aa') + ['eq', '2'] + ABS(BKFA, 'sv')
-# neK = (S + is_kind)==2 (честно: acc-арифметика, БЕЗ мутации S — урок: bare 'as'
-# не возвращает сумму в acc, acc не меняется; is_kind из KINDA — cell-'aa')
-LB += ['wc', '6', 'va'] + ABS(KINDA, 'aa') + ['eq', '2'] + ABS(NKFA, 'sv')
-# f = (S_now==1) И (is_kind==0) ≡ (S + KINDA)==1 — ОДНА строка (экономия 22
-#   ток против пары eq-1/eq-0 конъюнкций; сумма∈{0,1,2}: 1 ⟺ S=1 и not-kind)
-LB += ['wc', '6', 'va'] + ABS(KINDA, 'aa') + ['eq', '1'] + ABS(FSA, 'sv')
-# S' = clamp(is_nb + f)  — ДО затвора (выполняется и на leave)
-LB += ABS(NBFA, 'va') + ABS(FSA, 'aa') + ['gt', '0', 'wc', '6', 'sv']
-# K = neK + bareK; K' = ((K==1) + notEOF) == 2
-LB += ABS(NKFA, 'va') + ABS(BKFA, 'aa')
+# 24в-1: S2DIG = (S==2)&&(is_dig) — слот-выбор цифрой; S_old + 3*dig == 5
+#   уникально (S=2,dig=1; прочие комбинации 0..4 и 6..11 — не 5)
+LB += ['wc', '6', 'va'] + ABS(DGFA, 'aa') * 3 + ['eq', '5'] + ABS(S2DIG, 'sv')
+# 24в-1: WCK = is_wc И (S!=1) — 'wc' при открытом nb недопустим (stage1
+#   потребляет nb-'wc'-форму вехи-10 — НЕ поддержана кольцом, див/сил);
+#   повторный 'wc' при S==2 = честный перевыбор (зонд n_dblwc). S1 через
+#   KA-стеш: (WCFA + 2*S1)==1 ⟺ wc-легален.
+LB += ['wc', '6', 'va', 'eq', '1'] + ABS(KA, 'sv')                  # KA := S1
+LB += ABS(KA, 'va') + ABS(KA, 'aa') + ABS(WCFA, 'aa') + ['eq', '1'] + ABS(KA, 'sv')  # KA := WCK
+# f = (S==1) И NOTKIND ⟺ S + 2*KINDA == 1 (уникально S=1,K=0; урок: старая
+#   форма (S+K)==1 рвалась на S=0,K=1 — голая va открывала S'=1 и ломала
+#   персистентность 'wc 5 va va')
+LB += ['wc', '6', 'va'] + ABS(KINDA, 'aa') * 2 + ['eq', '1'] + ABS(FSA, 'sv')
+# neK = (S + 2*is_kind)==3 (S==1 и kind; S=2 wc-состояние не даёт 3)
+LB += ['wc', '6', 'va'] + ABS(KINDA, 'aa') * 2 + ['eq', '3'] + ABS(NKFA, 'sv')
+# 24в-1: обновление SLC — модели W_Current: слот-цифра SLC := WC_BASE + V;
+#   прочие слова SLC не трогают (персистентность 'wc 5 va va', дефолт F00FF1).
+#   HSL := WC_BASE + V (держатель кандидата); sel_val по паре [61,100] через
+#   перезапись cell[77]=100 / cell[78]=83, флаг = S2DIG.
+LB += N(WC_BASE) + ABS(VSC, 'aa') + ABS(HSL, 'sv')                  # HSL := WC_BASE + V
+LB += N(SLC) + ABS(77, 'sv') + N(HSL) + ABS(78, 'sv')               # пара := [100, 83]
+LB += sel_val(77, S2DIG)                                            # acc = S2DIG ? HSL : SLC
+LB += ABS(SLC, 'sv')                                                # SLC := выбор
+LB += N(VSC) + ABS(77, 'sv') + N(F3A) + ABS(78, 'sv')               # пара := [61, F3A] (restore)
+# 24в-1: WCE = (S==2)&&(конец источника) — хвостовой fail 'wc'-без-цифры:
+#   stage1 даёт вердец 0xFF с rep Error=1/FCODE=8 (квирк хвост-проверки ПОСЛЕ
+#   печати артефакта); кольцо честнее = молчание (див, tracked). Конец
+#   источника в потоке = ТОЧКА (0x2E, is_dot) — EOFC не успевает встать
+#   (dot-leave раньше; поймано трассой t_wc: 2-й FILE_GET = 0x2E, EFASC=0).
+#   WCE читает S ДО S'-строки той же итерации (S_pre=2 жив у 'wc').
+LB += ['wc', '6', 'va'] + ABS(DTFA, 'aa') * 3 + ['eq', '5'] + ABS(HSL, 'sv')
+# 24в-1: S' = is_nb + f + 2*WCK (БЕЗ clamp: значение 2 легально = wc-открытие;
+#   вложенное nb даёт 1+1=2 = wc-состояние, но word уже badsum -> уход)
+LB += ABS(NBFA, 'va') + ABS(FSA, 'aa') + ABS(KA, 'aa') * 2 + ['wc', '6', 'sv']
+# 24в-1: k4K = is_k4 И (S==0) — ЕДИНАЯ bare-kind запись: голые va/sv/gp/sp
+#   (S==0) и слот-формы 'wc d op' (цифра закрыла S -> тоже S==0) пишут запись
+#   [X=SLC][tag]; is_k4 = sv+gp+sp+va (sc/cp/aa слот-форм НЕ имеют — зонды
+#   n_sc5/n_cp5/n_aa5 = 0xFE; голые sc/cp/aa = брак 0x0C — див/сил)
+LB += ABS(SVFA, 'va') + ABS(GPFA, 'aa') + ABS(SPFA, 'aa') + ABS(VAFA, 'aa') \
+    + ABS(S0FA, 'aa') + ['eq', '2'] + ABS(K4FA, 'sv')
+# K = neK + bareK + k4K; K' = ((K==1) + notEOF) == 2
+LB += ABS(NKFA, 'va') + ABS(BKFA, 'aa') + ABS(K4FA, 'aa')
 LB += ['eq', '1'] + ABS(NOEFA, 'aa') + ['eq', '2'] + ABS(KA, 'sv')
-# storeval = neK ? NumAcc(старый) : V; cell[PTR] := storeval (sp-always).
-#   ПОРЯДОК ЧЕСТНЫЙ: *p = v; p++ — storeval ДО инкремента PTR (урок трассы:
-#   'wc 1 sp' после 'PTR += K'' писал на ячейку дальше, EMIT читал нули).
+# storeval = neK ? NumAcc : (k4K ? SLC : V) — 3-way: level-1 по паре [61,100]
+#   (candA=V, candB=SLC) с перезаписью cell[78]=100, результат в VSC
+#   (безопасно: цифры имеют k4K=0 -> VSC=V, их A-калькуляция не задета;
+#   kinds дают NumAcc'=0, A не читается), level-2 = прежний sel_val(ZVA, NKFA).
+LB += N(SLC) + ABS(78, 'sv')                                        # cell[78] := 100
+LB += sel_val(77, K4FA)                                             # acc = k4K ? SLC : V
+LB += ABS(VSC, 'sv')                                                # VSC := level-1
+LB += N(F3A) + ABS(78, 'sv')                                        # cell[78] := F3A (restore)
 LB += sel_val(ZVA, NKFA) + ['wc', '1', 'sp']
 # PTR += K; VCNT += K
 LB += ABS(KA, 'va') + ['wc', '1', 'as']
@@ -192,8 +248,12 @@ LB += N(ZPA) + ['wc', '8', 'sv']
 LB += ABS(KA, 'va') + ['wc', '8', 'as']
 LB += ['gp', 'wc', '8', 'sv']
 LB += ['wc', '2', 'va', 'wc', '8', 'sp']
-# notbad = is_nb+is_dot+is_dig+neK; badsum = (notbad==0) -> BSFA
-LB += ABS(NBFA, 'va') + ABS(DTFA, 'aa') + ABS(DGFA, 'aa') + ABS(NKFA, 'aa')
+# notbad (24в-1): член = (NBFA + S')==2 — покрывает nb-легальность (1,1)
+#   И wc-легальность (0,2) одним равенством: вложенное nb (1,2)->3 нет,
+#   'wc' при открытом nb (0,1)->1 нет, голые kinds/нези (0,0)->0 нет —
+#   их легальность дают свои члены (k4K/dig); + dot + dig + neK + k4K.
+LB += ABS(NBFA, 'va') + ABS(15732729, 'aa') + ['eq', '2'] + ABS(DTFA, 'aa') \
+    + ABS(DGFA, 'aa') + ABS(NKFA, 'aa') + ABS(K4FA, 'aa')
 LB += ['eq', '0'] + ABS(BSFA, 'sv')
 # L = (badsum + E + dot) > 0; stay = (L==0)
 LB += ABS(BSFA, 'va') + ABS(EFASC, 'aa') + ABS(DTFA, 'aa') + ['gt', '0']
@@ -212,10 +272,14 @@ PS += ['wc', '3', 'va', 'ml', '9', 'wc', '7', 'sv']
 # POS = opennb ? POS : 0
 PS += ['wc', '5', 'va'] + ABS(POS2, 'sv')
 PS += sel_val(ZP2A, FSA) + ['wc', '5', 'sv']
-# Затвор: silent = (is_dot + E)==0 (дурь = bad-leave: не EOF и не точка).
+# Затвор (24в-1): te ⟺ (is_dot + E)==0 [bad-leave: не EOF и не точка]
+#   ИЛИ WCE==1 ['wc' остался открыт на EOF — дизайн W-118: кольцо молчит,
+#   stage1 печатает 45Б-квирк rep Error=1/FCODE=8 — див, tracked].
+#   WCE (HSL) пишется в цикле на EOF-итерации ДО S'-строки (S_pre=2 жив).
 #   silent==1 -> then='te' = ЧЕСТНОЕ молчание (rc==0, нет .out);
 #   silent==0 (EOF- или dot-leave) -> es -> BEGIN (позитивы пишут артефакт).
-PS += ABS(DTFA, 'va') + ABS(EFASC, 'aa') + ['eq', '0', 'if']   # if#2
+PS += ABS(DTFA, 'va') + ABS(EFASC, 'aa') + ['eq', '0'] + ABS(HSL, 'aa') \
+    + ['if']                                                   # if#2
 PS += ['te', 'es']
 # BEGIN + заголовок (0x43544F53, 0x01010100, 0x14000000, 0xFFFFAAAA, CRC)
 #   'wo' = ВОСЬМОЙ поглотитель nb: честная форма 'nb <цифры> wo' БЕЗ 'ne'
