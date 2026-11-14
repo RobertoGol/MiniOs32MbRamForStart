@@ -1,6 +1,8 @@
 # -*- coding: utf-8 -*-
-# Том-кольцо 24а (веха-24, спринт 92, W-112, TKT-052): generic 'nb d+ ne'
-# + голые цифры. Приёмка: card112 позитивы BYTE-OK, неги = молчание.
+# Том-кольцо 24а+24б (веха-24, спринты 92-94, W-112..W-114, TKT-052):
+# generic 'nb d+ ne' + голые цифры (24а) + A-виды nb-пары sv/sc (24б-1)
+# + gp/sp (24б-2). Приёмка: card112/card113 позитивы BYTE-OK, неги =
+# молчание.
 #
 # СТРУКТУРА (позиционные if/es-пары; 'if' = acc!=0 -> then, acc==0 -> es;
 #   'te' = честное завершение программы; es-JMP -> TERM):
@@ -19,8 +21,15 @@
 # SCRAP: 60 Z0(0), 61 VSC, 62 NBFA, 63 NEFA, 64 DTFA, 65 DGFA, 66 NKFA,
 #   67 BKFA, 68 S0FA, 69 FSA, 70 KA, 71 NOEFA, 72 EFAsc, 73 BSFA, 74 SINK,
 #   75/76 ZP(&74,&F8), 77/78 ZV(&61,&F3), 79/80 ZN(&60,&81), 81 ACEL,
-#   82 POS2, 84/85 ZP2(&60,&82). SELF-консты: cell[46]:=46, [25198]:='nb',
-#   [25966]:='ne' (сравнение W == cell[W]).
+#   82 POS2, 84/85 ZP2(&60,&82). 24б: 86 SVFA, 87 SCFA, 88 SVWC, 89 SCWC,
+#   90..94 TAGTAB[0..4] (0x15 ne/dig, 0x55 sv, 0x13 sc, 0x52 gp, 0x53 sp),
+#   95 K2FA (A-веса: sv+2sc+3gp+4sp; ne/цифры → 0),
+#   96 KINDA (is_kind = is_ne + (k>0)), 97 GPWC, 98 SPWC, 99 GPFA,
+#   100 SPFA (ЧЕСТНЫЙ УРОК: GPFA/SPFA НЕЛЬЗЯ ставить в 90..94 — флаг-блок
+#   забивает ячейку КАЖДЫЙ проход и убивает TAGTAB[3]/[4]; пойман
+#   байт-дифом: тег 0x01 вместо 0x52).
+# SELF-консты: cell[46]:=46, [25198]:='nb', [25966]:='ne', [30323]:='sv',
+#   [25459]:='sc', [28775]:='gp', [28787]:='sp' (сравнение W == cell[W]).
 
 def N(v):
     return ['nb'] + list(str(int(v))) + ['ne']
@@ -38,9 +47,10 @@ ZVA, ZVB, ZNA, ZNB, ACEL, POS2 = 77, 78, 79, 80, 81, 82
 ZP2A, ZP2B = 84, 85
 NBW, NEW_, DOTW = 25198, 25966, 46
 SVW, SCW = 30323, 25459                     # 'sv'=0x7673 ('v'<<8|'s'), 'sc'=0x6373 ('c'<<8|'s')
-SVFA, SCFA = 86, 87                         # флаги is_sv / is_sc
-SVWC, SCWC = 88, 89                         # ячейки word-кодов 'sv'/'sc'
-TAGTAB, WCFA, K2FA, KP2FA, KINDFA = 90, 93, 94, 95, 96
+GPW, SPW = 28775, 28787                     # 'gp'=0x7067 ('p'<<8|'g'), 'sp'=0x7073
+SVFA, SCFA, GPFA, SPFA = 86, 87, 99, 100    # флаги A-видов (99/100 — ВНЕ TAGTAB 90..94!)
+SVWC, SCWC, GPWC, SPWC = 88, 89, 97, 98     # ячейки word-кодов A-видов
+TAGTAB, K2FA, KINDA = 90, 95, 96            # TAGTAB = 5 тегов (90..94); K2FA = A-веса; KINDA = is_kind
 
 def sel_val(anchor, flag):
     """acc = flag ? cell[candB] : cell[candA]; двойной gp (затирает acc)."""
@@ -65,11 +75,15 @@ INIT += N(0) + ['wc', '5', 'sv']           # POS = 0
 INIT += N(0) + ['wc', '6', 'sv']           # S = 0
 INIT += N(0) + ['wc', '9', 'sv']           # VCNT = 0
 # 24б: word-коды новых видов + TAGTAB (0x15 CONST / 0x55 STORE_AT / 0x13 SYSCALL)
-INIT += N(SVW) + ABS(SVWC, 'sv')           # cell[88] := 29558
-INIT += N(SCW) + ABS(SCWC, 'sv')           # cell[89] := 29539
-INIT += N(21) + ABS(TAGTAB, 'sv')          # TAGTAB[0] = 0x15 (ne/dig)
-INIT += N(85) + ABS(TAGTAB + 1, 'sv')      # TAGTAB[1] = 0x55 (sv)
-INIT += N(19) + ABS(TAGTAB + 2, 'sv')      # TAGTAB[2] = 0x13 (sc)
+INIT += N(SVW) + ABS(SVWC, 'sv')           # cell[88] := 30323
+INIT += N(SCW) + ABS(SCWC, 'sv')           # cell[89] := 25459
+INIT += N(21) + ABS(TAGTAB, 'sv')          # TAGTAB[0] = 0x15 (ne/dig, k=0)
+INIT += N(85) + ABS(TAGTAB + 1, 'sv')      # TAGTAB[1] = 0x55 (sv, k=1)
+INIT += N(19) + ABS(TAGTAB + 2, 'sv')      # TAGTAB[2] = 0x13 (sc, k=2)
+INIT += N(82) + ABS(TAGTAB + 3, 'sv')      # TAGTAB[3] = 0x52 (gp, k=3)
+INIT += N(83) + ABS(TAGTAB + 4, 'sv')      # TAGTAB[4] = 0x53 (sp, k=4)
+INIT += N(GPW) + ABS(GPWC, 'sv')           # cell[97] := 28775
+INIT += N(SPW) + ABS(SPWC, 'sv')           # cell[98] := 28787
 
 LB = []
 LB += ABS(311, 'sc')                       # прочесть слово (311 = FILE_GET)
@@ -78,26 +92,42 @@ LB += ABS(EOFC, 'va') + ['wc', '7', 'sv']            # EFA = EOF
 LB += ABS(EFASC, 'sv')                               # EFAsc = EOF
 LB += ['wc', '7', 'va', 'eq', '0'] + ABS(NOEFA, 'sv')  # NOEA = (E==0)
 # флаги слова
-LB += ABS(WORDC, 'va') + ABS(NBW, 'cp') + ABS(NBFA, 'sv')    # is_nb
-LB += ABS(WORDC, 'va') + ABS(NEW_, 'cp') + ABS(NEFA, 'sv')   # is_ne
-LB += ABS(WORDC, 'va') + ABS(DOTW, 'cp') + ABS(DTFA, 'sv')   # is_dot
-# 24б: WCFA-стеш (одна WORDC-грузка на оба новых флага) + is_sv/is_sc
-LB += ABS(WORDC, 'va') + ABS(WCFA, 'sv')                     # WCFA := W
-LB += ABS(WCFA, 'va') + ABS(SVWC, 'cp') + ABS(SVFA, 'sv')    # is_sv
-LB += ABS(WCFA, 'va') + ABS(SCWC, 'cp') + ABS(SCFA, 'sv')    # is_sc
-# KINDFA = is_ne + is_sv + is_sc (kind-сумма для kindK/f/notbad)
-LB += ABS(NEFA, 'va') + ABS(SVFA, 'aa') + ABS(SCFA, 'aa') + ABS(KINDFA, 'sv')
-LB += ABS(WORDC, 'va') + ['su', '8'] * 6 + ABS(VSC, 'sv')    # V = W-48
+# 24б-2: FB := WORDC (restore — sel_val/ml/POS-stamp/tag-трюк клянут FB);
+#   все WORDC-грузки = bare 'gp' через FB (3 ток вместо 10).
+#   ЧЕСТНЫЙ УРОК (пойман FCODE=12/POS=363 на первом прогоне): 'as' с
+#   открытым nb = fail-fast 0x0C — накопление cell[X] += acc НЕЛЕГАЛЬНО,
+#   'as' честен только bare (*W_Current) или slot ('wc d as'). Поэтому
+#   A-виды: флаг-ячейки (cp+sv), затем веса в acc через 'aa' (легально,
+#   доказано 24б-1).
+LB += N(WORDC) + ['wc', '8', 'sv']                               # FB := WORDC
+LB += ['wc', '8', 'gp'] + ABS(NBW, 'cp') + ABS(NBFA, 'sv')       # is_nb
+LB += ['wc', '8', 'gp'] + ABS(NEW_, 'cp') + ABS(NEFA, 'sv')      # is_ne
+LB += ['wc', '8', 'gp'] + ABS(DOTW, 'cp') + ABS(DTFA, 'sv')      # is_dot
+LB += ['wc', '8', 'gp'] + ABS(SVWC, 'cp') + ABS(SVFA, 'sv')      # is_sv
+LB += ['wc', '8', 'gp'] + ABS(SCWC, 'cp') + ABS(SCFA, 'sv')      # is_sc
+LB += ['wc', '8', 'gp'] + ABS(GPWC, 'cp') + ABS(GPFA, 'sv')      # is_gp
+LB += ['wc', '8', 'gp'] + ABS(SPWC, 'cp') + ABS(SPFA, 'sv')      # is_sp
+# взвешенный k = is_sv + 2*is_sc + 3*is_gp + 4*is_sp (БЕЗ ne — ne/цифры дают
+#   k=0 → TAGTAB[0] = 0x15, семантика 24б-1); KINDA = is_kind = is_ne + (k>0)
+#   (ne и A-виды взаимоисключающи — ne не A-вид). ЧЕСТНЫЕ УРОКИ этого
+#   спринта: (1) 'as' с открытым nb = брак 0x0C (накопление cell[X] += acc
+#   нелегально — только bare/slot-'as'); (2) 'wc 6 aa' = slot-'aa' = брак
+#   0x0C — 'aa'/'cp' честны только с nb-открытой ЯЧЕЙКОЙ (слот принимают
+#   va/sp/as/gp/ow/sv). Поэтому is_kind живёт в ячейке KINDA.
+LB += ABS(SVFA, 'va') + ABS(SCFA, 'aa') * 2 + ABS(GPFA, 'aa') * 3 \
+    + ABS(SPFA, 'aa') * 4 + ABS(K2FA, 'sv')                        # K2FA := k
+LB += ABS(K2FA, 'va') + ['gt', '0'] + ABS(NEFA, 'aa') + ABS(KINDA, 'sv')  # is_kind
+LB += ['wc', '8', 'gp'] + ['su', '8'] * 6 + ABS(VSC, 'sv')   # V = W-48 (gp через FB)
 LB += ABS(VSC, 'va') + ['gt', '9', 'eq', '0'] + ABS(DGFA, 'sv')  # is_dig
 # bareK = (is_dig + (S==0)) == 2
 LB += ['wc', '6', 'va', 'eq', '0'] + ABS(S0FA, 'sv')
 LB += ABS(DGFA, 'va') + ABS(S0FA, 'aa') + ['eq', '2'] + ABS(BKFA, 'sv')
-# neK = (S + is_ne)==2 (честно: acc-арифметика, БЕЗ мутации S — урок: bare 'as'
-# не возвращает сумму в acc, acc не меняется)
-LB += ['wc', '6', 'va'] + ABS(KINDFA, 'aa') + ['eq', '2'] + ABS(NKFA, 'sv')
-# f = (S_now==1) И (KINDFA==0)
-LB += ['wc', '6', 'va', 'eq', '1'] + ABS(FSA, 'sv')
-LB += ABS(KINDFA, 'va') + ['eq', '0'] + ABS(FSA, 'aa') + ['eq', '2'] + ABS(FSA, 'sv')
+# neK = (S + is_kind)==2 (честно: acc-арифметика, БЕЗ мутации S — урок: bare 'as'
+# не возвращает сумму в acc, acc не меняется; is_kind из KINDA — cell-'aa')
+LB += ['wc', '6', 'va'] + ABS(KINDA, 'aa') + ['eq', '2'] + ABS(NKFA, 'sv')
+# f = (S_now==1) И (is_kind==0) ≡ (S + KINDA)==1 — ОДНА строка (экономия 22
+#   ток против пары eq-1/eq-0 конъюнкций; сумма∈{0,1,2}: 1 ⟺ S=1 и not-kind)
+LB += ['wc', '6', 'va'] + ABS(KINDA, 'aa') + ['eq', '1'] + ABS(FSA, 'sv')
 # S' = clamp(is_nb + f)  — ДО затвора (выполняется и на leave)
 LB += ABS(NBFA, 'va') + ABS(FSA, 'aa') + ['gt', '0', 'wc', '6', 'sv']
 # K = neK + bareK; K' = ((K==1) + notEOF) == 2
@@ -110,19 +140,14 @@ LB += sel_val(ZVA, NKFA) + ['wc', '1', 'sp']
 # PTR += K; VCNT += K
 LB += ABS(KA, 'va') + ['wc', '1', 'as']
 LB += ABS(KA, 'va') + ['wc', '9', 'as']
-# 24б: K'-копия (KA заберёт S ниже) + k = is_sv + is_sc + is_sc (БЕЗ ml —
-#   ml затирает слот S, поэтому вес ×2 сделан честным двойным сложением)
-LB += ABS(KA, 'va') + ABS(KP2FA, 'sv')              # KP2FA := K'
-LB += ABS(SVFA, 'va')                               # acc := is_sv
-LB += ABS(SCFA, 'aa')                               # acc += is_sc
-LB += ABS(SCFA, 'aa')                               # acc += is_sc  (acc = k)
-LB += ABS(K2FA, 'sv')                               # K2FA := k  (0|1|2)
-# тег записи: acc := cell[TAGTAB + k]; *p = tag; p += K'  (запись [X][tag])
+# тег записи (24б-2): взвешенный k уже в K2FA (из блока флагов); FB :=
+#   TAGTAB + k; *p = tag; p += K' — KA держит K' до этого места (S-стеш
+#   ниже его забирает), KP2FA-ячейка устранена. Запись [X][tag].
 LB += N(TAGTAB) + ['wc', '8', 'sv']                 # FB := TAGTAB
 LB += ABS(K2FA, 'va') + ['wc', '8', 'as']           # FB += k
 LB += ['wc', '8', 'gp']                             # acc := tag
 LB += ['wc', '1', 'sp']                             # cell[PTR] := tag
-LB += ABS(KP2FA, 'va') + ['wc', '1', 'as']          # PTR += K'
+LB += ABS(KA, 'va') + ['wc', '1', 'as']             # PTR += K'
 # S-стеш вокруг 'ml': ml (веха-12б) честно компилируется в runtime-кольцо
 #   умножения со скретчем TMP_X=0xF00FFB(FB), TMP_CNT=0xF00FF9(СЛОТ S!),
 #   TMP_ACC=0xF00FFA — БЕЗ стеша S обнуляется каждым ml и машина состояний
