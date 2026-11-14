@@ -3907,3 +3907,49 @@ t5gpr 1/1, T4-shelf 90/90) + T4 multi-statement кросс-молчания (8×
   target_t33333va_33/37/90.words, regr111.py. Дальше — истинная
   самосборка (все 8 kinds 5-stmt закрыты: ow/te/as/pr/sv/sp/vw/
   va).
+- **Спринт 92 (W-112) — веха-24а: КОЛЬЦЕВОЙ word-компилятор, generic
+  'nb <цифры>+ ne' + голые цифры (первая ступень лестницы 24а→24д
+  истинной самосборки)**: билдер wc14v3ring_build.py — машина
+  состояний nb-прогона: INIT (self-консты nb/ne/. + скелет) | mk
+  [SCAN: FILE_GET + словарные проверки] stay-if#1 ... jb es#1 | PS
+  (DigitAcc через ml-кольцо, storeval, PTR/VCNT, POS-stamp, neK) |
+  silent-if#2 te es#2 | BEGIN header | mk [EMIT: ARR-канал] vcnt-if#3
+  jb es#3 | TAIL (SEAL, END) + te; слоты F3..FC (NumAcc/PTR/CNT/RF/
+  EFA/POS/S/FCODE/FB/VCNT), файл-ячейки 0xF00FF0..0xF00FFC, ARR =
+  0xA01000; **806 ток** (лимит 1022), компил stage1 = **1538 Б 0xFF
+  md5 4fcf8779** (Token 806), детерминизм x2 OK. ДЕВЯТЬ честных
+  фиксов (каждый пойман кодом/трассой/пробой): (1) neK честно —
+  bare 'as' не возвращает сумму [wc 6 va + aa NEFA + eq 2]; (2)
+  POS-stamp через gp-пару ZPA+g [конъюнкция is_nb+notEOF = aa+eq2;
+  один gp; штамп = CNT]; (3) затвор инвертирован: silent = dot+E==0
+  [then='te' = молчание]; (4) EMIT-ring [wc 8 gp wc 0 sv] — bare
+  'gp' после 'wc 9 va if' читал бы cell[cell[9]]; (5) **'wo' =
+  ВОСЬМОЙ поглотитель nb** — честная форма 'nb <цифры> wo' БЕЗ
+  'ne' [fail-fast 0x12 BRK_WO_NO_NUM; старый том был 0xFE с
+  вердец-заголовков — поймано санити x2 + код 18@667]; (6)
+  **ml-кольцо затирает слот S** [TMP_CNT = 0xF00FF9; 'ne' становился
+  bad-словом — поймано трассой S:=9] — стеш/restore S через KA;
+  (7) **честный терминатор 'te'** в TAIL [без него VM уходил в
+  мусор 0xFF после конца кода — KERNEL PANIC rc=1 при байт-в-байт
+  верном артефакте]; (8) **\*p=v;p++** — storeval ПЕРЕД инкрементами
+  PTR/VCNT ['nb 7' писал 0xA01001, EMIT читал 0xA01000 — off-by-one
+  по трассе]; (9) честное молчание = rc==0 И нет .out, паника ≠
+  молчание. VM-факт: VM честно добавляет '.'-терминатор в конец
+  источника (последний FILE_GET = 0x2E) — dot-leave закрывает
+  кольцо. Карта NB-пары (card112, 33 кейса, свежий stage1): база
+  'nb 7 ne' = 50 Б f40af5b1, Token 3; 'nb ne' = CONST 0; ведущий
+  ноль OK; перенос mod 2^32 (11 цифр); НЕСКОЛЬКО пар подряд OK
+  (Num_Acc сбрасывается); ОТКРЫТЫЙ nb у EOF/точки принят БЕЗ
+  эмиссии; голая цифра после 'ne' = ОТДЕЛЬНЫЙ стейтмент-CONST; неги
+  kind-independent 29ba6852/4ff7c705/f3667180 СОВПАЛИ. Приёмка
+  **probe112d OK: 13/13 позитивов BYTE-OK** (все меди card112, вкл.
+  'nb ne', голые цифры, 10digit) + **11/11 негов молчат честно**
+  (rc==0, нет .out) + 1 DIVERG 'nb 7 sv' [задел 24б] + FAIL=0;
+  санити 'nb 7 ne' = gold байт-в-байт rc=0. Приёмка **regr112 (base
+  regr111): REGRESS OK с первого прогона** — ring-полка (13/13
+  BYTE-OK + 11/11 честных молчаний + 1/1 diverg-silence) + NEW
+  W-112 (том 4fcf8779) + tracked IDENTICAL + все прежние полки +
+  cold IDENTICAL. tracked: wc14v3ring_build.py,
+  pos_wc14v3ring.words, regr112.py. Дальше — 24б (поглотители
+  nb-пары sv/sc/em/wo/va/cp/aa в кольце), 24в (kind-диспетчер T3),
+  24г (if/es/mk/jb + bare), 24д (фиксепоинт T(S_T)==T).
