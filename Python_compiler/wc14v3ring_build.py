@@ -37,6 +37,10 @@ EFASC, BSFA, SINK, ZPA, ZPB = 72, 73, 74, 75, 76
 ZVA, ZVB, ZNA, ZNB, ACEL, POS2 = 77, 78, 79, 80, 81, 82
 ZP2A, ZP2B = 84, 85
 NBW, NEW_, DOTW = 25198, 25966, 46
+SVW, SCW = 30323, 25459                     # 'sv'=0x7673 ('v'<<8|'s'), 'sc'=0x6373 ('c'<<8|'s')
+SVFA, SCFA = 86, 87                         # флаги is_sv / is_sc
+SVWC, SCWC = 88, 89                         # ячейки word-кодов 'sv'/'sc'
+TAGTAB, WCFA, K2FA, KP2FA, KINDFA = 90, 93, 94, 95, 96
 
 def sel_val(anchor, flag):
     """acc = flag ? cell[candB] : cell[candA]; двойной gp (затирает acc)."""
@@ -60,6 +64,12 @@ INIT += N(0) + ['wc', '3', 'sv']           # RF = 0
 INIT += N(0) + ['wc', '5', 'sv']           # POS = 0
 INIT += N(0) + ['wc', '6', 'sv']           # S = 0
 INIT += N(0) + ['wc', '9', 'sv']           # VCNT = 0
+# 24б: word-коды новых видов + TAGTAB (0x15 CONST / 0x55 STORE_AT / 0x13 SYSCALL)
+INIT += N(SVW) + ABS(SVWC, 'sv')           # cell[88] := 29558
+INIT += N(SCW) + ABS(SCWC, 'sv')           # cell[89] := 29539
+INIT += N(21) + ABS(TAGTAB, 'sv')          # TAGTAB[0] = 0x15 (ne/dig)
+INIT += N(85) + ABS(TAGTAB + 1, 'sv')      # TAGTAB[1] = 0x55 (sv)
+INIT += N(19) + ABS(TAGTAB + 2, 'sv')      # TAGTAB[2] = 0x13 (sc)
 
 LB = []
 LB += ABS(311, 'sc')                       # прочесть слово (311 = FILE_GET)
@@ -71,6 +81,12 @@ LB += ['wc', '7', 'va', 'eq', '0'] + ABS(NOEFA, 'sv')  # NOEA = (E==0)
 LB += ABS(WORDC, 'va') + ABS(NBW, 'cp') + ABS(NBFA, 'sv')    # is_nb
 LB += ABS(WORDC, 'va') + ABS(NEW_, 'cp') + ABS(NEFA, 'sv')   # is_ne
 LB += ABS(WORDC, 'va') + ABS(DOTW, 'cp') + ABS(DTFA, 'sv')   # is_dot
+# 24б: WCFA-стеш (одна WORDC-грузка на оба новых флага) + is_sv/is_sc
+LB += ABS(WORDC, 'va') + ABS(WCFA, 'sv')                     # WCFA := W
+LB += ABS(WCFA, 'va') + ABS(SVWC, 'cp') + ABS(SVFA, 'sv')    # is_sv
+LB += ABS(WCFA, 'va') + ABS(SCWC, 'cp') + ABS(SCFA, 'sv')    # is_sc
+# KINDFA = is_ne + is_sv + is_sc (kind-сумма для kindK/f/notbad)
+LB += ABS(NEFA, 'va') + ABS(SVFA, 'aa') + ABS(SCFA, 'aa') + ABS(KINDFA, 'sv')
 LB += ABS(WORDC, 'va') + ['su', '8'] * 6 + ABS(VSC, 'sv')    # V = W-48
 LB += ABS(VSC, 'va') + ['gt', '9', 'eq', '0'] + ABS(DGFA, 'sv')  # is_dig
 # bareK = (is_dig + (S==0)) == 2
@@ -78,10 +94,10 @@ LB += ['wc', '6', 'va', 'eq', '0'] + ABS(S0FA, 'sv')
 LB += ABS(DGFA, 'va') + ABS(S0FA, 'aa') + ['eq', '2'] + ABS(BKFA, 'sv')
 # neK = (S + is_ne)==2 (честно: acc-арифметика, БЕЗ мутации S — урок: bare 'as'
 # не возвращает сумму в acc, acc не меняется)
-LB += ['wc', '6', 'va'] + ABS(NEFA, 'aa') + ['eq', '2'] + ABS(NKFA, 'sv')
-# f = (S_now==1) И (is_ne==0)
+LB += ['wc', '6', 'va'] + ABS(KINDFA, 'aa') + ['eq', '2'] + ABS(NKFA, 'sv')
+# f = (S_now==1) И (KINDFA==0)
 LB += ['wc', '6', 'va', 'eq', '1'] + ABS(FSA, 'sv')
-LB += ABS(NEFA, 'va') + ['eq', '0'] + ABS(FSA, 'aa') + ['eq', '2'] + ABS(FSA, 'sv')
+LB += ABS(KINDFA, 'va') + ['eq', '0'] + ABS(FSA, 'aa') + ['eq', '2'] + ABS(FSA, 'sv')
 # S' = clamp(is_nb + f)  — ДО затвора (выполняется и на leave)
 LB += ABS(NBFA, 'va') + ABS(FSA, 'aa') + ['gt', '0', 'wc', '6', 'sv']
 # K = neK + bareK; K' = ((K==1) + notEOF) == 2
@@ -94,6 +110,19 @@ LB += sel_val(ZVA, NKFA) + ['wc', '1', 'sp']
 # PTR += K; VCNT += K
 LB += ABS(KA, 'va') + ['wc', '1', 'as']
 LB += ABS(KA, 'va') + ['wc', '9', 'as']
+# 24б: K'-копия (KA заберёт S ниже) + k = is_sv + is_sc + is_sc (БЕЗ ml —
+#   ml затирает слот S, поэтому вес ×2 сделан честным двойным сложением)
+LB += ABS(KA, 'va') + ABS(KP2FA, 'sv')              # KP2FA := K'
+LB += ABS(SVFA, 'va')                               # acc := is_sv
+LB += ABS(SCFA, 'aa')                               # acc += is_sc
+LB += ABS(SCFA, 'aa')                               # acc += is_sc  (acc = k)
+LB += ABS(K2FA, 'sv')                               # K2FA := k  (0|1|2)
+# тег записи: acc := cell[TAGTAB + k]; *p = tag; p += K'  (запись [X][tag])
+LB += N(TAGTAB) + ['wc', '8', 'sv']                 # FB := TAGTAB
+LB += ABS(K2FA, 'va') + ['wc', '8', 'as']           # FB += k
+LB += ['wc', '8', 'gp']                             # acc := tag
+LB += ['wc', '1', 'sp']                             # cell[PTR] := tag
+LB += ABS(KP2FA, 'va') + ['wc', '1', 'as']          # PTR += K'
 # S-стеш вокруг 'ml': ml (веха-12б) честно компилируется в runtime-кольцо
 #   умножения со скретчем TMP_X=0xF00FFB(FB), TMP_CNT=0xF00FF9(СЛОТ S!),
 #   TMP_ACC=0xF00FFA — БЕЗ стеша S обнуляется каждым ml и машина состояний
@@ -156,13 +185,16 @@ PS += NW(335544320)
 PS += NW(4294945450)
 PS += ['nb', '0', 'wo']
 PS += N(ARR) + ['wc', '8', 'sv']           # FB = ARR заново
-# EMIT-кольцо: while VCNT != 0: U8 0x15; BE32(cell[FB]); FB++; VCNT--
+# EMIT-кольцо: while VCNT != 0: прочесть [X][tag]; U8(tag); BE32(X); FB+=2; VCNT--
 PS += ['mk']
 PS += ['wc', '9', 'va', 'if']              # if#3: VCNT==0 -> TAIL
-PS += ['wc', '8', 'gp', 'wc', '0', 'sv']   # NumAcc := cell[FB] (bare 'gp' после
+PS += ['wc', '8', 'gp', 'wc', '0', 'sv']   # NumAcc := cell[FB] = X (bare 'gp' после
                                            # 'wc 9 va if' читал бы cell[cell[9]])
-PS += ['nb', '2', '1', 'em', 'nb', '3', '0', '8', 'sc']
-PS += ['wc', '0', 'ow']
+PS += ['wc', '8', 'va', 'ad', '1', 'sv']   # FB += 1 (к tag)
+PS += ['wc', '8', 'gp']                    # acc := cell[FB] = tag
+PS += ['nb', '1', '5', '7', '3', '2', '7', '2', '0', 'sv']  # stream := tag
+PS += ['nb', '3', '0', '8', 'sc']          # FILE_U8 -> байт тега
+PS += ['wc', '0', 'ow']                    # OUTCELL_V + PUT -> BE32(X)
 PS += ['wc', '8', 'va', 'ad', '1', 'sv']   # FB += 1
 PS += ['wc', '9', 'va', 'su', '1', 'sv']   # VCNT -= 1
 PS += ['jb', 'es']
