@@ -4205,3 +4205,58 @@ t5gpr 1/1, T4-shelf 90/90) + T4 multi-statement кросс-молчания (8×
   wc14v3ring_build.py, pos_wc14v3ring.words (обновлена), regr117.py.
   Дальше — 24в-2 (слот-опы vw/as/pr/ow/eq/te), 24в-3, 24г
   (if/es/mk/jb + bare), 24д (фиксепоинт T(S_T)==T).
+
+- **Спринт 98 (W-119) — ступень 24в-2: слот-опы eq/as/vw в кольце
+  (branch-free, потолок 3 if/es сохранён)** — приёмка probe121
+  (_t119_smoke; gold probe121/probe121b/probe121c): SMOKE OK **20/20
+  BYTE-OK + 5/5 честных молчаний + 2/2 tracked-DDIV, FAIL=0**;
+  regr118 (base regr117): **REGRESS OK** — tracked IDENTICAL + все
+  прежние полки + ring-полка **96/96 BYTE-OK + 24/24 честных молчаний
+  + 12/12 diverg-silence + 2/2 ddiv-tracked** (том 249bc5ff) + cold
+  IDENTICAL. **Бюджет: том 2041 ток ≤ 2046** (запас 5); компил 3989 Б
+  0xFF md5 **249bc5ff**. Механика опов: ABS(x,op) = 'nb'+цифры+op =
+  выбор слота литералом + op (компилится в один OP_LOAD arg=x);
+  bare-опы используют W_Current от предыдущего 'wc'; 'gp' = acc :=
+  cell[cell[arg]]; 'sp' = OP_STORE_IND; 'as' = LOAD-ADD+STORE
+  (cell[W] := cell[W]+acc, acc = сумма); 'ml' = acc := acc·лит —
+  ЖЖЁТ S/TMP_CNT/TMP_ACC/FB (стеш S→KA вокруг ml-блоков; в VM
+  умножения НЕТ: OP_LOAD modes 0x14 add-const … 0x1B lt). Карта
+  слотов (трасса): 'wc d' = 0xF00FF3+d — 'wc 0' NumAcc (F3A =
+  0xF00FF3 = NumAcc, НЕ holder V — старое подозрение снято), 1 PTR,
+  2 CNT, 3 RF, 5 штамп POS, 6 S, 7 FCODE, 8 FB, 9 VCNT; хвост
+  артефакта: FF | CNT BE32 | 8×00 | RF BE32 | FCODE | rep5.
+  **Формулы W-119**: вес eq в K2FA = 8·PDG (только закрытие pending
+  цифрой — 8·(EQFA+EQPA) портил K2FA чужих рекордов: 'eq va 3'
+  деградировал в 4Б-вид); is_kind = (K2FA+EQFA>0)+ne (затычка
+  neK-дыры: у eq-токена K2FA=0 → KINDA=0 → (S=1,K=0,eq=1)==3 → NKFA=1
+  → 'nb 3 eq' печатал; KINDA осталась булевой, gt сохранён); RF' =
+  X·¬S2DIG, X=(RF+WCK)>0 — цепочка ['wc 3 va']+ABS(KA,'aa')+
+  ['gt 0']+['eq 0']+ABS(S2DIG,'aa')+['eq 0']+['wc 3 sv'] (старая
+  форма [...+S2DIG]==0 инвертировала аккумулятор → регрессия 10/20);
+  FCODE = 8·RF + FSA (8 = WCD-квирк 'wc as'/'wc vw', 9 = opennb
+  'nb'-на-конце — оба хвост-квирка stage1 воспроизведены BYTE-OK);
+  notbad S-член = 'wc 6 va' + ABS(NBFA,'aa') (−9 ток). Виды k:
+  sv=1 … aa/as=7 (тег 0x1215), eq=8, vw=9; эмит: FB := ARR;
+  U16(TAG16) @P; 'wc 1 sv'; bare 'gp' → is_b2 = cell[TAG16]; sc 310
+  (SEEK); 'wc 0 ow' (PUT X); POSC := T+4 — A-вид 5Б, B-вид 6Б, vw
+  4Б. Ячейки 24в-2: TAGTAB 115..124 (k=0..9; [8]=4630 eq=0x1216,
+  [9]=240 vw=0x00F0), EQWC/ASWC/VWWC 129..131, EQFA/ASFA/VWFA
+  132..134, EQPA/PDGFA/EQKFA 135..137.
+  **Честные уроки W-119**: (1) 'wc 6 aa' = БРАК stage1 (голые
+  sc/cp/aa = 0x0C fail-fast) → кольцо-стаб 3290Б rc=1 на всех
+  кейсах — форма откачена; ml-реструкт neK невозможен (KA=WCK жив до
+  S'-строки, ml жжёт S); (2) неги 'nb 3 vw'/'nb 3 vw nb 4 ne' сняты
+  stage1-пробой (0xFE, FCODE=0x0C, 45Б e7f3916c — assumption убран);
+  (3) ddiv-квирк W_Pending ('wc 5 eq'/'eq'): stage1 печатает rep
+  Error=1/FCODE=6 ('eq' a1cf7209 rep [1,0,0,1,6,0]; 'wc 5 eq'
+  9c564575 rep [3,0,0,1,6,2]), кольцо — свой пустой 0xFF-отчёт =
+  tracked (новый вид 'ddiv' в RING_CASES). Пины gold 24в-2: 'wc 5
+  as' 1176c0df / 'wc 5 vw' 00ce976e / 'wc 5 eq 3' 3c2575de / 'as'
+  96a4d92a / 'vw' fd4969d1 / 'eq 3' a569ac9e / 'wc as' 3078ad75 /
+  'wc vw' acde33b3 / 'wc 7 as' c3110b6b / 'wc 9 as' aeea23e3 / 'vw
+  vw' 246b3314 / 'as as' 40c93a71 / 'eq 3 as' 8c1a0e22 / 'eq 3 vw'
+  a4cfc92c / 'vw 3' e8a60432 / 'eq 3 eq 4' dd23d731 / 'eq 1 2'
+  e4cfaee8 / 'eq va 3' 288dac2a / 'wc 5 va as' 357561a6 / 'wc 5 as
+  as' d056f8e8. tracked: wc14v3ring_build.py, pos_wc14v3ring.words
+  (обновлена — 5008 Б), regr118.py. Дальше — 24в-3 (te/pr/ow), 24г
+  (if/es/mk/jb + bare), 24д (фиксепоинт T(S_T)==T).

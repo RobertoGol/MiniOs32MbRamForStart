@@ -6789,6 +6789,87 @@ target'ам нужна честная сегрегация (веха-15+)» (v4)
     TMP. Дальше — 24в-2 (слот-опы vw/as/pr/ow/eq/te), 24в-3, 24г
     (if/es/mk/jb + bare), 24д (фиксепоинт T(S_T)==T).
 
+  Части 4 — СТУПЕНЬ 24в-2 (W-119): слот-опы eq/as/vw в кольце
+  (branch-free, потолок 3 if/es сохранён).
+  - МЕХАНИКА ОПОВ: ABS(x,op) = 'nb'+цифры+op = выбор слота литералом
+    + op (компилится в один OP_LOAD arg=x); bare-опы используют
+    W_Current от предыдущего 'wc'; 'gp' = acc := cell[cell[arg]];
+    'sp' = OP_STORE_IND; 'as' = LOAD-ADD+STORE (cell[W] :=
+    cell[W]+acc, acc = сумма); 'ml' = acc := acc·лит (TMP_X = копия
+    acc), ЖЖЁТ S/TMP_CNT/TMP_ACC/FB — стеш S→KA вокруг ml-блоков
+    (KA=WCK держится 255→328, поэтому ml-реструкт neK запрещён);
+    KA=K' с 322. В VM умножения НЕТ (OP_LOAD modes: 0x14 add-const,
+    0x15 add-cell, 0x16 eq-const, 0x17 sub, 0x18 eq-cell, 0x19
+    load-cell, 0x1A gt, 0x1B lt). КАРТА СЛОТОВ (трасса): 'wc d' =
+    0xF00FF3+d — 'wc 0' NumAcc (F3A = 0xF00FF3 = NumAcc, НЕ holder V
+    — старое подозрение снято), 1 PTR, 2 CNT (0xF00FF5), 3 RF
+    (0xF00FF6), 5 штамп POS (0xF00FF8), 6 S (0xF00FF9), 7 FCODE
+    (0xF00FFA), 8 FB, 9 VCNT; хвост артефакта: FF | CNT BE32 | 8×00 |
+    RF BE32 | FCODE | rep5.
+  - ФОРМУЛЫ W-119: вес eq в K2FA = 8·PDG (только закрытие pending
+    цифрой; 8·(EQFA+EQPA) портил K2FA чужих рекордов — 'eq va 3'
+    деградировал в 4Б-вид); is_kind = (K2FA+EQFA>0)+ne (затычка
+    neK-дыры: у eq-токена K2FA=0 → KINDA=0 → (S=1,K=0,eq=1)==3 →
+    NKFA=1 → 'nb 3 eq' печатал; KINDA остаётся булевой, gt сохранён);
+    RF' = X·¬S2DIG, X=(RF+WCK)>0 — цепочка ['wc 3 va']+ABS(KA,'aa')+
+    ['gt 0']+['eq 0']+ABS(S2DIG,'aa')+['eq 0']+['wc 3 sv'] (старая
+    форма [...+S2DIG]==0 инвертировала аккумулятор → регрессия
+    10/20); FCODE = 8·RF + FSA (8 = WCD-квирк 'wc as'/'wc vw', 9 =
+    opennb 'nb'-на-конце — оба хвост-квирка stage1 воспроизведены
+    BYTE-OK); notbad S-член = 'wc 6 va' + ABS(NBFA,'aa') (−9 ток).
+    Виды k: sv=1, sc=2, gp=3, sp=4, va=5, cp=6, aa/as=7 (тег 0x1215),
+    eq=8, vw=9; ne/цифры → 0 → TAGTAB[0]=0x1500. k4K =
+    (SVFA+GPFA+SPFA+VAFA+ASFA+VWFA+S0FA)==2; bareK = (dig+S0FA)==2;
+    k2K = (S+ASFA+VWFA)==3; neK-исключение (S+2·KINDA+
+    2·(is_eq+is_as+is_vw))==3; T = ((S==1)+EQPA_old)==0; eqK =
+    (is_eq+T)==2; EQPA' = ((is_eq+2·EQPA_old+3·dig)−1)<2 (su
+    беззнаковое); PDG = (EQPA_old+dig)==2. stay = ¬BSFA; затвор PS:
+    te ⟺ (DTFA+EFASC)==0 [bad-leave] ИЛИ WCE ((S_pre+3·DTFA)==5).
+  - ЯЧЕЙКИ 24в-2: TAGTAB 115..124 (k=0..9; [8]=4630 eq=0x1216, [9]=240
+    vw=0x00F0), EQWC/ASWC/VWWC 129..131, EQFA/ASFA/VWFA 132..134,
+    EQPA/PDGFA/EQKFA 135..137; семафоры is_b2 на адресах-тегах: A-теги
+    (5376/21760/4864/20992/21248):=1, B-теги (4633/4632/4629):=2, eq
+    cell[4630]:=2, vw cell[240]:=0 (VM-дефолт). ЭМИТ: FB := ARR;
+    U16(TAG16) @P; 'wc 1 sv'; bare 'gp' → is_b2 = cell[TAG16]; sc 310
+    (SEEK); 'wc 0 ow' (PUT X); POSC := T+4 — A-вид 5Б, B-вид 6Б, vw
+    4Б.
+  - ЧЕСТНЫЕ УРОКИ W-119: (1) **'wc 6 aa' = БРАК stage1** (голые
+    sc/cp/aa = 0x0C fail-fast) → кольцо-стаб 3290Б rc=1 на всех
+    кейсах — форма откачена (notbad через 'wc 6 va'+ABS, −9 ток);
+    ml-реструкт neK невозможен (KA=WCK жив до S'-строки + ml жжёт S);
+    (2) неги 'nb 3 vw'/'nb 3 vw nb 4 ne' сняты stage1-пробой: 0xFE,
+    FCODE=0x0C, 45Б e7f3916c (assumption убран); (3) **ddiv-квирк
+    W_Pending** ('wc 5 eq'/'eq'): stage1 печатает rep Error=1/FCODE=6
+    ('eq' a1cf7209 rep [1,0,0,1,6,0]; 'wc 5 eq' 9c564575 rep
+    [3,0,0,1,6,2]), кольцо — свой пустой 0xFF-отчёт = tracked (НОВЫЙ
+    вид 'ddiv' в RING_CASES — ОБА печатают, байты разные; честная
+    фиксация дивергенции); (4) E2-фикс полярности WCD (RF' выше) и
+    KINDA-фикс (EQFA) — оба пойманы смоуком (регрессия 10/20 и
+    'nb 3 eq'; трасса 'nb 3 eq' 4499 строк — расшифрованы
+    report-ячейки и хвост-лейаут).
+  - БЮДЖЕТ: том 2041 ток ≤ 2046 (запас 5). Компил 3989 Б 0xFF md5
+    **249bc5ff**.
+  - ПРИЁМКА probe121 (_t119_smoke; gold probe121/probe121b/probe121c):
+    **SMOKE OK — 20/20 BYTE-OK + 5/5 честных молчаний + 2/2
+    tracked-DDIV, FAIL=0**. Пины gold 24в-2: 'wc 5 as' 1176c0df /
+    'wc 5 vw' 00ce976e / 'wc 5 eq 3' 3c2575de / 'as' 96a4d92a / 'vw'
+    fd4969d1 / 'eq 3' a569ac9e / 'wc as' 3078ad75 / 'wc vw'
+    acde33b3 / 'wc 7 as' c3110b6b / 'wc 9 as' aeea23e3 / 'vw vw'
+    246b3314 / 'as as' 40c93a71 / 'eq 3 as' 8c1a0e22 / 'eq 3 vw'
+    a4cfc92c / 'vw 3' e8a60432 / 'eq 3 eq 4' dd23d731 / 'eq 1 2'
+    e4cfaee8 / 'eq va 3' 288dac2a / 'wc 5 va as' 357561a6 / 'wc 5 as
+    as' d056f8e8; неги 'nb 3 as'/'nb 3 eq' = probe121/17,18; 'eq eq
+    3' = probe121b/05 (второй eq при открытом pending).
+  - ПРИЁМКА regr118 (base regr117): **REGRESS OK** — tracked
+    IDENTICAL + все прежние полки + ring-полка **96/96 BYTE-OK +
+    24/24 честных молчаний + 12/12 diverg-silence + 2/2
+    ddiv-tracked** (том 249bc5ff) + cold IDENTICAL; кейсы 'wc 5 eq
+    3'/'wc 5 as'/'wc 5 vw' переехали DIV→POS, 5 новых негов, 2 ddiv.
+  - tracked: wc14v3ring_build.py, pos_wc14v3ring.words (обновлена —
+    5008 Б), regr118.py; probe121 (_t119_smoke + gold-файлы + трасса
+    tr_nb3eq) в TMP. Дальше — 24в-3 (te/pr/ow), 24г (if/es/mk/jb +
+    bare), 24д (фиксепоинт T(S_T)==T).
+
 
 
 - Регресс `Python_compiler\regr19.py` (база regr18; head = 6d11eec):
