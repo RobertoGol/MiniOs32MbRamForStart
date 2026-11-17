@@ -4260,3 +4260,35 @@ t5gpr 1/1, T4-shelf 90/90) + T4 multi-statement кросс-молчания (8×
   as' d056f8e8. tracked: wc14v3ring_build.py, pos_wc14v3ring.words
   (обновлена — 5008 Б), regr118.py. Дальше — 24в-3 (te/pr/ow), 24г
   (if/es/mk/jb + bare), 24д (фиксепоинт T(S_T)==T).
+
+- **Спринт 99 (W-120) — ступень 24в-3: te/pr/ow в кольце + честный
+  подъём границы тома 0x800 → 0x1000** — приёмка probe123
+  (_t123_smoke/_t123_two/_t123_diff/_t123_newcases): SMOKE 34 кейса,
+  **BYTE-OK=31, OK-DIV=3, DIFF=0, FAIL=0**; regr119 (base regr118):
+  **REGRESS OK** — tracked IDENTICAL + все прежние полки + ring-полка
+  **130/130 BYTE-OK + 24/24 честных молчаний + 19/19 diverg-silence
+  + 2/2 ddiv-tracked** (том 64c0bed1) + cold IDENTICAL. **Граница**:
+  MAX_SOURCE_WORDS 0x1000 (4096) / MAX_USER_WORDS 4094; probe120
+  (_t120_bnd/_t120_sweep): 4094 слов OK 0xFF 24604 Б, 4095 — честный
+  OVERFLOW 0xFE; stage1 пересобран коденом — 22861 Б md5 de5079df.
+  `neg_big5.words` (2047 ток) МИГРИРОВАЛ из 0xFE/69ebc576 в легальные
+  0xFF/ade43dcd (прецедент W-116/neg_big4), `pos_edge5.words` 6c2c4e3c
+  без изменений. **Бюджет: том 2724 ток ≤ 4094** (было 2041/2046);
+  компил 6507 Б 0xFF md5 **64c0bed1**, вердец 0xFF. Механика:
+  KW_TERM/PR/OW (0x6574/0x7270/0x776F) через self-консты 'cp'
+  (OP_LOAD[0x18], cell[25463]:=25463), флаги TEFA/PRFA/OWFA =
+  140/141/142, порт PRTA = 127 (0x3F0050C0), поток OW, te-аккумулятор,
+  ad-выбор, скретч 152/153 сохраняет NumAcc на 'pr'. **Честные
+  байт-дифы**: (1) 'as te' — ABS(K2BF,'va') затирал базу TAGTAB →
+  rec2-тег 0x0000/4Б вместо 55/5Б; fix `N(TAGTAB)+['wc','8','sv']`
+  перед lookup; (2) 'nb 7 pr ne' — 'pr' сбрасывал NumAcc → 0 вместо 7;
+  fix `NumAcc' := base + (pr ? NumAcc_old : 0)` через 152/153.
+  Честные миграции 24в-2 → POS: 'wc 5 ow' b733ee4c, 'wc 5 pr' 61957c4c,
+  'wc 5 va te' c7b41073; 'wc 5 eq'/'eq' остались ddiv (оба печатают
+  разные 45Б). tracked-DIV: nb 7 te / nb 7 ow / nb 7 ow ne /
+  nb 7 pr ne wo / wc 5 pr ne / pr ne / nb 7 pr te / nb 7 pr ne ne /
+  nb 7 te ne / nb 7 ow ne ne. Пины smoke: te c0d17eb9, pr 80d530cd,
+  ow 7f34e3c8, as te c17c1a12, nb 7 pr ne 18f130e1, te pr 673da30c,
+  te te a4773c33. tracked: wc14v3ring_build.py, pos_wc14v3ring.words
+  (обновлена — 6658 Б/2724 ток), regr119.py, stage1_compiler.kt/.ctos.
+  Дальше — 24г (if/es/mk/jb + bare), 24д (фиксепоинт T(S_T)==T).

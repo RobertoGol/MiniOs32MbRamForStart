@@ -1,15 +1,20 @@
 # -*- coding: utf-8 -*-
-# Том-кольцо 24а+24б+24б-3+24в-1+24в-2 (веха-24, спринты 92-98,
-# W-112..W-119, TKT-052): generic 'nb d+ ne' + голые цифры (24а) + A-виды
+# Том-кольцо 24а+24б+24б-3+24в-1+24в-2+24в-3 (веха-24, спринты 92-99,
+# W-112..W-120, TKT-052): generic 'nb d+ ne' + голые цифры (24а) + A-виды
 # nb-пары sv/sc (24б-1) + gp/sp (24б-2) + B-виды va/cp/aa (24б-3, спринт 96:
 # граница тома поднята W-116 0x400->0x800 по бюджет-приговору W-115) +
 # T3-формы 'wc d va|sv|gp|sp' и голые va/sv/gp/sp (24в-1, спринт 97: S-машина
 # 0/1/2, SLC = модель W_Current, единая bare-kind запись) + eq/as/vw
 # (24в-2, спринт 98: eq = 8·(is_eq+EQPA_old) — тег цифры; as = 2 рекорда
 # [aa][sv] через pre-write; vw = 4Б-канал через is_b2=0; k2K-член для
-# слот-форм без цифры 'wc as|vw' — probe121c). Приёмка: card112/card113/
-# card97 позитивы BYTE-OK, неги = молчание; 'wc 5 eq'/'eq' = tracked-DIV
-# (stage1-квирк rep Error=1/FCODE=6, probe121c дамп).
+# слот-форм без цифры 'wc as|vw' — probe121c) + te/pr/ow (24в-3,
+# спринт 99 W-120: KW_TERM/PR/OW self-консты через 'cp', флаги
+# 140/141/142, порт 0x3F0050C0 @127, поток OW, te-аккумулятор, ad-выбор,
+# NumAcc сохраняется на 'pr' через scratch 152/153; граница тома поднята
+# 0x800->0x1000 / MAX_USER_WORDS 2046->4094 — 2724 ток, 6507 Б 64c0bed1).
+# Приёмка: card112/card113/card97 + probe123 позитивы BYTE-OK, неги =
+# молчание; 'wc 5 eq'/'eq' = tracked-DIV (stage1-квирк rep Error=1/FCODE=6,
+# probe121c дамп); 'as te'/'nb 7 pr ne' байт-дифы W-120 починены точечно.
 #
 # СТРУКТУРА (позиционные if/es-пары; 'if' = acc!=0 -> then, acc==0 -> es;
 #   'te' = честное завершение программы; es-JMP -> TERM):
@@ -91,6 +96,16 @@ EQW, ASW, VWW = 29029, 29537, 30582
 EQWC, ASWC, VWWC = 129, 130, 131            # ячейки word-кодов
 EQFA, ASFA, VWFA = 132, 133, 134            # флаги (вне TAGTAB 115..124 — урок W-114)
 EQPA, PDGFA, EQKFA = 135, 136, 137          # pending-eq; pending-цифра; eqK-член легальности
+# 24в-3 (спринт 99): te/pr/ow — word-коды (KW_TERM 0x6574, KW_PR 0x7270,
+#   KW_OW 0x776F), self-консты (сравнение 'cp' = OP_LOAD[0x18]), флаги,
+#   порт-конста, STREAM-конста, te-аккумулятор, adр-выбор, adскрипт-вес
+TEW, PRW, OWW = 25972, 29296, 30575
+TEFA, PRFA, OWFA = 140, 141, 142            # флаги (вне TAGTAB 115..126 — урок W-114)
+PRTA, XPA = 127, 139                        # порт 0x3F0050C0 @127 (разность 27=3·9 от 100 — ml-чистая: 78 := 100+49te+27pr+45ow, все разности = произведение 2 цифр); ХРА свободна
+PGOF, K2BF = 143, 144                       # ПГОЯ = PRFA+OWFA (вес 11); K2BЯ = 1·ASFA+9·ПГОЯ (таг-2 скрипта)
+STRA, KHAD = 145, 146                       # СТРЯ = 0x00F00FF0 (конста-ячейка STREAM @145); ХАД-146 = скретч-адрес-выбор (пересчёт 3×: 147+2te+ow / ХАДРЯ / 148+as+ПГОЯ)
+SCRE, SCR1, SCR2 = 149, 147, 148            # СКРЕ-149 = цепь X_te (последнее записанное значение пары); 147/148 — мусор-приёмники
+SLOT2 = 128                                 # te/ow слот-запись: (S + TEFA + OWFA)==3 ('wc te|ow' эмитит, при открытом nb S=1 → 2 → брак)
 
 def sel_val(anchor, flag):
     """acc = flag ? cell[candB] : cell[candA]; двойной gp (затирает acc)."""
@@ -160,6 +175,22 @@ INIT += N(WCW) + ABS(WCW, 'sv')             # cell[25463] := 25463
 INIT += N(EQW) + ABS(EQWC, 'sv')           # cell[129] := 29029 ('eq')
 INIT += N(ASW) + ABS(ASWC, 'sv')           # cell[130] := 29537 ('as')
 INIT += N(VWW) + ABS(VWWC, 'sv')           # cell[131] := 30582 ('vw')
+# 24в-3: word-коды te/pr/ow (self-консты — сравнение 'cp' живо при cell[W] := W)
+INIT += N(TEW) + ABS(TEW, 'sv')             # cell[25972] := 25972 ('te')
+INIT += N(PRW) + ABS(PRW, 'sv')             # cell[29296] := 29296 ('pr')
+INIT += N(OWW) + ABS(OWW, 'sv')             # cell[30575] := 30575 ('ow')
+# 24в-3: TAGTAB вырос до 12: [10] 0x0500 te, [11] 0x5400 pr/ow-пар1 (A-вид)
+INIT += N(1280) + ABS(TAGTAB + 10, 'sv')    # [10] 0x0500 (te)
+INIT += N(21504) + ABS(TAGTAB + 11, 'sv')   # [11] 0x5400 (pr/ow A)
+# 24в-3: is_b2-семафоры новых тегов: te = −3 (T = POSC−3; PUT BE32(X_te)
+#   @POSC−3..POSC переписывает последние 3Б предыдущей записи теми же
+#   значениями, младший = 05; POSC := T+4 = +1); pr/ow-пар1 = A-вид
+INIT += N(4294967293) + ABS(1280, 'sv')     # cell[0x0500] := 0xFFFFFFFD (−3)
+INIT += N(1) + ABS(21504, 'sv')             # cell[0x5400] := 1
+# 24в-3: конст-ячейки значений пары-1 (storeval candB = cell[cell[78]],
+#   cell[78] := 100+49te+27pr+45ow → {100 SLC, 149 SCRE, 127 PRTA, 145 STRA})
+INIT += N(1056985280) + ABS(PRTA, 'sv')     # cell[127] := 0x3F0050C0 ('pr')
+INIT += N(15732720) + ABS(STRA, 'sv')       # cell[145] := 0x00F00FF0 ('ow')
 
 LB = []
 LB += ABS(311, 'sc')                       # прочесть слово (311 = FILE_GET)
@@ -196,6 +227,10 @@ LB += ['wc', '8', 'gp'] + ABS(WCW, 'cp') + ABS(WCFA, 'sv')       # is_wc (24в-1
 LB += ['wc', '8', 'gp'] + ABS(EQWC, 'cp') + ABS(EQFA, 'sv')      # is_eq
 LB += ['wc', '8', 'gp'] + ABS(ASWC, 'cp') + ABS(ASFA, 'sv')      # is_as
 LB += ['wc', '8', 'gp'] + ABS(VWWC, 'cp') + ABS(VWFA, 'sv')      # is_vw
+# 24в-3: is_te/is_pr/is_ow ('te'=0x6574, 'pr'=0x7270, 'ow'=0x776F)
+LB += ['wc', '8', 'gp'] + ABS(TEW, 'cp') + ABS(TEFA, 'sv')       # is_te
+LB += ['wc', '8', 'gp'] + ABS(PRW, 'cp') + ABS(PRFA, 'sv')       # is_pr
+LB += ['wc', '8', 'gp'] + ABS(OWW, 'cp') + ABS(OWFA, 'sv')       # is_ow
 LB += ['wc', '8', 'gp'] + ['su', '8'] * 6 + ABS(VSC, 'sv')   # V = W-48 (gp через FB)
 LB += ABS(VSC, 'va') + ['gt', '9', 'eq', '0'] + ABS(DGFA, 'sv')  # is_dig
 # 24в-2: PDG = pending-цифра = (EQPA_old + is_dig)==2 — цифра-операнд eq.
@@ -214,6 +249,18 @@ LB += ABS(EQPA, 'va') + ABS(DGFA, 'aa') + ['eq', '2'] + ABS(PDGFA, 'sv')
 #   весового блока (KA свободен до 174; FB жжётся, но V уже взят, а FB
 #   честно перезаписывается в тег-блоке; FCODE ставится в PS).
 LB += ['wc', '6', 'va'] + ABS(KA, 'sv')                 # стеш: KA := S
+# 24в-3: скретч-адрес X_te-скрипта: 147 + 2·TEFA + OWFA → {147 pr/др, 148 ow,
+#   149 te} — на te-слове кандидaт пишется в СКРЕ (цепь ХРА), на прочих —
+#   мусор в SCR1/SCR2 (конст-ячейки 127/145 целы). KHAD-146 = temp.
+LB += ABS(TEFA, 'va') + ['ml', '2'] + ABS(OWFA, 'aa') + ABS(146, 'sv')
+LB += N(147) + ABS(146, 'aa') + ABS(146, 'sv')
+# 24в-3: X_te = (X_prev·256+5) mod 2^32 — мл-2×8 = ×256, ад-5 = |05:
+#   BE32(X_te) = [X_prev>>16][X_prev>>8][X_prev&FF][05] — верхние 3Б = те же
+#   байты последней записи (не портят), младший = 05 (опкод OP_TERM)
+LB += ABS(149, 'va') + ['ml', '2'] * 8 + ['ad', '5']
+LB += ABS(148, 'sv')                                            # temp X_te (ml жжёт FB — курсор ставится ПОСЛЕ цепи)
+LB += ABS(146, 'va') + ['wc', '8', 'sv']                        # FB := cell[146] = скретч-адрес
+LB += ABS(148, 'va') + ['wc', '8', 'sp']                        # cell[скретч] := X_te (te→149; ow→148 идемп.; pr/др→147)
 LB += ABS(SVFA, 'va') + ABS(K2FA, 'sv')                 # k := sv (w=1; sv-СТАРТ суммы в K2FA)
 LB += ABS(SCFA, 'va') + ['ml', '2'] + ABS(K2FA, 'aa') + ABS(K2FA, 'sv')   # + 2·sc
 LB += ABS(GPFA, 'va') + ['ml', '3'] + ABS(K2FA, 'aa') + ABS(K2FA, 'sv')   # + 3·gp
@@ -231,6 +278,16 @@ LB += ABS(ASFA, 'va') + ['ml', '7'] + ABS(K2FA, 'aa') + ABS(K2FA, 'sv')   # + 7�
 LB += ABS(PDGFA, 'va') + ['ml', '8'] + ABS(K2FA, 'aa') \
     + ABS(K2FA, 'sv')                                   # + 8·PDG (закрытие pending)
 LB += ABS(VWFA, 'va') + ['ml', '9'] + ABS(K2FA, 'aa') + ABS(K2FA, 'sv')   # + 9·vw
+# 24в-3: ПГОЯ = pr+ow; веса тегов te = 10 (TAGTAB[10] = 0x0500),
+#   pr/ow = 11·ПГОЯ (TAGTAB[11] = 0x5400): 9·ПГОЯ + ПГОЯ + ПГОЯ
+LB += ABS(PRFA, 'va') + ABS(OWFA, 'aa') + ABS(PGOF, 'sv')        # ПГОЯ := pr+ow
+LB += ABS(TEFA, 'va') + ['ml', '5'] + ['ml', '2'] + ABS(K2FA, 'aa') \
+    + ABS(K2FA, 'sv')                                            # + 10·te
+LB += ABS(PGOF, 'va') + ['ml', '9'] + ABS(PGOF, 'aa') + ABS(PGOF, 'aa') \
+    + ABS(K2FA, 'aa') + ABS(K2FA, 'sv')                          # + 11·ПГОЯ
+# 24в-3: K2BЯ = 9·ПГОЯ + 1·ASFA — тег rec2-пары: as → TAGTAB[1] = 0x5500
+#   (as-rec2 без правок), pr/ow → TAGTAB[9] = 0x00F0 (vw-вид)
+LB += ABS(PGOF, 'va') + ['ml', '9'] + ABS(ASFA, 'aa') + ABS(K2BF, 'sv')
 LB += ABS(KA, 'va') + ['wc', '6', 'sv']                 # стеш: S <- KA
 # is_kind = (K2FA + EQFA > 0) + ne — УРОК run-6: с весом eq = 8·PDG у САМОГО
 #   eq-токена K2FA = 0 (PDG=0, digit-нет) -> KINDA терял is_kind -> дыра
@@ -258,6 +315,11 @@ LB += ABS(BKFA, 'va') + ABS(PDGFA, 'aa') + ['gt', '0'] + ABS(BKFA, 'sv')
 #   — tracked-DIV). PDGFA уже свободна (PDG поглощён bareK) — под k2K.
 LB += ['wc', '6', 'va'] + ABS(ASFA, 'aa') + ABS(VWFA, 'aa') + ['eq', '3'] \
     + ABS(PDGFA, 'sv')
+# 24в-3: te/ow-слот-запись = (S + TEFA + OWFA)==3 — 'wc te|ow' (S=2) пишут
+#   запись; при открытом nb (S=1) = 2 ≠ 3 → K4FA=0 → notbad=0 → брак
+#   молчанием (0x0C-див stage1, tracked); при S=0 тоже 1 ≠ 3 (k4K-путь ниже)
+LB += ['wc', '6', 'va'] + ABS(TEFA, 'aa') + ABS(OWFA, 'aa') + ['eq', '3'] \
+    + ABS(SLOT2, 'sv')
 # 24в-1: S2DIG = (S==2)&&(is_dig) — слот-выбор цифрой; S_old + 3*dig == 5
 #   уникально (S=2,dig=1; прочие комбинации 0..4 и 6..11 — не 5)
 LB += ['wc', '6', 'va'] + ABS(DGFA, 'aa') * 3 + ['eq', '5'] + ABS(S2DIG, 'sv')
@@ -314,7 +376,8 @@ LB += ['wc', '6', 'va'] + ABS(KINDA, 'aa') * 2 + ['eq', '1'] + ABS(FSA, 'sv')
 #   НЕ исключены ('nb 12 va' = див probe121/13 — stage1 читает ячейку,
 #   сохраняем regr117-поведение). S=2 + KINDA = 4 — wc-состояние не даёт 3.
 LB += ['wc', '6', 'va'] + ABS(KINDA, 'aa') * 2 + ABS(EQFA, 'aa') * 2 \
-    + ABS(ASFA, 'aa') * 2 + ABS(VWFA, 'aa') * 2 + ['eq', '3'] + ABS(NKFA, 'sv')
+    + ABS(ASFA, 'aa') * 2 + ABS(VWFA, 'aa') * 2 + ABS(OWFA, 'aa') * 2 \
+    + ABS(TEFA, 'aa') * 2 + ABS(PRFA, 'aa') * 2 + ['eq', '3'] + ABS(NKFA, 'sv')
 # 24в-1: обновление SLC — модели W_Current: слот-цифра SLC := WC_BASE + V;
 #   прочие слова SLC не трогают (персистентность 'wc 5 va va', дефолт F00FF1).
 #   HSL := WC_BASE + V (держатель кандидата); sel_val по паре [61,100] через
@@ -333,30 +396,60 @@ LB += N(VSC) + ABS(77, 'sv') + N(F3A) + ABS(78, 'sv')               # пара :
 LB += ['wc', '6', 'va'] + ABS(DTFA, 'aa') * 3 + ['eq', '5'] + ABS(HSL, 'sv')
 # 24в-1: S' = is_nb + f + 2*WCK (БЕЗ clamp: значение 2 легально = wc-открытие;
 #   вложенное nb даёт 1+1=2 = wc-состояние, но word уже badsum -> уход)
-LB += ABS(NBFA, 'va') + ABS(FSA, 'aa') + ABS(KA, 'aa') * 2 + ['wc', '6', 'sv']
+# 24в-3: pr-член = pr·(S==1) — 'pr' НЕ закрывает открытый nb ('nb 7 pr ne'
+#   = 18f130e1: конста [15 00 00 00 07] после pr-пар; S=1 переживает pr).
+#   Конъюнкция честно: (S==1) + PRFA == 2; приёмник SINK-74 (POS-stamp
+#   перезапишет его позже своим мусором — безвредно).
+LB += ['wc', '6', 'va', 'eq', '1'] + ABS(PRFA, 'aa') + ['eq', '2'] + ABS(74, 'sv')
+LB += ABS(NBFA, 'va') + ABS(FSA, 'aa') + ABS(KA, 'aa') * 2 + ABS(74, 'aa') \
+    + ['wc', '6', 'sv']
 # 24в-1: k4K = is_k4 И (S==0) — ЕДИНАЯ bare-kind запись: голые va/sv/gp/sp
 #   (S==0) и слот-формы 'wc d op' (цифра закрыла S -> тоже S==0) пишут запись
 #   [X=SLC][tag]; is_k4 = sv+gp+sp+va (sc/cp/aa слот-форм НЕ имеют — зонды
 #   n_sc5/n_cp5/n_aa5 = 0xFE; голые sc/cp/aa = брак 0x0C — див/сил)
 LB += ABS(SVFA, 'va') + ABS(GPFA, 'aa') + ABS(SPFA, 'aa') + ABS(VAFA, 'aa') \
-    + ABS(ASFA, 'aa') + ABS(VWFA, 'aa') + ABS(S0FA, 'aa') + ['eq', '2'] \
+    + ABS(ASFA, 'aa') + ABS(VWFA, 'aa') + ABS(OWFA, 'aa') + ABS(TEFA, 'aa') \
+    + ABS(S0FA, 'aa') + ['eq', '2'] \
     + ABS(K4FA, 'sv')
+# 24в-3: голые te/pr/ow легальны при S==0: (флаг + S0FA)==2 → K4FA=1 (k4K-путь:
+#   запись [X][tag] с X = ХАДРЯ-конста). При S=1: (0+1)==1 → K4FA=0 → брак
+#   (кроме pr: ниже |= строка добавляет PRFA безусловно — 'nb 7 pr' легален).
 # 24в-2: K4FA |= k2K — слот-формы as/vw без цифры. OR безопасен: k4K требует
 #   S0==1, k2K — S==2, взаимно исключающи (сумма 0/1). Дальше K4FA един:
 #   K-строка, storeval level-1 (K4FA ? SLC : V), notbad-член.
-LB += ABS(K4FA, 'va') + ABS(PDGFA, 'aa') + ABS(K4FA, 'sv')
+LB += ABS(K4FA, 'va') + ABS(PDGFA, 'aa') + ABS(PRFA, 'aa') \
+    + ABS(SLOT2, 'aa') + ABS(K4FA, 'sv')
+# 24в-3: K4FA |= k2K + PRFA + te/ow-слот: 'pr' легален ПРИ ЛЮБОМ S ('nb 7 pr'
+#   = 89dc4f78, FCODE=9, nb жив — pr НЕ поглотитель, не закрывает, не бракует)
+#   и эмитит пары-1+2; te/ow только при S=2 (SLOT2). ХРА-цепь жива.
 # K = neK + bareK + k4K; K' = ((K==1) + notEOF) == 2
 LB += ABS(NKFA, 'va') + ABS(BKFA, 'aa') + ABS(K4FA, 'aa')
 LB += ['eq', '1'] + ABS(NOEFA, 'aa') + ['eq', '2'] + ABS(KA, 'sv')
+# 24в-3: ХАДРЯ-адрес пары-1: cell[78] := 100 + 49·te + 27·pr + 45·ow (все
+#   разности от 100 — произведение двух цифр: 49=7·7, 27=3·9, 45=5·9, БЕЗ
+#   ад-хвостов → ml-цепи честны и при флаге 0). candB = cell[cell[78]]:
+#   te → cell[149] = СКРЕ (X_te), pr → cell[127] = порт, ow → cell[145] =
+#   STREAM, прочие → cell[100] = SLC. ml жжёт TMP (слоты S/FB/FA) — стеш S
+#   в S2DIG-99 (мёртва после SLC-выбора); acc-накопитель = SLOT2-128
+#   (мёртва после |= строки выше).
+LB += ['wc', '6', 'va'] + ABS(99, 'sv')                 # стеш: S2DIG := S
+LB += ABS(TEFA, 'va') + ['ml', '7'] + ['ml', '7'] + ABS(128, 'sv')
+LB += ABS(PRFA, 'va') + ['ml', '3'] + ['ml', '9'] + ABS(128, 'aa') \
+    + ABS(128, 'sv')                                    # 128 := 49te+27pr
+LB += ABS(OWFA, 'va') + ['ml', '5'] + ['ml', '9'] + ABS(128, 'aa') \
+    + ABS(128, 'sv')                                    # 128 := +45ow
+LB += ABS(99, 'va') + ['wc', '6', 'sv']                 # стеш: S <- S2DIG
 # storeval = neK ? NumAcc : (k4K ? SLC : V) — 3-way: level-1 по паре [61,100]
 #   (candA=V, candB=SLC) с перезаписью cell[78]=100, результат в VSC
 #   (безопасно: цифры имеют k4K=0 -> VSC=V, их A-калькуляция не задета;
 #   kinds дают NumAcc'=0, A не читается), level-2 = прежний sel_val(ZVA, NKFA).
 LB += N(SLC) + ABS(78, 'sv')                                        # cell[78] := 100
+LB += N(100) + ABS(128, 'aa') + ABS(78, 'sv')                       # 24в-3: cell[78] := 100+49te+27pr+45ow (ХАДРЯ)
 LB += sel_val(77, K4FA)                                             # acc = k4K ? SLC : V
 LB += ABS(VSC, 'sv')                                                # VSC := level-1
 LB += N(F3A) + ABS(78, 'sv')                                        # cell[78] := F3A (restore)
 LB += sel_val(ZVA, NKFA) + ['wc', '1', 'sp']
+LB += ABS(149, 'sv')                                                # 24в-3: SCRE := записанное значение пары (цепь X_te)
 # PTR += K; VCNT += K
 LB += ABS(KA, 'va') + ['wc', '1', 'as']
 LB += ABS(KA, 'va') + ['wc', '9', 'as']
@@ -378,9 +471,19 @@ LB += ABS(KA, 'va') + ['wc', '1', 'as']             # PTR += K'
 #   слове мусор за VCNT·2 ячейками не читается (FB идёт по парам). FB
 #   переиспользуем как курсор (жжётся — перезаписывается в POS-stamp).
 LB += ['wc', '1', 'va'] + ['wc', '8', 'sv']          # FB := PTR
-LB += ABS(SLC, 'va') + ['wc', '8', 'sp']            # cell[PTR] := SLC
-LB += ['wc', '8', 'va'] + ['ad', '1'] + ['wc', '8', 'sv']  # FB += 1
-LB += N(21760) + ['wc', '8', 'sp']                  # cell[PTR+1] := 0x5500
+LB += ABS(SLC, 'va') + ['wc', '8', 'sp']            # cell[PTR] := SLC (rec2-значение: SLC у as/pr/ow)
+# 24в-3: тег rec2-пары = TAGTAB[K2BЯ] (as → 0x5500, pr/ow → 0x00F0); темп
+#   cell[148] — FB нужен дважды: база lookup И курсор store
+LB += N(TAGTAB) + ['wc', '8', 'sv']          # FB := TAGTAB (иначе K2BF затирает базу — байт-диф 'as')
+LB += ABS(K2BF, 'va') + ['wc', '8', 'as'] + ['wc', '8', 'gp']
+LB += ABS(148, 'sv')                                # temp: cell[148] := тег
+LB += ['wc', '1', 'va'] + ['ad', '1'] + ['wc', '8', 'sv']   # FB := PTR+1 пере-сет
+LB += ABS(148, 'va') + ['wc', '8', 'sp']            # cell[PTR+1] := тег
+# 24в-3: SEL2-дозапись cell[149] := SLC на as/pr/ow ((1) писал порт/STREAM —
+#   restore цепи X_te); te/прочие → 148-мусор (cell[149] цел)
+LB += N(148) + ABS(ASFA, 'aa') + ABS(PGOF, 'aa') + ABS(146, 'sv')
+LB += ABS(146, 'va') + ['wc', '8', 'sv']            # FB := cell[146] = 148+as+ПГОЯ
+LB += ABS(100, 'va') + ['wc', '8', 'sp']            # cell[цель] := SLC
 # сдвиги as — ВНУТРИ стеша ml ниже (VCNT += ASFA; PTR += 2·ASFA)
 # S-стеш вокруг 'ml': ml (веха-12б) честно компилируется в runtime-кольцо
 #   умножения со скретчем TMP_X=0xF00FFB(FB), TMP_CNT=0xF00FF9(СЛОТ S!),
@@ -393,14 +496,30 @@ LB += ['wc', '6', 'va'] + ABS(KA, 'sv')             # стеш S -> KA
 #   умножал ЭТО (PTR += 2·VCNT, квадратно-второй рекорд мимо, emit читал
 #   застарелую pre-write пару [55][F1]). Перед ml АККУРАТНО перезагружаем
 #   ASFA (va перезаписывает acc); ml 2 внутри стеша (TMP_CNT = слот S).
-LB += ABS(ASFA, 'va') + ['wc', '9', 'as']           # VCNT += ASFA
-LB += ABS(ASFA, 'va') + ['ml', '2'] + ['wc', '1', 'as']   # PTR += 2·ASFA
+LB += ABS(ASFA, 'va') + ABS(PRFA, 'aa') + ABS(OWFA, 'aa') + ['wc', '9', 'as']     # VCNT += as+pr+ow
+LB += ABS(ASFA, 'va') + ABS(PRFA, 'aa') + ABS(OWFA, 'aa') \
+    + ['ml', '2'] + ['wc', '1', 'as']                   # PTR += 2·(as+pr+ow)
 # A = 10*NumAcc + V; ACEL := A
 LB += ['wc', '0', 'va', 'ml', '9'] + ABS(F3A, 'aa') + ABS(VSC, 'aa')
 LB += ABS(ACEL, 'sv')
 LB += ABS(KA, 'va') + ['wc', '6', 'sv']             # restore S <- KA
-# NumAcc' = is_dig ? A : 0
-LB += sel_val(ZNA, DGFA) + ['wc', '0', 'sv']
+# 24в-3: ow-пара-3 [0x131][0x1300] — после S-restore (ml-free): FB := PTR,
+#   cell[PTR] := 305, cell[PTR+1] := 4864; VCNT += OWFA; PTR += 2·OWFA.
+#   На не-ow словах пара @PTR = мусор ЗА рекордом (as: за rec2-парой, PTR уже
+#   += 2·ASFA) — затирается следующим рекордом; за VCNT·2 не читается.
+LB += ['wc', '1', 'va'] + ['wc', '8', 'sv']                  # FB := PTR
+LB += N(305) + ['wc', '8', 'sp']                             # cell[PTR] := 0x131
+LB += ['wc', '8', 'va'] + ['ad', '1'] + ['wc', '8', 'sv']    # FB := PTR+1
+LB += N(4864) + ['wc', '8', 'sp']                            # cell[PTR+1] := 0x1300
+LB += ABS(OWFA, 'va') + ['wc', '9', 'as']                    # VCNT += OWFA
+LB += ABS(OWFA, 'va') + ABS(OWFA, 'aa') + ['wc', '1', 'as']  # PTR += 2·OWFA
+# NumAcc' = is_dig ? A : 0; 24в-3: pr НЕ сбрасывает NumAcc — 'nb 7 pr ne'
+#   ждёт цифру 7 из старого NumAcc (иначе neK-ветка читает 0 — байт-диф @33).
+LB += sel_val(ZNA, DGFA) + ABS(151, 'sv')           # base := is_dig ? A : 0
+LB += ABS(0, 'va') + ABS(152, 'sv')                 # cell[152] := адрес нуля
+LB += N(F3A) + ABS(153, 'sv')                       # cell[153] := адрес NumAcc
+LB += sel_val(152, PRFA) + ABS(151, 'aa') \
+    + ['wc', '0', 'sv']                             # NumAcc' := base + (pr ? NumAcc_old : 0)
 # POS-stamp: g = (is_nb + notEOF)==2 (конъюнкция честно aa+eq2, без if);
 #   addr = cell[ZPA+g] (74|F8A) через ОДИН gp; cell[addr] := CNT (штамп = CNT,
 #   0-based индекс текущего слова; CNT-1 давал бы Pos=0xFFFFFFFF на 'nb').
@@ -504,7 +623,7 @@ PS += ['te']
 
 PROGRAM = INIT + ['mk'] + LB + PS
 
-MAX_USER_WORDS = 2046
+MAX_USER_WORDS = 4094  # 24в-3 W-120: граница тома поднята 2046→4094 (MAX_SOURCE_WORDS 0x800→0x1000, спринт 99 — прецедент W-116)
 flat = ' '.join(PROGRAM)
 TOKENS = len(flat.split())
 POS_PATH = r'G:\Windows\RJ\AppData\Local\Temp\opencode\probe111\pos_wc14v3ring.words'

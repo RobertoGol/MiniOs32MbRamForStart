@@ -6870,6 +6870,49 @@ target'ам нужна честная сегрегация (веха-15+)» (v4)
     tr_nb3eq) в TMP. Дальше — 24в-3 (te/pr/ow), 24г (if/es/mk/jb +
     bare), 24д (фиксепоинт T(S_T)==T).
 
+- Части 5 — СТУПЕНЬ 24в-3 (W-120, спринт 99): te/pr/ow в кольце +
+  честный подъём границы тома 0x800 → 0x1000.
+  - ГРАНИЦА: MAX_SOURCE_WORDS 0x1000 (4096) / MAX_USER_WORDS 4094 —
+    поднята ТОЛЬКО из бюджета (том 2724 ток > 2046). probe120
+    (_t120_bnd/_t120_sweep): 4094 слов OK 0xFF 24604 Б, 4095 =
+    честный OVERFLOW 0xFE; stage1 пересобран из кодена — 22861 Б
+    md5 de5079df (871da160 из HANDOFF больше не актуален).
+    neg_big5.words (2047 ток) МИГРИРОВАЛ 0xFE/69ebc576 →
+    0xFF/ade43dcd; pos_edge5.words 6c2c4e3c без изменений.
+  - МЕХАНИКА: KW_TERM 0x6574 / KW_PR 0x7270 / KW_OW 0x776F —
+    self-консты через 'cp' (OP_LOAD[0x18], требует
+    cell[25463]:=25463, урок W-118); TEFA/PRFA/OWFA = 140/141/142
+    (вне TAGTAB 115..126, урок W-114); PRTA = 127 (0x3F0050C0);
+    OW — потоковый вывод; te-аккумулятор и ad-выбор; NumAcc на 'pr'
+    сохраняется через scratch-пару 152/153.
+  - ЧЕСТНЫЕ БАЙТ-ДИФЫ (_t123_diff): 'as te' — ABS(K2BF,'va') затирал
+    базу TAGTAB → rec2-тег 0x0000/4Б вместо 55/5Б; fix
+    `N(TAGTAB)+['wc','8','sv']` перед lookup K2BF. 'nb 7 pr ne' —
+    'pr' сбрасывал NumAcc → 0 вместо 7; fix
+    `NumAcc' := base + (pr ? NumAcc_old : 0)` через 152/153.
+    Обе формы после фикса BYTE-OK (c17c1a12 / 18f130e1).
+  - МИГРАЦИИ 24в-2 → POS: 'wc 5 ow' b733ee4c, 'wc 5 pr' 61957c4c,
+    'wc 5 va te' c7b41073 (старые div-пины не сохраняем);
+    'wc 5 eq'/'eq' остаются ddiv (ОБА печатают разные 45Б; ring
+    dfb01768/4597f69e). tracked-DIV: nb 7 te / nb 7 ow /
+    nb 7 ow ne / nb 7 pr ne wo / wc 5 pr ne / pr ne /
+    nb 7 pr te / nb 7 pr ne ne / nb 7 te ne / nb 7 ow ne ne.
+  - БЮДЖЕТ И ТОМ: 2724 ток ≤ 4094; компил 6507 Б 0xFF md5
+    **64c0bed1**, вердец 0xFF.
+  - ПРИЁМКА probe123 (_t123_smoke/_t123_two/_t123_newcases): SMOKE
+    34 кейса — **BYTE-OK=31, OK-DIV=3, DIFF=0, FAIL=0**; пины:
+    te c0d17eb9 / pr 80d530cd / ow 7f34e3c8 / wc 5 te bac85372 /
+    wc 7 pr 3ee88a48 / as te c17c1a12 / nb 7 pr ne 18f130e1 /
+    te pr 673da30c / te te a4773c33.
+  - ПРИЁМКА regr119 (base regr118): **REGRESS OK** — tracked
+    IDENTICAL + все прежние полки + ring-полка **130/130 BYTE-OK +
+    24/24 честных молчаний + 19/19 diverg-silence + 2/2
+    ddiv-tracked** (том 64c0bed1) + cold IDENTICAL.
+  - tracked: stage1_compiler.kt/.ctos, wc14v3ring_build.py,
+    pos_wc14v3ring.words (обновлена — 6658 Б/2724 ток), regr119.py;
+    probe123 в TMP. Дальше — 24г (if/es/mk/jb + bare), 24д
+    (фиксепоинт T(S_T)==T).
+
 
 
 - Регресс `Python_compiler\regr19.py` (база regr18; head = 6d11eec):
