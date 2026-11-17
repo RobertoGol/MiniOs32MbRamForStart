@@ -6923,3 +6923,27 @@ target'ам нужна честная сегрегация (веха-15+)» (v4)
   слов**, Token 17 (было ошибочно «13»); v4@m4 = 55 Б md5 b0ee0245.
 
 
+
+
+### Веха-24г (спринт 100, W-121): if/es/mk/jb + su в кольце — ПРИНЯТО
+
+- Том `wc14v3ring_build.py` → `pos_wc14v3ring.words`: **4065 ток ≤ 4094**,
+  компил свежим stage1 (de5079df) → 9955 Б 0xFF md5 **22896d3f**,
+  вердец 0xFF, 985769 опкодов / 4136 ячеек.
+- byte-exact приёмка probe124 (69 кейсов): **BYTE-OK=53, OK-DIV=16, DIFF=0**;
+  16 OK-DIV = stage1-неги 0xFE при честном молчании кольца (rc=0, нет .out).
+- Механика: if/es/mk/jb как source-words + Stage2-патч TAIL до FILE_SEAL;
+  `site_store` база 392 (`CSDP=251`), EJ-сайты 409..411, sticky
+  `BADIF/BADEJ/BADJB`, `MARKP=20`, `te` через `[PTR-2]`, `su` (`KW_SUB
+  0x7573`, тег 0x1217, pending `SUPA`). Forecast pr/ow = 5Б базы + 4Б
+  хвоста (`ml·4`, не `ml·9`).
+- Честный баг регрессии: `SUPA' = (2·PDG + SUPA_old + is_su)==1`; старая
+  формула `(su+SUPA+PDG)==1` портила второй `eq` (`eq 3 eq 4`: 508c1429
+  против stage1 dd23d731) — поймано regr120 и исправлено.
+- `regr120.py` (base regr119): **REGRESS OK / rc=0**; ring-полка
+  **177/177 BYTE-OK + 24/24 честных молчаний + 35/35 diverg-silence +
+  2/2 ddiv-tracked**, cold IDENTICAL.
+- `selfhost_check.py`: **фиксепоинт T(S_T)==T НЕ достигнут** — кольцо
+  молчит на своём исходнике (4 420 780 опкодов, 677 ячеек); первый отказ
+  на 1263-м токене (`gt`). Неподдерживаемые в S_T слова: ml(50), ad(9),
+  wo(7), gt(5), em(1), lt(1). 24д/W-122 — отдельный фронт.

@@ -1,6 +1,12 @@
 # -*- coding: utf-8 -*-
-# Том-кольцо 24а+24б+24б-3+24в-1+24в-2+24в-3 (веха-24, спринты 92-99,
-# W-112..W-120, TKT-052): generic 'nb d+ ne' + голые цифры (24а) + A-виды
+# Том-кольцо 24а+24б+24б-3+24в-1+24в-2+24в-3+24г (веха-24, спринты 92-100,
+# W-112..W-121, TKT-052). 24г (спринт 100): управляющие слова if/es/mk/jb
+# через site_store-патч TAIL до FILE_SEAL; 3 if + 3 es + 2 mk + 2 jb, sticky
+# BADIF/BADEJ/BADJB; исходное слово 'su' (KW_SUB 0x7573) с pending-литералом
+# и тегом 0x1217; forecast pr/ow = 4Б хвоста поверх 5Б базы (урок кейса 68:
+# старый ml·9 сдвигал все if/es/jb-цели). Итог: 4065 ток (лимит 4094),
+# 9955 Б 0xFF md5 22896d3f; probe124 Smoke 69 кейсов: BYTE-OK=53 OK-DIV=16
+# DIFF=0. Generic 'nb d+ ne' + голые цифры (24а) + A-виды
 # nb-пары sv/sc (24б-1) + gp/sp (24б-2) + B-виды va/cp/aa (24б-3, спринт 96:
 # граница тома поднята W-116 0x400->0x800 по бюджет-приговору W-115) +
 # T3-формы 'wc d va|sv|gp|sp' и голые va/sv/gp/sp (24в-1, спринт 97: S-машина
@@ -84,7 +90,7 @@ SVFA, SCFA, GPFA, SPFA = 86, 87, 105, 106   # флаги A-видов (105/106 �
 VAFA, CPFA, AAFA = 110, 111, 112            # 24б-3: флаги B-видов (вне TAGTAB — урок W-114)
 SVWC, SCWC, GPWC, SPWC = 88, 89, 103, 104   # ячейки word-кодов A-видов (103/104 переселены)
 VAWC, CPWC, AAWC = 107, 108, 109            # 24б-3: word-коды B-видов
-TAGTAB, K2FA, KINDA = 115, 101, 102          # 24в-2: TAGTAB переезд 90 -> 115 (10 входов k=0..9)
+TAGTAB, K2FA, KINDA = 160, 101, 102          # 24г: TAGTAB переезд 115 -> 160 (15 входов k=0..14)
 STREAM, POSC = 15732720, 114                # 0x00F00FF0 (ячейка-аргумент syscall); POSC = машина позиций
 # 24в-1 (спринт 97): S-машина 0/1/2 + модель W_Current
 WCW = 25463                                 # 'wc' = 0x6377 ('c'<<8|'w' — первый символ в МЛАДШЕМ байте)
@@ -106,29 +112,98 @@ PGOF, K2BF = 143, 144                       # ПГОЯ = PRFA+OWFA (вес 11); 
 STRA, KHAD = 145, 146                       # СТРЯ = 0x00F00FF0 (конста-ячейка STREAM @145); ХАД-146 = скретч-адрес-выбор (пересчёт 3×: 147+2te+ow / ХАДРЯ / 148+as+ПГОЯ)
 SCRE, SCR1, SCR2 = 149, 147, 148            # СКРЕ-149 = цепь X_te (последнее записанное значение пары); 147/148 — мусор-приёмники
 SLOT2 = 128                                 # te/ow слот-запись: (S + TEFA + OWFA)==3 ('wc te|ow' эмитит, при открытом nb S=1 → 2 → брак)
+# 24г (спринт 100 W-121): if/es/mk/jb — word-коды (KW_IF 0x6669, KW_ELSE 0x7365,
+#   KW_MK 0x6B6D, KW_JB 0x626A), self-консты, флаги, ячейки сайтов/целей.
+IFW, ESW, MKW, JBW = 26217, 29541, 27501, 25194
+IFWC, ESWC, MKWC, JBWC = 176, 177, 178, 179   # ячейки word-кодов (вне TAGTAB 160..174)
+IFFA, ESFA, MKFA, JBFA = 180, 181, 182, 183   # флаги (вне TAGTAB — урок W-114)
+# 24г Stage2: ВСЕ адреса cstore содержат только НЕНУЛЕВЫЕ цифры (ml-цепочка
+# flag*addr обнуляется на цифре 0); свалка = cell[0] (возвращается в 0 в конце).
+SITE1, SITE2, SITE3 = 401, 402, 403           # слоты if: 400+flag·1 +n-1
+ESITE1, ESITE2 = 404, 405                     # слоты es: 400+flag·4 +n-1
+EJ1, EJ2, EJ3 = 409, 410, 411                 # else-join: site_store base 392−1 + 18·flag +n-1
+IFCNT, JSCNT = 195, 196                       # счётчики if/es
+TERMP, MARKP = 154, 156                       # TERM: 100+flag·69 / MARK: 100+flag·78
+CTXA, CTXB = 204, 205                         # пара селектора X: XORD / 20
+XORD, CTLFL, MKLG = 206, 207, 208             # X обычный / флаг управляющего / mk-легальность
+FPOS, FPOL = 211, 212                         # forecast позиции / позиция текущей записи
+DEFC, DEFV = 219, 221                         # пара [CT20,TERMP] / результат DEF
+TMPB, SCRV, SCRA = 125, 223, 244              # is_b2: 100+flag·55
+KFA, TMPF = 245, 246                          # K' / is_b2 тега
+BADIF, BADEJ, BADJB = 241, 242, 243           # отказы 4-й if / 4-й es / jb без метки
+PXPA, PXPB = 231, 232                         # пара селектора: VAL / JBX
+VAL, JBX, XFIN = 236, 237, 238                # X-значение / цель jb / финальный X
+SK = 239                                      # стеш S вокруг ml-цепочек
+C100, C400 = 249, 250                         # константы-базы для адресов
+CT20 = 203                                    # конста 20 (адрес для селекторов)
+IFPA, IFPB, IFPC = 224, 226, 228              # пары селекторов if-target (224/225 ...)
+IFTGT = 233                                    # scratch цели if (НЕ затирает DEF для es)
+# 24г W-121: 'su' (KW_SUB 0x7573) — беззнаковое вычитание литерала.
+#   Переиспользуем pending-eq машину: su ставит EQFA=1 → EQPA=1; на цифре-
+#   операнде SUPA_old=1 переключает TAGTAB[8] с 0x1216 на 0x1217 (is_b2=2 уже
+#   проинициализирован общей N(2)-группой). SUPA держится ровно до этой цифры.
+SUW, SUWC = 30067, 57                          # KW_SUB 0x7573 / ячейка self-консты
+SUFL, SUPA = 58, 59                            # is_su / sticky «pending от su»
+TAGEQ = 4630                                   # TAGTAB[8] по умолчанию (eq)
 
 def sel_val(anchor, flag):
-    """acc = flag ? cell[candB] : cell[candA]; двойной gp (затирает acc)."""
+    """acc = flag ? cell[candB] : cell[candA]; двойной gp (ячейки держат АДРЕСА)."""
     return (N(anchor) + ['wc', '8', 'sv'] + ABS(flag, 'va')
             + ['wc', '8', 'as', 'gp', 'wc', '8', 'sv', 'gp'])
 
+SITE_DUMP = 392                                          # flag=0 → cell[392+cnt-1] (мусор)
+CSDP = 251                                               # ячейка-константа: cell[251] := 392
+SITE_FACTORS = {401: ('9',), 404: ('3', '4'), 409: ('2', '9')}
+
+def site_store(start, cnt, flag, new_tokens, adj=0):
+    """cell[392 + flag*(start-391) + cell[cnt]-1+adj] := new.
+    Урок: старая база 400 при flag=0 давала 400+cnt-1 — ЖИВОЙ сайт if#1,
+    который затирался на каждом es-слове (два if → первый target = 20).
+    409 = 392 + 18 - 1; 18 = 2*9 (ml-цепочка), лишняя −1 даёт adj=-1."""
+    facs = SITE_FACTORS[start]
+    ml_tokens = [tok for d in facs for tok in ('ml', d)]
+    return (ABS(flag, 'va') + ml_tokens
+            + ABS(CSDP, 'aa') + ['su', '1'] * (-adj)
+            + ABS(cnt, 'aa') + ['su', '1', 'wc', '8', 'sv']
+            + new_tokens + ['sp'])
+
+CS_DUMP = 124                                             # безопасная свалка (cell[100] = SLC!)
+CSD = 138                                                  # ячейка-константа: cell[138] := 124
+CS_FACTORS = {125: ('1', '1'), 154: ('5', '6'), 156: ('4', '8')}  # (addr-CS_DUMP) = d1*d2
+
+def cstore(addr, flag, value_tokens):
+    """cell[150 + flag*(addr-150)] := value; flag=0 → свалка cell[150].
+    Урок-1: 'ml d1 d2' = ml*d1 + OP_CONST(d2) — вторая цифра ЗАТИРАЕТ
+    умножение; честное произведение требует 'ml d1 ml d2'.
+    Урок-2: свалка 100 затирала SLC (0x00F00FF1) → байт-диф на 'pr'."""
+    d1, d2 = CS_FACTORS[addr]
+    return (ABS(flag, 'va') + ['ml', d1, 'ml', d2]
+            + ABS(CSD, 'aa')
+            + ['wc', '8', 'sv'] + value_tokens + ['sp'])
+
+def put_abs(target_tokens):
+    """FILE_SEEK(target) + FILE_PUT(cell[STREAM]-независимое значение в acc)."""
+    return (target_tokens + ABS(STREAM, 'sv') + ABS(310, 'sc'))
+
+
 INIT = []
+# --- общие консты (экономия токенов: одна N на группу ADC-независимых записей) ---
+# НОЛЬ: Z0, ZNA, ZP2A, NumAcc/CNT/RF/POS/S/VCNT, EJ/IFCNT/JSCNT/TERMP
+INIT += N(0) + ABS(Z0, 'sv') + ABS(ZNA, 'sv') + ABS(ZP2A, 'sv') \
+    + ['wc', '0', 'sv', 'wc', '2', 'sv', 'wc', '3', 'sv', 'wc', '5', 'sv',
+       'wc', '6', 'sv', 'wc', '9', 'sv'] \
+    + [t for c in (EJ1, EJ2, EJ3, IFCNT, JSCNT, TERMP) for t in ABS(c, 'sv')]
+# ДВАДЦАТЬ: POSC, CT20, MARKP, FPOS
+INIT += N(20) + ABS(POSC, 'sv') + ABS(CT20, 'sv') + ABS(MARKP, 'sv') + ABS(FPOS, 'sv')
+# БАЗА МАССИВА: PTR и FB
+INIT += N(ARR) + ['wc', '1', 'sv', 'wc', '8', 'sv']
 INIT += N(NBW) + ABS(NBW, 'sv')            # cell[25198] := 25198
 INIT += N(NEW_) + ABS(NEW_, 'sv')          # cell[25966] := 25966
 INIT += N(DOTW) + ABS(DOTW, 'sv')          # cell[46] := 46
-INIT += N(0) + ABS(Z0, 'sv')               # Z0 = 0
 INIT += N(SINK) + ABS(ZPA, 'sv') + N(F8A) + ABS(ZPB, 'sv')
 INIT += N(VSC) + ABS(ZVA, 'sv') + N(F3A) + ABS(ZVB, 'sv')
-INIT += N(Z0) + ABS(ZNA, 'sv') + N(ACEL) + ABS(ZNB, 'sv')
-INIT += N(Z0) + ABS(ZP2A, 'sv') + N(POS2) + ABS(ZP2B, 'sv')
-INIT += N(ARR) + ['wc', '1', 'sv']         # PTR = ARR
-INIT += N(ARR) + ['wc', '8', 'sv']         # FB = ARR (emit-gp база)
-INIT += N(0) + ['wc', '0', 'sv']           # NumAcc = 0
-INIT += N(0) + ['wc', '2', 'sv']           # CNT = 0
-INIT += N(0) + ['wc', '3', 'sv']           # RF = 0
-INIT += N(0) + ['wc', '5', 'sv']           # POS = 0
-INIT += N(0) + ['wc', '6', 'sv']           # S = 0
-INIT += N(0) + ['wc', '9', 'sv']           # VCNT = 0
+INIT += N(ACEL) + ABS(ZNB, 'sv')
+INIT += N(POS2) + ABS(ZP2B, 'sv')
 # 24б: word-коды новых видов + TAGTAB (0x15 CONST / 0x55 STORE_AT / 0x13 SYSCALL)
 INIT += N(SVW) + ABS(SVWC, 'sv')           # cell[88] := 30323
 INIT += N(SCW) + ABS(SCWC, 'sv')           # cell[89] := 25459
@@ -153,16 +228,12 @@ INIT += N(AAW) + ABS(AAWC, 'sv')           # cell[109] := 24929
 #   B-теги := 2 (SEEK на P+2 = no-op -> [0x12][канал][b0..b3] 6Б);
 #   eq-тег := 2 (B-вид), vw-тег cell[240] := 0 = VM-дефолт (U16 затирается
 #   PUT целиком -> BE32(W_Current) ровно 4Б — probe121/07, /00 'wc vw').
-INIT += N(1) + ABS(5376, 'sv')             # cell[0x1500] := 1 (is_b2: ne/dig A)
-INIT += N(1) + ABS(21760, 'sv')            # cell[0x5500] := 1 (is_b2: sv A)
-INIT += N(1) + ABS(4864, 'sv')             # cell[0x1300] := 1 (is_b2: sc A)
-INIT += N(1) + ABS(20992, 'sv')            # cell[0x5200] := 1 (is_b2: gp A)
-INIT += N(1) + ABS(21248, 'sv')            # cell[0x5300] := 1 (is_b2: sp A)
-INIT += N(2) + ABS(4633, 'sv')             # cell[0x1219] := 2 (is_b2: va B)
-INIT += N(2) + ABS(4632, 'sv')             # cell[0x1218] := 2 (is_b2: cp B)
-INIT += N(2) + ABS(4629, 'sv')             # cell[0x1215] := 2 (is_b2: aa/as B)
-INIT += N(2) + ABS(4630, 'sv')             # cell[0x1216] := 2 (is_b2: eq B)
-INIT += N(20) + ABS(POSC, 'sv')            # POSC := 20 (16 шапки + 4 CRC; байт-дифф a318d454)
+# общая конста 1/2 для всех is_b2-ячеек (экономия N-блоков: 21 токен)
+INIT += N(1) + ABS(5376, 'sv') + ABS(21760, 'sv') + ABS(4864, 'sv') \
+    + ABS(20992, 'sv') + ABS(21248, 'sv') + ABS(21504, 'sv') \
+    + ABS(1536, 'sv') + ABS(1792, 'sv')  # ne/dig, sv, sc, gp, sp, pr/ow, if, es — A-виды
+INIT += N(2) + ABS(4633, 'sv') + ABS(4632, 'sv') + ABS(4629, 'sv') \
+    + ABS(4630, 'sv') + ABS(4631, 'sv')   # va, cp, aa/as, eq, su — B-виды
 # 24в-1: SLC := 0xF00FF1 (WORK_CELL — честный дефолт W_Current stage1;
 #   зонд b_va: голая 'va' на свежем stage1 = [12 19 00F00FF1] 2e1d1bb3)
 INIT += N(15732721) + ABS(SLC, 'sv')
@@ -185,12 +256,32 @@ INIT += N(21504) + ABS(TAGTAB + 11, 'sv')   # [11] 0x5400 (pr/ow A)
 # 24в-3: is_b2-семафоры новых тегов: te = −3 (T = POSC−3; PUT BE32(X_te)
 #   @POSC−3..POSC переписывает последние 3Б предыдущей записи теми же
 #   значениями, младший = 05; POSC := T+4 = +1); pr/ow-пар1 = A-вид
-INIT += N(4294967293) + ABS(1280, 'sv')     # cell[0x0500] := 0xFFFFFFFD (−3)
-INIT += N(1) + ABS(21504, 'sv')             # cell[0x5400] := 1
+INIT += N(0) + ['su', '3'] + ABS(1280, 'sv')  # cell[0x0500] := 0−3 = 0xFFFFFFFD (−3)
 # 24в-3: конст-ячейки значений пары-1 (storeval candB = cell[cell[78]],
 #   cell[78] := 100+49te+27pr+45ow → {100 SLC, 149 SCRE, 127 PRTA, 145 STRA})
 INIT += N(1056985280) + ABS(PRTA, 'sv')     # cell[127] := 0x3F0050C0 ('pr')
 INIT += N(15732720) + ABS(STRA, 'sv')       # cell[145] := 0x00F00FF0 ('ow')
+# 24г: word-коды if/es/mk/jb в ячейках сравнения + self-консты
+INIT += N(IFW) + ABS(IFWC, 'sv')            # cell[176] := 26217 ('if')
+INIT += N(ESW) + ABS(ESWC, 'sv')            # cell[177] := 29541 ('es')
+INIT += N(MKW) + ABS(MKWC, 'sv')            # cell[178] := 27501 ('mk')
+INIT += N(JBW) + ABS(JBWC, 'sv')            # cell[179] := 25194 ('jb')
+# 24г: TAGTAB вырос до 14: [12] 0x0600 if, [13] 0x0700 es/jb (A-виды)
+INIT += N(1536) + ABS(TAGTAB + 12, 'sv')    # [12] 0x0600 (if)
+INIT += N(1792) + ABS(TAGTAB + 13, 'sv')    # [13] 0x0700 (es/jb)
+# 24г Stage2: сайты патча = 16 (CRC-слот, FILE_SEAL пересчитает);
+#   EJ/TERM/MARKP/счётчики/флаги = 0.
+# общая конста 16 на 5 сайтов патча (экономия 4 N-блоков)
+INIT += N(16) + [t for c in (SITE1, SITE2, SITE3, ESITE1, ESITE2)
+                 for t in ABS(c, 'sv')]
+INIT += N(SUW) + ABS(SUWC, 'sv')            # self-конста 'su' (cp = OP_LOAD 0x18 живёт при cell[SUWC]=SUW)
+INIT += N(100) + ABS(C100, 'sv')            # C100 := 100
+INIT += N(SITE_DUMP) + ABS(CSDP, 'sv')      # CSDP := 392 (база site_store)
+INIT += N(CS_DUMP) + ABS(CSD, 'sv')         # CSD := 124 (свалка cstore)
+# пары селекторов (ячейки держат АДРЕСА нужных значений)
+for anchor, a, b in ((CTXA, XORD, Z0), (DEFC, TERMP, CT20),
+                     (IFPA, EJ1, DEFV), (IFPB, EJ2, DEFV), (IFPC, EJ3, DEFV)):
+    INIT += N(a) + ABS(anchor, 'sv') + N(b) + ABS(anchor + 1, 'sv')
 
 LB = []
 LB += ABS(311, 'sc')                       # прочесть слово (311 = FILE_GET)
@@ -231,6 +322,16 @@ LB += ['wc', '8', 'gp'] + ABS(VWWC, 'cp') + ABS(VWFA, 'sv')      # is_vw
 LB += ['wc', '8', 'gp'] + ABS(TEW, 'cp') + ABS(TEFA, 'sv')       # is_te
 LB += ['wc', '8', 'gp'] + ABS(PRW, 'cp') + ABS(PRFA, 'sv')       # is_pr
 LB += ['wc', '8', 'gp'] + ABS(OWW, 'cp') + ABS(OWFA, 'sv')       # is_ow
+# 24г: is_if/is_es/is_mk/is_jb
+LB += ['wc', '8', 'gp'] + ABS(IFWC, 'cp') + ABS(IFFA, 'sv')      # is_if
+LB += ['wc', '8', 'gp'] + ABS(ESWC, 'cp') + ABS(ESFA, 'sv')      # is_es
+LB += ['wc', '8', 'gp'] + ABS(MKWC, 'cp') + ABS(MKFA, 'sv')      # is_mk
+LB += ['wc', '8', 'gp'] + ABS(JBWC, 'cp') + ABS(JBFA, 'sv')      # is_jb
+# 24г W-121: is_su — self-конста + 'cp' (OP_LOAD 0x18); su берёт ТОЛЬКО одну
+#   цифру-литерал (Num_Pending=0), поэтому вычитание 30067 здесь не работает.
+LB += ['wc', '8', 'gp'] + ABS(SUWC, 'cp') + ABS(SUFL, 'sv')  # is_su
+# su — тот же pending, что eq (EQFA := is_eq | is_su; слова взаимоисключающи)
+LB += ABS(SUFL, 'va') + ABS(EQFA, 'aa') + ABS(EQFA, 'sv')
 LB += ['wc', '8', 'gp'] + ['su', '8'] * 6 + ABS(VSC, 'sv')   # V = W-48 (gp через FB)
 LB += ABS(VSC, 'va') + ['gt', '9', 'eq', '0'] + ABS(DGFA, 'sv')  # is_dig
 # 24в-2: PDG = pending-цифра = (EQPA_old + is_dig)==2 — цифра-операнд eq.
@@ -238,6 +339,13 @@ LB += ABS(VSC, 'va') + ['gt', '9', 'eq', '0'] + ABS(DGFA, 'sv')  # is_dig
 #   ([12 16][BE32(цифра)], X = V — probe121/10 'eq 3', /04 'wc 5 eq 3':
 #   X = ЦИФРА, НЕ SLC — потому pending-цифра идёт через bareK, не k4K).
 LB += ABS(EQPA, 'va') + ABS(DGFA, 'aa') + ['eq', '2'] + ABS(PDGFA, 'sv')
+# 24г W-121: тег операнда su = 0x1217 вместо 0x1216; SUPA' = (su+SUPA+PDG)==1
+LB += N(TAGEQ) + ABS(SUPA, 'aa') + ABS(TAGTAB + 8, 'sv')
+#   SUPA' = (2·PDG + SUPA_old + is_su)==1: цифра ЗАКРЫВАЕТ pending (в том
+#   числе обычного eq — урок regr120 'eq 3 eq 4', где старая формула
+#   (su+SUPA+PDG)==1 ставила su-тег на втором eq).
+LB += ABS(PDGFA, 'va') + ABS(PDGFA, 'aa') + ABS(SUPA, 'aa') \
+    + ABS(SUFL, 'aa') + ['eq', '1'] + ABS(SUPA, 'sv')
 # взвешенный k = sv + 2sc + 3gp + 4sp + 5va + 6cp + 7(aa|as) + 8·(is_eq +
 #   EQPA_old) + 9vw — 24в-2 ml-форма (va + ml w + aa в K2FA): aa-форма не
 #   умеет 8·(is_eq+EQPA_old), ml дешевле 10-членной суммы; одна eq-строка
@@ -257,7 +365,8 @@ LB += N(147) + ABS(146, 'aa') + ABS(146, 'sv')
 # 24в-3: X_te = (X_prev·256+5) mod 2^32 — мл-2×8 = ×256, ад-5 = |05:
 #   BE32(X_te) = [X_prev>>16][X_prev>>8][X_prev&FF][05] — верхние 3Б = те же
 #   байты последней записи (не портят), младший = 05 (опкод OP_TERM)
-LB += ABS(149, 'va') + ['ml', '2'] * 8 + ['ad', '5']
+LB += ['wc', '1', 'va'] + ['su', '2'] + ['wc', '8', 'sv'] + ['gp'] \
+    + ['ml', '2'] * 8 + ['ad', '5']   # X_prev = предыдущая РЕАЛЬНАЯ запись [PTR-2] (не SCRE: mk портил цепь)
 LB += ABS(148, 'sv')                                            # temp X_te (ml жжёт FB — курсор ставится ПОСЛЕ цепи)
 LB += ABS(146, 'va') + ['wc', '8', 'sv']                        # FB := cell[146] = скретч-адрес
 LB += ABS(148, 'va') + ['wc', '8', 'sp']                        # cell[скретч] := X_te (te→149; ow→148 идемп.; pr/др→147)
@@ -285,6 +394,12 @@ LB += ABS(TEFA, 'va') + ['ml', '5'] + ['ml', '2'] + ABS(K2FA, 'aa') \
     + ABS(K2FA, 'sv')                                            # + 10·te
 LB += ABS(PGOF, 'va') + ['ml', '9'] + ABS(PGOF, 'aa') + ABS(PGOF, 'aa') \
     + ABS(K2FA, 'aa') + ABS(K2FA, 'sv')                          # + 11·ПГОЯ
+# 24г: веса if/es/jb = 12/13/13 = 9·(сумма) + 3·if + 4·(es+jb)
+LB += ABS(IFFA, 'va') + ABS(ESFA, 'aa') + ABS(JBFA, 'aa') + ['ml', '9'] \
+    + ABS(K2FA, 'aa') + ABS(K2FA, 'sv')
+LB += ABS(IFFA, 'va') + ['ml', '3'] + ABS(K2FA, 'aa') + ABS(K2FA, 'sv')
+LB += ABS(ESFA, 'va') + ABS(JBFA, 'aa') + ['ml', '4'] \
+    + ABS(K2FA, 'aa') + ABS(K2FA, 'sv')
 # 24в-3: K2BЯ = 9·ПГОЯ + 1·ASFA — тег rec2-пары: as → TAGTAB[1] = 0x5500
 #   (as-rec2 без правок), pr/ow → TAGTAB[9] = 0x00F0 (vw-вид)
 LB += ABS(PGOF, 'va') + ['ml', '9'] + ABS(ASFA, 'aa') + ABS(K2BF, 'sv')
@@ -377,7 +492,9 @@ LB += ['wc', '6', 'va'] + ABS(KINDA, 'aa') * 2 + ['eq', '1'] + ABS(FSA, 'sv')
 #   сохраняем regr117-поведение). S=2 + KINDA = 4 — wc-состояние не даёт 3.
 LB += ['wc', '6', 'va'] + ABS(KINDA, 'aa') * 2 + ABS(EQFA, 'aa') * 2 \
     + ABS(ASFA, 'aa') * 2 + ABS(VWFA, 'aa') * 2 + ABS(OWFA, 'aa') * 2 \
-    + ABS(TEFA, 'aa') * 2 + ABS(PRFA, 'aa') * 2 + ['eq', '3'] + ABS(NKFA, 'sv')
+    + ABS(TEFA, 'aa') * 2 + ABS(PRFA, 'aa') * 2 \
+    + ABS(IFFA, 'aa') * 2 + ABS(ESFA, 'aa') * 2 + ABS(JBFA, 'aa') * 2 \
+    + ['eq', '3'] + ABS(NKFA, 'sv')
 # 24в-1: обновление SLC — модели W_Current: слот-цифра SLC := WC_BASE + V;
 #   прочие слова SLC не трогают (персистентность 'wc 5 va va', дефолт F00FF1).
 #   HSL := WC_BASE + V (держатель кандидата); sel_val по паре [61,100] через
@@ -409,6 +526,7 @@ LB += ABS(NBFA, 'va') + ABS(FSA, 'aa') + ABS(KA, 'aa') * 2 + ABS(74, 'aa') \
 #   n_sc5/n_cp5/n_aa5 = 0xFE; голые sc/cp/aa = брак 0x0C — див/сил)
 LB += ABS(SVFA, 'va') + ABS(GPFA, 'aa') + ABS(SPFA, 'aa') + ABS(VAFA, 'aa') \
     + ABS(ASFA, 'aa') + ABS(VWFA, 'aa') + ABS(OWFA, 'aa') + ABS(TEFA, 'aa') \
+    + ABS(IFFA, 'aa') + ABS(ESFA, 'aa') + ABS(JBFA, 'aa') \
     + ABS(S0FA, 'aa') + ['eq', '2'] \
     + ABS(K4FA, 'sv')
 # 24в-3: голые te/pr/ow легальны при S==0: (флаг + S0FA)==2 → K4FA=1 (k4K-путь:
@@ -448,8 +566,18 @@ LB += N(100) + ABS(128, 'aa') + ABS(78, 'sv')                       # 24в-3: ce
 LB += sel_val(77, K4FA)                                             # acc = k4K ? SLC : V
 LB += ABS(VSC, 'sv')                                                # VSC := level-1
 LB += N(F3A) + ABS(78, 'sv')                                        # cell[78] := F3A (restore)
-LB += sel_val(ZVA, NKFA) + ['wc', '1', 'sp']
-LB += ABS(149, 'sv')                                                # 24в-3: SCRE := записанное значение пары (цепь X_te)
+LB += sel_val(ZVA, NKFA) + ABS(XORD, 'sv')            # X обычный -> XORD
+# 24г: X = (if|es|jb) ? 20 : XOrd (селектор держит ЗНАЧЕНИЯ, не адреса)
+LB += ABS(IFFA, 'va') + ABS(ESFA, 'aa') + ABS(JBFA, 'aa') + ABS(CTLFL, 'sv')
+LB += N(XORD) + ABS(CTXA, 'sv')                       # candA := адрес XOrd
+LB += sel_val(CTXA, CTLFL) + ABS(VAL, 'sv')           # VAL := CTLFL ? 20 : XOrd
+# 24г: JBX := MARKP + 20 (MARKP — эмиссионная позиция метки mk)
+LB += ABS(MARKP, 'va') + ABS(JBX, 'sv')
+LB += N(VAL) + ABS(PXPA, 'sv')                        # candA := адрес VAL
+LB += N(JBX) + ABS(PXPB, 'sv')                        # candB := адрес JBX
+LB += sel_val(PXPA, JBFA) + ABS(XFIN, 'sv')           # XFIN := JBFA ? JBX : VAL
+# 3-й es: Jmp_Slot_3 не патчится stage1 — сайт остаётся 16 (CRC, пересчитан SEAL)
+LB += ABS(XFIN, 'va') + ['wc', '1', 'sp']             # cell[PTR] := X
 # PTR += K; VCNT += K
 LB += ABS(KA, 'va') + ['wc', '1', 'as']
 LB += ABS(KA, 'va') + ['wc', '9', 'as']
@@ -460,6 +588,45 @@ LB += N(TAGTAB) + ['wc', '8', 'sv']                 # FB := TAGTAB
 LB += ABS(K2FA, 'va') + ['wc', '8', 'as']           # FB += k
 LB += ['wc', '8', 'gp']                             # acc := tag
 LB += ['wc', '1', 'sp']                             # cell[PTR] := tag
+# ===== 24г Stage2 (компактный): forecast + cstore на ml-цепочках =====
+# ml жжёт СЛОТ S — один стеш на весь блок; KA (=K') не трогается ml.
+LB += ['wc', '6', 'va'] + ABS(SK, 'sv')             # SK := S
+LB += ABS(FPOS, 'va') + ABS(FPOL, 'sv')             # FPOL := FPOS до записи
+LB += ['wc', '8', 'gp'] + ABS(TMPF, 'sv')           # TMPF := tag (cell[TMPF] = tag)
+LB += ABS(TMPF, 'va') + ['wc', '8', 'sv']           # W8 := tag как АДРЕС
+LB += ['wc', '8', 'gp'] + ABS(SCRV, 'sv')           # SCRV := cell[cell[W8]] = is_b2(tag)
+LB += N(0) + ABS(TMPB, 'sv')                        # TMPB := 0 (сброс stale-значения)
+LB += cstore(TMPB, KA, ABS(SCRV, 'va'))             # TMPB := K' ? is_b2 : 0
+# размер = 4·K' + is_b2(K') + 5·as + 4·(pr+ow)
+#   УРОК W-121/кейс68: pr/ow эмитит 9Б = 5Б базы + 4Б хвоста, НЕ 9Б хвоста;
+#   старый ml·9 давал +5 на каждое pr → все if/es/TERM/JB-цели ехали вперёд.
+LB += ABS(KA, 'va') + ['ml', '4'] + ABS(TMPB, 'aa') + ABS(SCRA, 'sv')
+LB += ABS(ASFA, 'va') + ['ml', '5'] + ABS(DEFV, 'sv')
+LB += ABS(PGOF, 'va') + ['ml', '4'] + ABS(DEFV, 'aa') + ABS(DEFV, 'sv')
+LB += ABS(FPOS, 'va') + ABS(SCRA, 'aa') + ABS(DEFV, 'aa') + ABS(FPOS, 'sv')
+# счётчики и номера записей (IFFA+IFCNT == n+1 однозначно)
+LB += ABS(IFCNT, 'va') + ABS(IFFA, 'aa') + ABS(IFCNT, 'sv')
+LB += ABS(JSCNT, 'va') + ABS(ESFA, 'aa') + ABS(JSCNT, 'sv')
+# отказы: 4-й if/es (сумма 5) и jb без живой метки. Sticky: на EOF-итерации
+# IFFA/JBFA/ESFA сбрасываются, поэтому без '+ABS(BADxx,"va")' флаг теряется.
+LB += ABS(MARKP, 'va') + ABS(CT20, 'cp') + ABS(JBFA, 'aa') \
+    + ['eq', '2'] + ABS(BADJB, 'aa') + ABS(BADJB, 'sv')  # sticky (jb): MARKP==20 (mk в 1-й позиции)
+LB += ABS(IFFA, 'va') + ABS(IFCNT, 'aa') + ['eq', '5'] \
+    + ABS(BADJB, 'aa') + ABS(BADJB, 'sv')    # sticky (if)
+LB += ABS(ESFA, 'va') + ABS(JSCNT, 'aa') + ['eq', '5'] \
+    + ABS(BADJB, 'aa') + ABS(BADJB, 'sv')    # sticky (es)
+# FPOL уже файловая позиция (P+20): слот=R+1, EJ=R+5, TERM=R
+V21 = ABS(FPOL, 'va') + ['ad', '1']
+V25 = ABS(FPOL, 'va') + ['ad', '5']
+V20 = ABS(FPOL, 'va')
+LB += site_store(401, IFCNT, IFFA, V21)       # if-слоты → 401..403
+LB += site_store(404, JSCNT, ESFA, V21)       # es-слоты → 404..405
+LB += site_store(409, JSCNT, ESFA, V25, adj=-1)  # else-join → 409..411 (Jmp_Slot_3: X=0)
+LB += cstore(TERMP, TEFA, V20)
+LB += cstore(MARKP, MKFA, ABS(FPOL, 'va'))         # mk: метка = текущая позиция
+LB += cstore(MARKP, JBFA, N(20))                   # jb: одноразовый сброс в сигнал «метки нет»
+LB += ABS(SK, 'va') + ['wc', '6', 'sv']             # S <- SK
+# ============================================================
 LB += ABS(KA, 'va') + ['wc', '1', 'as']             # PTR += K'
 # 24в-2: as = ДВА рекорда — rec2 pre-write [SLC][0x5500] по адресу PTR (после
 #   += K' это ячейка СРАЗУ ЗА rec1): 'as' = OP_LOAD mode 0x15 (acc +=
@@ -536,12 +703,15 @@ LB += ['wc', '2', 'va', 'wc', '8', 'sp']
 #   (24в-2 УРОК run-7: 'wc 6 aa' = БРАК — stage1 fail-fast на голом 'aa' после
 #   'wc d' (голые sc/cp/aa = 0x0C), кольцо = brk-стаб 3290Б, rc=1 везде. Честная
 #   форма: S грузится 'wc 6 va' (3 ток), NBFA — ABS-форма; сумма та же.)
+# 24г: mk-легальность = MKFA & (S==0) — 'mk' не поглощает nb (0x0C при открытом)
+LB += ABS(MKFA, 'va') + ABS(S0FA, 'aa') + ['eq', '2'] + ABS(MKLG, 'sv')
 LB += ['wc', '6', 'va'] + ABS(NBFA, 'aa') + ['eq', '2'] + ABS(DTFA, 'aa') \
-    + ABS(DGFA, 'aa') + ABS(NKFA, 'aa') + ABS(K4FA, 'aa') + ABS(EQKFA, 'aa')
+    + ABS(DGFA, 'aa') + ABS(NKFA, 'aa') + ABS(K4FA, 'aa') + ABS(EQKFA, 'aa') \
+    + ABS(MKLG, 'aa') + ABS(BADIF, 'aa') + ABS(BADEJ, 'aa') + ABS(BADJB, 'aa')
 LB += ['eq', '0'] + ABS(BSFA, 'sv')
 # L = (badsum + E + dot) > 0; stay = (L==0)
 LB += ABS(BSFA, 'va') + ABS(EFASC, 'aa') + ABS(DTFA, 'aa') + ['gt', '0']
-LB += ['eq', '0', 'if']                    # if#1: stay
+LB += ['eq', '0', 'if']                    # if#1: stay (BADJB уже в BSFA)
 LB += ['wc', '2', 'as']                    # CNT += stay (then-путь)
 LB += ['jb', 'es']
 
@@ -566,7 +736,8 @@ PS += sel_val(ZP2A, FSA) + ['wc', '5', 'sv']
 #   silent==1 -> then='te' = ЧЕСТНОЕ молчание (rc==0, нет .out);
 #   silent==0 (EOF- или dot-leave) -> es -> BEGIN (позитивы пишут артефакт).
 PS += ABS(DTFA, 'va') + ABS(EFASC, 'aa') + ['eq', '0'] + ABS(HSL, 'aa') \
-    + ['if']                                                   # if#2
+    + ABS(BADJB, 'aa') \
+    + ['if']                              # if#2: sticky jb-отказ -> молчание
 PS += ['te', 'es']
 # BEGIN + заголовок (0x43544F53, 0x01010100, 0x14000000, 0xFFFFAAAA, CRC)
 #   'wo' = ВОСЬМОЙ поглотитель nb: честная форма 'nb <цифры> wo' БЕЗ 'ne'
@@ -616,6 +787,23 @@ PS += ['jb', 'es']
 PS += ['nb', '2', '5', '5', 'em', 'nb', '3', '0', '8', 'sc']
 PS += ['wc', '2', 'ow', 'nb', '0', 'wo', 'nb', '0', 'wo']
 PS += ['wc', '3', 'ow', 'wc', '7', 'ow', 'wc', '5', 'ow']
+# 24г Stage2: патч 5 слотов в записанном теле (до SEAL).
+# DEF = TERMP!=0 ? cell[TERMP] : 20 (пара DEFC=[CT20,TERMP])
+PS += ABS(TERMP, 'va') + ['eq', '0'] + ABS(TMPF, 'sv')
+PS += sel_val(DEFC, TMPF) + ABS(DEFV, 'sv')
+# if n: target = EJn!=0 ? EJn : DEF (пары IFPA/IFPB/IFPC = [DEFV,EJn]).
+#   УРОК 24г: EJn привязан к 'es' (Else_Join), поэтому при 'es' без 'if'
+#   EJn!=0 и cleanup-цикл перезаписывал DEF — es-патч получал мусор. Цель if
+#   идёт в ОТДЕЛЬНЫЙ IFTGT, а DEFV=d e f остаётся нетронутым для es-патчей.
+for site, ej, pair in ((SITE1, EJ1, IFPA), (SITE2, EJ2, IFPB), (SITE3, EJ3, IFPC)):
+    PS += ABS(ej, 'va') + ['eq', '0'] + ABS(TMPF, 'sv')
+    PS += sel_val(pair, TMPF) + ABS(IFTGT, 'sv')
+    PS += ABS(site, 'va') + ABS(STREAM, 'sv') + ABS(310, 'sc')
+    PS += ABS(IFTGT, 'va') + ['wc', '8', 'sv', 'wc', '8', 'ow']
+# es 1/2: target = DEF (3-й es не патчится)
+for site in (ESITE1, ESITE2):
+    PS += ABS(site, 'va') + ABS(STREAM, 'sv') + ABS(310, 'sc')
+    PS += ABS(DEFV, 'va') + ['wc', '8', 'sv', 'wc', '8', 'ow']
 PS += ABS(309, 'sc') + ABS(307, 'sc')
 # честный терминатор программы (канон scan7): без 'te' VM уходит в мусор
 # после конца кода — KERNEL PANIC "недокументированный опкод 0xFF", rc=1.
@@ -626,7 +814,7 @@ PROGRAM = INIT + ['mk'] + LB + PS
 MAX_USER_WORDS = 4094  # 24в-3 W-120: граница тома поднята 2046→4094 (MAX_SOURCE_WORDS 0x800→0x1000, спринт 99 — прецедент W-116)
 flat = ' '.join(PROGRAM)
 TOKENS = len(flat.split())
-POS_PATH = r'G:\Windows\RJ\AppData\Local\Temp\opencode\probe111\pos_wc14v3ring.words'
+POS_PATH = r'H:\Project\MiniOS_CtOS\Python_compiler\pos_wc14v3ring.words'
 assert TOKENS <= MAX_USER_WORDS, 'tokens %d > %d' % (TOKENS, MAX_USER_WORDS)
 with open(POS_PATH, 'w', encoding='ascii', newline='') as f:
     f.write(flat + '\n')

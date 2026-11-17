@@ -4292,3 +4292,26 @@ t5gpr 1/1, T4-shelf 90/90) + T4 multi-statement кросс-молчания (8×
   te te a4773c33. tracked: wc14v3ring_build.py, pos_wc14v3ring.words
   (обновлена — 6658 Б/2724 ток), regr119.py, stage1_compiler.kt/.ctos.
   Дальше — 24г (if/es/mk/jb + bare), 24д (фиксепоинт T(S_T)==T).
+
+- **Спринт 100 (W-121) — ступень 24г: if/es/mk/jb + su в кольце** — приёмка
+  probe124 (`_t124_build/_t124_smoke/_dump_one/_t124_trace`): 69 кейсов,
+  **BYTE-OK=53, OK-DIV=16, DIFF=0** (16 OK-DIV = честные stage1-неги 0xFE,
+  кольцо молчит rc=0 без .out). Бюджет: **4065 ток ≤ 4094**; том
+  `pos_wc14v3ring.words` 9917 Б, компил 0xFF md5 **22896d3f**, вердец 0xFF.
+  Механика: source-words + Stage2-патч TAIL до FILE_SEAL; `site_store` база
+  392 (`CSDP=251`), EJ-сайты 409..411, `SITE_FACTORS 401:(9,) 404:(3,4)
+  409:(2,9)`; `mk/jb` через `MARKP=20` и sticky `BADJB`; `te` читает
+  предыдущую запись `[PTR-2]`; новая source-word `su` (`KW_SUB 0x7573`,
+  self-конста `SUWC=57`, `SUFL=58`, `SUPA=59`, тег `0x1217`); forecast
+  `pr/ow` исправлен с `ml·9` на `ml·4` (9 Б всего = 5 Б базы + 4 Б хвоста —
+  урок кейса 68). Честный баг regr120: `SUPA' = (2·PDG+SUPA_old+is_su)==1`
+  (старая формула ставила su-тег на втором `eq`: `eq 3 eq 4` 508c1429
+  против stage1 dd23d731); после фикса smoke остался 53/16/0.
+  `regr120.py` (base regr119) — **REGRESS OK / rc=0** с новым пином 22896d3f:
+  ring-полка **177/177 BYTE-OK + 24/24 честных молчаний + 35/35 diverg-silence
+  + 2/2 ddiv-tracked**; cold IDENTICAL. `selfhost_check.py`: фиксепоинт
+  **T(S_T)==T НЕ достигнут** — кольцо молчит на своём исходнике, первый
+  отказ на 1263-м токене (`gt`); всего неподдерживаемых source-words в S_T:
+  ml(50), ad(9), wo(7), gt(5), em(1), lt(1). Это отдельный фронт 24д/W-122.
+  tracked: wc14v3ring_build.py, pos_wc14v3ring.words, regr120.py,
+  selfhost_check.py, veha12g_probe_status.md. Дальше — 24д (фиксепоинт).
