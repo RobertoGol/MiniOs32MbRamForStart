@@ -157,6 +157,26 @@ EQSG = 190                                     # is_eq «чистый» (до OR
 EQOA, ADOA, GTUA, LTOA = 191, 192, 193, 194    # sticky-флаги тега
 TAGV = 197                                     # scratch суммы тега
 SSAV = 198                                     # стеш S вокруг ml-суммы тега
+# 24д-б W-122: em/wo/ml — новые слова (em/wo = поглотители nb, ml = pending).
+EMW, WOW, MLW = 28005, 28535, 27757             # word-коды 'em'=0x6D65, 'wo'=0x6F77, 'ml'=0x6C6D
+EMWC, WOWC, MLWC = 199, 200, 201                # ячейки self-конст (вне TAGTAB)
+EMFA, WOFA, MLFA = 202, 209, 210                # флаги (вне TAGTAB — урок W-114)
+MLPA = 213                                     # pending 'ml' (ждёт цифру-множитель)
+EMV = 214                                      # scratch суммы размера em/wo
+XPAIR = 217                                    # пара [XFIN, STRA] для em/wo-X
+EMWO = 216                                     # флаг em|wo для селектора X
+# 24д-б: ml — runtime-кольцо 92Б / 17 рекордов с вычисляемыми целями
+MLLEG, MLPOS = 503, 504                        # легальность ml (S==0) / база P
+MLTMP, MLTMP2 = 505, 506                       # scratch 17·MLPA / 92·MLPA
+C25, C47, C86 = 507, 508, 509                  # константы прыжковых целей
+TMPX, TMPC, TMPA = 15732731, 15732729, 15732730  # 0x00F00FFB / F9 / FA
+
+def mlrec(x_tokens, tag):
+    """Записать [X][tag] по текущему FB и сдвинуть FB на 2 (34 ячейки = 17 рекордов)."""
+    return (x_tokens + ['wc', '8', 'sp']
+            + ['wc', '8', 'va', 'ad', '1', 'wc', '8', 'sv']
+            + N(tag) + ['wc', '8', 'sp']
+            + ['wc', '8', 'va', 'ad', '1', 'wc', '8', 'sv'])
 
 def sel_val(anchor, flag):
     """acc = flag ? cell[candB] : cell[candA]; двойной gp (ячейки держат АДРЕСА)."""
@@ -243,7 +263,8 @@ INIT += N(AAW) + ABS(AAWC, 'sv')           # cell[109] := 24929
 # общая конста 1/2 для всех is_b2-ячеек (экономия N-блоков: 21 токен)
 INIT += N(1) + ABS(5376, 'sv') + ABS(21760, 'sv') + ABS(4864, 'sv') \
     + ABS(20992, 'sv') + ABS(21248, 'sv') + ABS(21504, 'sv') \
-    + ABS(1536, 'sv') + ABS(1792, 'sv')  # ne/dig, sv, sc, gp, sp, pr/ow, if, es — A-виды
+    + ABS(1536, 'sv') + ABS(1792, 'sv') \
+    + ABS(20736, 'sv')  # ne/dig, sv, sc, gp, sp, pr/ow, if, es, em/wo — A-виды
 INIT += N(2) + ABS(4633, 'sv') + ABS(4632, 'sv') + ABS(4629, 'sv') \
     + ABS(4630, 'sv') + ABS(4631, 'sv')   # va, cp, aa/as, eq, su — B-виды
 INIT += ABS(4628, 'sv') + ABS(4634, 'sv') + ABS(4635, 'sv')  # ad/gt/lt — B-виды (24д)
@@ -291,6 +312,16 @@ INIT += N(SUW) + ABS(SUWC, 'sv')            # self-конста 'su' (cp = OP_LO
 INIT += N(ADW) + ABS(ADWC, 'sv')            # self-конста 'ad' (24д)
 INIT += N(GTW) + ABS(GTWC, 'sv')            # self-конста 'gt' (24д)
 INIT += N(LTW) + ABS(LTWC, 'sv')            # self-конста 'lt' (24д)
+# 24д-б: self-консты em/wo/ml (cp = OP_LOAD 0x18 живёт при cell[WC]=wordcode)
+INIT += N(EMW) + ABS(EMWC, 'sv')            # cell[199] := 28005 ('em')
+INIT += N(WOW) + ABS(WOWC, 'sv')            # cell[200] := 28535 ('wo')
+INIT += N(MLW) + ABS(MLWC, 'sv')            # cell[201] := 27757 ('ml')
+# 24д-б: константы прыжковых целей ml-кольца
+INIT += N(25) + ABS(C25, 'sv')
+INIT += N(47) + ABS(C47, 'sv')
+INIT += N(86) + ABS(C86, 'sv')
+# 24д-б: TAGTAB[14] = 0x5100 (A-вид em/wo); is_b2 semaphore cell[0x5100] := 1
+INIT += N(20736) + ABS(TAGTAB + 14, 'sv')
 INIT += N(100) + ABS(C100, 'sv')            # C100 := 100
 INIT += N(SITE_DUMP) + ABS(CSDP, 'sv')      # CSDP := 392 (база site_store)
 INIT += N(CS_DUMP) + ABS(CSD, 'sv')         # CSD := 124 (свалка cstore)
@@ -301,6 +332,8 @@ for anchor, a, b in ((CTXA, XORD, Z0), (DEFC, TERMP, CT20),
 
 LB = []
 LB += ABS(311, 'sc')                       # прочесть слово (311 = FILE_GET)
+# 24д-б: MLPOS := FPOS — база файловой позиции текущего слова (для ml-целей)
+LB += ABS(FPOS, 'va') + ABS(MLPOS, 'sv')
 # E-блок
 LB += ABS(EOFC, 'va') + ['wc', '7', 'sv']            # EFA = EOF
 LB += ABS(EFASC, 'sv')                               # EFAsc = EOF
@@ -349,6 +382,10 @@ LB += ['wc', '8', 'gp'] + ABS(SUWC, 'cp') + ABS(SUFL, 'sv')  # is_su
 LB += ['wc', '8', 'gp'] + ABS(ADWC, 'cp') + ABS(ADFL, 'sv')  # is_ad (24д)
 LB += ['wc', '8', 'gp'] + ABS(GTWC, 'cp') + ABS(GTFL, 'sv')  # is_gt (24д)
 LB += ['wc', '8', 'gp'] + ABS(LTWC, 'cp') + ABS(LTFL, 'sv')  # is_lt (24д)
+# 24д-б: is_em/is_wo/is_ml — word-коды через self-консты + cp
+LB += ['wc', '8', 'gp'] + ABS(EMWC, 'cp') + ABS(EMFA, 'sv')  # is_em
+LB += ['wc', '8', 'gp'] + ABS(WOWC, 'cp') + ABS(WOFA, 'sv')  # is_wo
+LB += ['wc', '8', 'gp'] + ABS(MLWC, 'cp') + ABS(MLFA, 'sv')  # is_ml
 # eq/su/ad/gt/lt — один pending (слова взаимоисключающи)
 LB += ABS(SUFL, 'va') + ABS(ADFL, 'aa') + ABS(GTFL, 'aa')     + ABS(LTFL, 'aa') + ABS(EQFA, 'aa') + ABS(EQFA, 'sv')
 LB += ['wc', '8', 'gp'] + ['su', '8'] * 6 + ABS(VSC, 'sv')   # V = W-48 (gp через FB)
@@ -430,6 +467,9 @@ LB += ABS(TEFA, 'va') + ['ml', '5'] + ['ml', '2'] + ABS(K2FA, 'aa') \
     + ABS(K2FA, 'sv')                                            # + 10·te
 LB += ABS(PGOF, 'va') + ['ml', '9'] + ABS(PGOF, 'aa') + ABS(PGOF, 'aa') \
     + ABS(K2FA, 'aa') + ABS(K2FA, 'sv')                          # + 11·ПГОЯ
+# 24д-б: +14·(em|wo) -> TAGTAB[14] = 0x5100 (A-вид, 5Б)
+LB += ABS(EMFA, 'va') + ABS(WOFA, 'aa') + ['ml', '2', 'ml', '7'] \
+    + ABS(K2FA, 'aa') + ABS(K2FA, 'sv')
 # 24г: веса if/es/jb = 12/13/13 = 9·(сумма) + 3·if + 4·(es+jb)
 LB += ABS(IFFA, 'va') + ABS(ESFA, 'aa') + ABS(JBFA, 'aa') + ['ml', '9'] \
     + ABS(K2FA, 'aa') + ABS(K2FA, 'sv')
@@ -452,6 +492,8 @@ LB += ABS(K2FA, 'va') + ABS(EQFA, 'aa') + ['gt', '0'] + ABS(NEFA, 'aa') \
 # bareK = (is_dig + (S==0)) == 2
 LB += ['wc', '6', 'va', 'eq', '0'] + ABS(S0FA, 'sv')
 LB += ABS(DGFA, 'va') + ABS(S0FA, 'aa') + ['eq', '2'] + ABS(BKFA, 'sv')
+# 24д-б: MLLEG = is_ml & (S==0) — 'ml' при открытом nb = 0x0C (stage1), кольцо молчит
+LB += ['wc', '6', 'va', 'eq', '0'] + ABS(MLFA, 'aa') + ['eq', '2'] + ABS(MLLEG, 'sv')
 # 24в-2: BKFA |= PDG — pending-цифра легальна при любом S: при S=0 её даёт
 #   и так bareK ((dig+S0)==2), при S=2 только PDG ('wc 5 eq 3' = probe121/04,
 #   X = V = цифра). OR-форма (BKFA+PDG)>0: K обязан остаться 1 (K'=(K==1)).
@@ -577,7 +619,9 @@ LB += ABS(K4FA, 'va') + ABS(PDGFA, 'aa') + ABS(PRFA, 'aa') \
 #   = 89dc4f78, FCODE=9, nb жив — pr НЕ поглотитель, не закрывает, не бракует)
 #   и эмитит пары-1+2; te/ow только при S=2 (SLOT2). ХРА-цепь жива.
 # K = neK + bareK + k4K; K' = ((K==1) + notEOF) == 2
+# 24д-б: +2·MLPA — цифра-множитель ml НЕ эмитит главный рекорд (K'=0)
 LB += ABS(NKFA, 'va') + ABS(BKFA, 'aa') + ABS(K4FA, 'aa')
+LB += ABS(MLPA, 'aa') + ABS(MLPA, 'aa')   # +2*MLPA: 'aa' НЕ перезаписывает acc!
 LB += ['eq', '1'] + ABS(NOEFA, 'aa') + ['eq', '2'] + ABS(KA, 'sv')
 # 24в-3: ХАДРЯ-адрес пары-1: cell[78] := 100 + 49·te + 27·pr + 45·ow (все
 #   разности от 100 — произведение двух цифр: 49=7·7, 27=3·9, 45=5·9, БЕЗ
@@ -612,6 +656,10 @@ LB += ABS(MARKP, 'va') + ABS(JBX, 'sv')
 LB += N(VAL) + ABS(PXPA, 'sv')                        # candA := адрес VAL
 LB += N(JBX) + ABS(PXPB, 'sv')                        # candB := адрес JBX
 LB += sel_val(PXPA, JBFA) + ABS(XFIN, 'sv')           # XFIN := JBFA ? JBX : VAL
+# 24д-б: X = em|wo ? STREAM(0x00F00FF0) : XFIN (main record value)
+LB += N(XFIN) + ABS(XPAIR, 'sv') + N(STRA) + ABS(XPAIR + 1, 'sv')
+LB += ABS(EMFA, 'va') + ABS(WOFA, 'aa') + ABS(EMWO, 'sv')
+LB += sel_val(XPAIR, EMWO) + ABS(XFIN, 'sv')
 # 3-й es: Jmp_Slot_3 не патчится stage1 — сайт остаётся 16 (CRC, пересчитан SEAL)
 LB += ABS(XFIN, 'va') + ['wc', '1', 'sp']             # cell[PTR] := X
 # PTR += K; VCNT += K
@@ -638,8 +686,21 @@ LB += cstore(TMPB, KA, ABS(SCRV, 'va'))             # TMPB := K' ? is_b2 : 0
 #   старый ml·9 давал +5 на каждое pr → все if/es/TERM/JB-цели ехали вперёд.
 LB += ABS(KA, 'va') + ['ml', '4'] + ABS(TMPB, 'aa') + ABS(SCRA, 'sv')
 LB += ABS(ASFA, 'va') + ['ml', '5'] + ABS(DEFV, 'sv')
+# 24д-б ФИКС: 'pr' = 9Б (5+4), но 'ow' = 14Б (OP_OUTCELL_V+FILE_PUT, stage1
+#   KW_OW) = 5+9. Старый PGOF·4 недосчитывал 5Б на каждое 'ow' => FPOS
+#   уезжал на -5 к es#3 и на -50 к TERM.
 LB += ABS(PGOF, 'va') + ['ml', '4'] + ABS(DEFV, 'aa') + ABS(DEFV, 'sv')
+LB += ABS(OWFA, 'va') + ['ml', '5'] + ABS(DEFV, 'aa') + ABS(DEFV, 'sv')
 LB += ABS(FPOS, 'va') + ABS(SCRA, 'aa') + ABS(DEFV, 'aa') + ABS(FPOS, 'sv')
+# 24д-б: размер em/wo = +4Б (vw) / +9Б (vw+sc) поверх 5Б базы
+LB += ABS(EMFA, 'va') + ['ml', '4'] + ABS(EMV, 'sv')
+LB += ABS(WOFA, 'va') + ['ml', '9'] + ABS(EMV, 'aa') + ABS(EMV, 'sv')
+LB += ABS(FPOS, 'va') + ABS(EMV, 'aa') + ABS(FPOS, 'sv')
+# 24д-б: размер ml = +92Б (17 рекордов); внутри SK-стеша, ml-цепи безопасны
+LB += ABS(MLPA, 'va') + ['ml', '9', 'ml', '9'] + ABS(MLTMP2, 'sv')
+LB += ABS(MLPA, 'va') + ['ml', '9'] + ABS(MLTMP2, 'aa') + ABS(MLTMP2, 'sv')
+LB += ABS(MLPA, 'va') + ABS(MLPA, 'aa') + ABS(MLTMP2, 'aa') + ABS(MLTMP2, 'sv')
+LB += ABS(FPOS, 'va') + ABS(MLTMP2, 'aa') + ABS(FPOS, 'sv')
 # счётчики и номера записей (IFFA+IFCNT == n+1 однозначно)
 LB += ABS(IFCNT, 'va') + ABS(IFFA, 'aa') + ABS(IFCNT, 'sv')
 LB += ABS(JSCNT, 'va') + ABS(ESFA, 'aa') + ABS(JSCNT, 'sv')
@@ -664,6 +725,33 @@ LB += cstore(MARKP, JBFA, N(20))                   # jb: одноразовый 
 LB += ABS(SK, 'va') + ['wc', '6', 'sv']             # S <- SK
 # ============================================================
 LB += ABS(KA, 'va') + ['wc', '1', 'as']             # PTR += K'
+# ===== 24д-б: ml-кольцо 17 рекордов / 92Б =====
+# Пишется ВСЕГДА; на не-ml словах мусор за VCNT*2 не читается (правило as/ow).
+# K'=0 у цифры-множителя (см. +2*MLPA выше) — рекорды идут прямо с базы P.
+LB += ['wc', '1', 'va'] + ['wc', '8', 'sv']        # FB := PTR
+LB += mlrec(N(TMPX), 21760)                        # 01 [TMP_X][0x5500]
+LB += mlrec(ABS(VSC, 'va'), 5376)                  # 02 [digit][0x1500]
+LB += mlrec(N(TMPC), 21760)                        # 03 [TMP_CNT][0x5500]
+LB += mlrec(N(0), 5376)                            # 04 [0][0x1500]
+LB += mlrec(N(TMPA), 21760)                        # 05 [TMP_ACC][0x5500]
+LB += mlrec(N(TMPC), 4633)                         # 06 [TMP_CNT][0x1219]
+LB += mlrec(N(0), 4630)                            # 07 [0][0x1216]
+LB += mlrec(ABS(MLPOS, 'va') + ABS(C47, 'aa'), 1536)  # 08 [P+47][0x0600] (JZ -> body_add)
+LB += mlrec(ABS(MLPOS, 'va') + ABS(C86, 'aa'), 1792)  # 09 [P+86][0x0700] (JMP -> EXIT)
+LB += mlrec(N(TMPA), 4633)                         # 10 [TMP_ACC][0x1219]
+LB += mlrec(N(TMPX), 4629)                         # 11 [TMP_X][0x1215]
+LB += mlrec(N(TMPA), 21760)                        # 12 [TMP_ACC][0x5500]
+LB += mlrec(N(TMPC), 4633)                         # 13 [TMP_CNT][0x1219]
+LB += mlrec(N(1), 4631)                            # 14 [1][0x1217]
+LB += mlrec(N(TMPC), 21760)                        # 15 [TMP_CNT][0x5500]
+LB += mlrec(ABS(MLPOS, 'va') + ABS(C25, 'aa'), 1792)  # 16 [P+25][0x0700] (JMP -> L0)
+LB += mlrec(N(TMPA), 4633)                         # 17 [TMP_ACC][0x1219]
+# VCNT += 17*MLPA; PTR += 34*MLPA (17 рекордов * 2 ячейки)
+LB += ABS(MLPA, 'va') + ABS(MLPA, 'aa') * 16 + ABS(MLTMP, 'sv')
+LB += ABS(MLTMP, 'va') + ['wc', '9', 'as']
+LB += ABS(MLTMP, 'va') + ['wc', '1', 'as']
+LB += ABS(MLTMP, 'va') + ['wc', '1', 'as']
+LB += ABS(MLFA, 'va') + ABS(MLPA, 'sv')          # MLPA' := is_ml (pending на следующую цифру)
 # 24в-2: as = ДВА рекорда — rec2 pre-write [SLC][0x5500] по адресу PTR (после
 #   += K' это ячейка СРАЗУ ЗА rec1): 'as' = OP_LOAD mode 0x15 (acc +=
 #   cell[W]) + OP_STORE_AT 0x55 (cell[W] := acc) — probe121/06 'as' =
@@ -710,12 +798,22 @@ LB += ABS(KA, 'va') + ['wc', '6', 'sv']             # restore S <- KA
 #   cell[PTR] := 305, cell[PTR+1] := 4864; VCNT += OWFA; PTR += 2·OWFA.
 #   На не-ow словах пара @PTR = мусор ЗА рекордом (as: за rec2-парой, PTR уже
 #   += 2·ASFA) — затирается следующим рекордом; за VCNT·2 не читается.
+# 24д-б: em/wo vw-record [NumAcc][0x00F0] at [PTR][PTR+1] (4Б-em / 4Б-часть wo)
 LB += ['wc', '1', 'va'] + ['wc', '8', 'sv']                  # FB := PTR
+LB += ['wc', '0', 'va'] + ['wc', '8', 'sp']                  # cell[PTR] := NumAcc
+LB += ['wc', '1', 'va'] + ['ad', '1'] + ['wc', '8', 'sv']    # FB := PTR+1
+LB += N(240) + ['wc', '8', 'sp']                             # cell[PTR+1] := 0x00F0 (vw tag)
+LB += ABS(EMFA, 'va') + ABS(WOFA, 'aa') + ['wc', '9', 'as']  # VCNT += em + wo
+LB += ABS(EMFA, 'va') + ABS(WOFA, 'aa') + ['wc', '1', 'as']  # PTR += em + wo
+LB += ABS(EMFA, 'va') + ABS(WOFA, 'aa') + ['wc', '1', 'as']  # PTR += em + wo
+# 24в-3/24д-б: ow/wo-пара [0x131][0x1300] (5Б) — wo делит пару с ow
+LB += ['wc', '1', 'va'] + ['wc', '8', 'sv']                  # FB := PTR (пере-сет после сдвига)
 LB += N(305) + ['wc', '8', 'sp']                             # cell[PTR] := 0x131
 LB += ['wc', '8', 'va'] + ['ad', '1'] + ['wc', '8', 'sv']    # FB := PTR+1
 LB += N(4864) + ['wc', '8', 'sp']                            # cell[PTR+1] := 0x1300
-LB += ABS(OWFA, 'va') + ['wc', '9', 'as']                    # VCNT += OWFA
-LB += ABS(OWFA, 'va') + ABS(OWFA, 'aa') + ['wc', '1', 'as']  # PTR += 2·OWFA
+LB += ABS(OWFA, 'va') + ABS(WOFA, 'aa') + ['wc', '9', 'as']  # VCNT += ow + wo
+LB += ABS(OWFA, 'va') + ABS(WOFA, 'aa') \
+    + ABS(OWFA, 'aa') + ABS(WOFA, 'aa') + ['wc', '1', 'as']  # PTR += 2·(ow + wo)
 # NumAcc' = is_dig ? A : 0; 24в-3: pr НЕ сбрасывает NumAcc — 'nb 7 pr ne'
 #   ждёт цифру 7 из старого NumAcc (иначе neK-ветка читает 0 — байт-диф @33).
 LB += sel_val(ZNA, DGFA) + ABS(151, 'sv')           # base := is_dig ? A : 0
@@ -743,7 +841,8 @@ LB += ['wc', '2', 'va', 'wc', '8', 'sp']
 LB += ABS(MKFA, 'va') + ABS(S0FA, 'aa') + ['eq', '2'] + ABS(MKLG, 'sv')
 LB += ['wc', '6', 'va'] + ABS(NBFA, 'aa') + ['eq', '2'] + ABS(DTFA, 'aa') \
     + ABS(DGFA, 'aa') + ABS(NKFA, 'aa') + ABS(K4FA, 'aa') + ABS(EQKFA, 'aa') \
-    + ABS(MKLG, 'aa') + ABS(BADIF, 'aa') + ABS(BADEJ, 'aa') + ABS(BADJB, 'aa')
+    + ABS(MKLG, 'aa') + ABS(BADIF, 'aa') + ABS(BADEJ, 'aa') + ABS(BADJB, 'aa') \
+    + ABS(MLLEG, 'aa')  # 24д-б: 'ml' легален только при S==0
 LB += ['eq', '0'] + ABS(BSFA, 'sv')
 # L = (badsum + E + dot) > 0; stay = (L==0)
 LB += ABS(BSFA, 'va') + ABS(EFASC, 'aa') + ABS(DTFA, 'aa') + ['gt', '0']

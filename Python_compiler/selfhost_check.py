@@ -29,7 +29,11 @@ def run(binp, src):
     outp = binp + '.out'
     if os.path.exists(outp):
         os.remove(outp)
-    r = subprocess.run([sys.executable, VM, binp, '--source', src, '--quiet'],
+    # Спринт 102 (W-122/24д-б): самосборка 24д-тома исполняет ~25.8 млн
+    # опкодов — дефолтный лимит VM 10 млн честно падает KERNEL PANIC. Поднимаем
+    # лимит явно (прецедент --steps из probe125), не маскируя расхождения.
+    r = subprocess.run([sys.executable, VM, binp, '--source', src, '--quiet',
+                        '--steps', '50000000'],
                        capture_output=True, encoding='cp1251')
     art = io.open(outp, 'rb').read() if os.path.exists(outp) else None
     return art, r.returncode, r.stdout.strip()[:120]

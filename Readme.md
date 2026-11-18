@@ -4338,3 +4338,20 @@ t5gpr 1/1, T4-shelf 90/90) + T4 multi-statement кросс-молчания (8×
   record-эмиттер `[X][TAG16]` — отдельный фронт 24д-б. tracked:
   Compiler/stage1_compiler.kt/.ctos, Python_compiler/wc14v3ring_build.py,
   pos_wc14v3ring.words, regr120.py, veha12_design.md, veha12g_probe_status.md.
+- **Спринт 102 (W-122/24д-б) — ВЕХА-24: фиксепоинт `T(S_T)==T` ДОСТИГНУТ** —
+  приёмка probe125 (`_t24db`/`_acc24db`/`_self24db`) и tracked. `em`/`wo` —
+  поглотители `nb`-числа: `em` = `[STREAM][0x5100]+[NumAcc][0x00F0]`
+  (`TAGTAB[14]=0x5100`, `cell[20736]=1`), `wo` добавляет `[305][0x1300]`.
+  `ml` — pending-слово плюс runtime-кольцо 17 рекордов / 92 Б с вычисляемыми
+  целями (`rec08 JZ=P+47`, `rec09 JMP=P+86`, `rec16 JMP=P+25`). Ключевой фикс
+  прогноза: `ow` эмитит **14 Б** (`OP_OUTCELL_V` + `FILE_PUT`), а не 9 Б как `pr`;
+  старый `PGOF·4` недосчитывал 5 Б/`ow` ⇒ −5 к EJ3 и −50 к TERM, ломая
+  patched-цели `es`/`if`. Итог: S_T = 5586 ток (лимит 8190), `T` = 13084 Б
+  md5 **30a90f3ff440ec249a132f58ee5a040a**; `T(S_T)` IDENTICAL.
+  `selfhost_check.py` (`--steps 50000000`): **SELFHOST IDENTICAL**.
+  `regr120.py` — **REGRESS OK / rc=0**, пин 30a90f3f: ring-полка
+  **209/209 BYTE-OK + 30/30 честных молчаний + 33/33 diverg-silence
+  + 3/3 ddiv-tracked** (новый `ml`: stage1 45 Б vs кольцо 137 Б), cold IDENTICAL.
+  probe125 `_acc24db`: 272/275 GOOD (3 BAD — устаревшие ожидания, ставшие
+  BYTE-OK, не регрессии). tracked: wc14v3ring_build.py, pos_wc14v3ring.words,
+  selfhost_check.py, regr120.py, veha12_design.md, veha12g_probe_status.md.

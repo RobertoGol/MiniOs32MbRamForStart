@@ -1,61 +1,69 @@
-# W-122 / 24д (ad/gt/lt + честный подъём границы) — статус после переноса в tracked
+# W-122 / 24д + 24д-б — фиксепоинт `T(S_T)==T` достигнут
 
-Дата: 2026-11-18. Ветка `feature/ctos-kernel`, база `1522e0c` (приёмка W-121/24г).
+Дата: 2026-11-18. Ветка `feature/ctos-kernel`, база `26c00f4` (приёмка W-122/24д-а).
 Fresh stage1: `Compiler/stage1_compiler.ctos`, **22861 Б, md5 `984d90d4ab327d67d9f194809a399926`**
-(пересобран из `Compiler/stage1_compiler.kt` после подъёма `MAX_SOURCE_WORDS` 0x1000 → 0x2000;
+(пересобран из `Compiler/stage1_compiler.kt` при подъёме `MAX_SOURCE_WORDS` 0x1000 → 0x2000;
 эмиссия байт-в-байт неизменна против `de5079df`: probe125 `_stage1_sem.py` 20/20 SAME).
 
-## Принято в tracked (24д, частично)
+## Принято в tracked
 
 - `Compiler/stage1_compiler.kt` / `.ctos` — `MAX_SOURCE_WORDS` 0x1000 → 0x2000
   (4096 → 8192 слов; `MAX_USER_WORDS` в билдере 4094 → 8190). Причина — budget-приговор:
   24д-том 4375 ток > 4094, прецедент W-120 (0x800 → 0x1000).
-- `Python_compiler/wc14v3ring_build.py` — `ad/gt/lt` через обобщённую pending-машину `su/eq`.
-- `Python_compiler/pos_wc14v3ring.words` — **4375 ток ≤ 8190**, 10663 Б.
-- `Python_compiler/regr120.py` — пин `cc678b3e`, полка расширена 12 кейсами 24д.
+- `Python_compiler/wc14v3ring_build.py` — `ad/gt/lt` (обобщённая pending-машина
+  `su/eq`) + `em/wo/ml` (спринт 102).
+- `Python_compiler/pos_wc14v3ring.words` — **5586 ток ≤ 8190**, 13650 Б, md5 `4d12b7ee`.
+- `Python_compiler/regr120.py` — пин `30a90f3f`, полка расширена 25 кейсами 24д-б;
+  два старых div-пина (`nb 7 em`, `nb 7 wo`) переведены в `ok`.
+- `Python_compiler/selfhost_check.py` — явный `--steps 50000000`.
 
-Сборка: `[SUCCESS] … 1061656 опкодов, ячеек 4446`; артефакт
-`Compiler/stage1_compiler.ctos.out` = **10674 Б md5 `cc678b3e180781d05dad0c7de6c0cf3d`**, вердец `0xFF`.
+Сборка: `[SUCCESS] Compiler/stage1_compiler.ctos — 1348680 опкодов(а), ячеек: 5657`;
+артефакт `Compiler/stage1_compiler.ctos.out` =
+**13084 Б md5 `30a90f3ff440ec249a132f58ee5a040a`**, вердец `0xFF`.
 
-## Приёмка byte-exact (probe125, 25 кейсов)
+## Приёмка byte-exact
 
-`_w122_verify.py`: **BYTE-OK 21/25**. Новые слова:
-`ad 0/1/5`, `gt 0/9`, `lt 0/2`, `nb 6 1 va gt 9 eq 0`, `nb 6 5 aa su 1 lt 2`,
-`ad 5 ad 3`, `gt 0 lt 2 ad 5` — все BYTE-OK. Прежние `su/eq/wc/pr/te` без регресса.
-Честные SILENT (4): `ml 2`, `nb 0 em`, `nb 0 wo` (ещё не реализованы),
-`nb 3 ad 7 ne` (stage1 печатает 0xFE-артефакт, кольцо честно молчит — tracked-DIV).
+`regr120.py`: **REGRESS OK / rc=0** — **209/209 positives BYTE-OK + 30/30 honest-silence
++ 33/33 diverg-silence + 3/3 ddiv-tracked**, cold IDENTICAL.
+Новый ddiv — `ml`: stage1 печатает 45-Б отчёт, кольцо — 137-Б ml-кольцо.
 
-`regr120.py`: **REGRESS OK / rc=0** — **188/188 positives BYTE-OK + 25/25 honest-silence
-+ 35/35 diverg-silence + 2/2 ddiv-tracked**, cold IDENTICAL. Артефакт 10674 Б `cc678b3e`.
+probe125 `_t24db.py`: 8/11 BYTE-OK + 3 честных SILENT (`nb 12 em`, `em 5`, `wo 5`).
+probe125 `_acc24db.py`: **272/275 GOOD**, 3 BAD — устаревшие ожидания, которые стали
+BYTE-OK (`nb 7 em`, `nb 7 wo`, `wc 5 ml 2`), не регрессии.
 
-## Устройство `ad/gt/lt` (честно)
+## Устройство `em/wo/ml` (честно)
 
-Детекция по `cell[8]` = текущее слово исходника (внутренние `gt/ad` кольца — просто
-арифметика и не конфликтуют). Тег цифры-операнда:
+Детекция `ad/gt/lt` — по `cell[8]` = текущее слово исходника; тег цифры-операнда
 `TAGTAB[8] = 4628 + 2·EQOA + 3·SUPA + 6·GTUA + 7·LTOA`, что даёт
-`eq 0x1216 / su 0x1217 / ad 0x1214 / gt 0x121A / lt 0x121B`.
-Sticky-флаги `EQOA/ADOA/GTUA/LTOA` по формуле `(2·PDG + X_old + is_X) == 1`
-(аналог `SUPA` из 24г); `EQSG` — «чистый» is_eq до OR с остальными.
-`ml` в сумме тега жжёт слот S — S стешится в `SSAV=198` и сразу восстанавливается.
+`eq 0x1216 / su 0x1217 / ad 0x1214 / gt 0x121A / lt 0x121B`. Sticky-флаги —
+по формуле `(2·PDG + X_old + is_X) == 1`.
 
-## Фиксепоинт `T(S_T) == T` — НЕ достигнут (честный блокер)
+24д-б:
+- `em` = `[STREAM][0x5100] + [NumAcc][0x00F0]` (`TAGTAB[14]=0x5100`, `cell[20736]=1`);
+  `wo` добавляет `[305][0x1300]`. Оба — поглотители `nb`-числа: без `nb`
+  кольцо честно молчит rc=0.
+- `ml` — pending-слово + runtime-кольцо 17 рекордов / 92 Б. `ABS(v,'va')` загружает
+  acc, `ABS(v,'aa')` добавляет; цели `rec08 JZ=P+47`, `rec09 JMP=P+86`,
+  `rec16 JMP=P+25`. `ml` без цифры — tracked-DIV (оба печатают, байты разные).
 
-`selfhost_check.py`:
-- `T = S(S_T)` — свежий stage1 собирает S_T в 10674 Б `cc678b3e`;
-- `T(S_T)` — кольцо на своём же исходнике **молчит** `rc=0`, 5 375 889 опкодов, 761 ячейка;
-- бисект: первый отказ сдвинулся **1263 → 1424-й токен**, контекст
-  `… 7 sv nb 1 9 1 va ml 2 nb 1 9 …` — первое неподдерживаемое слово **`ml`**.
+Ключевой фикс прогноза: `ow` эмитит **14 Б** (`OP_OUTCELL_V` + `FILE_PUT`,
+`stage1 KW_OW`), а не 9 Б как `pr`. Старый вклад `PGOF·4` недосчитывал 5 Б на
+каждое `ow` ⇒ `FPOS` уезжал на −5 к `es#3` и на −50 к `TERM`, ломая patched-цели.
+Добавлен отдельный вклад `OWFA·5`.
 
-Остаток неподдерживаемых слов в S_T: `ml` (50), `wo` (7), `em` (1).
-`ml` — главная стена: 92-Б runtime-кольцо с тремя вычисляемыми целями прыжков
-(`L0 = base+25`, `JZ→L0+22`, `JMP exit→L0+61`, `JMP body→L0`).
-Все байты кольца выразимы через record-эмиттер `[X][TAG16]`:
-`[0x55][BE32]` (STORE_AT), `[0x15][BE32]` (CONST), `[0x12][0x19|0x16|0x17][BE32]` (LOAD),
-`[0x06][BE32]` (JZ), `[0x07][BE32]` (JMP). Реализация — отдельный фронт (24д-б).
-`em` = `OP_OUTCELL + BE32(STREAM_EMIT_CELL) + BE32(N)` (9 Б), `wo` добавляет
-`OP_SYSCALL(FILE_PUT)` (14 Б всего) — поглотители `nb`-числа, дешевле `ml`.
+## Фиксепоинт `T(S_T) == T` — ДОСТИГНУТ
 
-Это **не** регрессия: фиксепоинт не сходился и на W-121 по тем же причинам.
+`python -X utf8 Python_compiler/selfhost_check.py`:
+
+- `T = S(S_T)` — свежий stage1 собирает S_T в 13084 Б `30a90f3f`;
+- `T(S_T)` — кольцо на своём же исходнике даёт 13084 Б `30a90f3f`;
+- `SELFHOST IDENTICAL: T(S_T) == T`, rc=0.
+
+Для самосборки лимит VM поднят явно: `--steps 50000000` (дефолтные 10 млн
+опкодов честно падают `KERNEL PANIC` на ~25.8 млн); расхождения не маскируются.
+
+История откатов (для честности): на W-121 первый отказ был 1263-й токен (`gt`),
+на 24д-а — 1424-й (`ml`). Оба устранены в 24д/24д-б.
 
 ## Воспроизведение
 
@@ -64,21 +72,27 @@ python -X utf8 Python_compiler/codegen.py Compiler/stage1_compiler.kt
 python -X utf8 Python_compiler/wc14v3ring_build.py
 python -X utf8 CtOs-Emu/ctos_vm.py Compiler/stage1_compiler.ctos \
   --source Python_compiler/pos_wc14v3ring.words --quiet
-python -X utf8 Python_compiler/regr120.py
-python -X utf8 Python_compiler/selfhost_check.py   # ожидаемо rc=1 (BLOCKED at ml)
+python -X utf8 Python_compiler/regr120.py        # REGRESS OK / rc=0
+python -X utf8 Python_compiler/selfhost_check.py  # SELFHOST IDENTICAL / rc=0
 ```
 
-## Итог спринта 101 (W-122, 24д-а)
+## Итог спринта 102 (W-122, 24д-б)
 
-- `ad/gt/lt`: **принято**, byte-exact 21/25 (новые 11 кейсов BYTE-OK), regr120 REGRESS OK.
+- `em/wo/ml`: **принято**, byte-exact; `regr120` 209/30/33/3, cold IDENTICAL.
+- ВЕХА-24: **закрыта** — `T(S_T)==T`, 13084 Б `30a90f3f`, S_T 5586 ток ≤ 8190.
 - Граница 0x1000 → 0x2000: **принята**, эмиссия stage1 byte-exact неизменна.
-- 24д-б (`ml/em/wo` → фиксепоинт): **не принято**, честно блокируется на `ml` (токен 1424).
 
 ---
 
+## Архив: W-122 / 24д-а (ad/gt/lt + честный подъём границы)
+
+База `1522e0c`. BYTE-OK 21/25; новые `ad/gt/lt` работали, 4 SILENT = ml/em/wo +
+`nb 3 ad 7 ne`. Том 4375 ток, артефакт 10674 Б `cc678b3e`, regr120 188/188 +
+25/25 + 35/35 + 2/2, cold IDENTICAL. Первый refusal фиксепоинта — 1424-й токен (`ml`).
+
 ## Архив: W-121 / 24г (if/es/mk/jb + su)
 
-Дата: 2026-11-18. База `534d678`. Fresh stage1 тогда: 22861 Б md5 `de5079df`.
+База `534d678`. Fresh stage1 тогда: 22861 Б md5 `de5079df`.
 Том 4065 ток, артефакт 9955 Б `22896d3f`, probe124 53/16/0, regr120 177/177 + 24/24 +
 35/35 + 2/2, cold IDENTICAL. Первый refusal фиксепоинта — 1263-й токен (`gt`).
 Подробности — в git-истории (`1522e0c`) и комментариях `wc14v3ring_build.py`.

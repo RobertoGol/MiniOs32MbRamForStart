@@ -1,18 +1,19 @@
 # -*- coding: utf-8 -*-
-# Спринт 101 (regr120, W-122): base regr120-W121 (HEAD = 1522e0c — приёмка
-# 24г). СТУПЕНЬ 24д (ЧАСТИЧНО): ad/gt/lt в кольце через обобщённую
-# pending-машину su/eq (тег цифры 4628 + 2*EQOA + 3*SUPA + 6*GTUA + 7*LTOA;
-# is_b2 B-виды на 4628/4634/4635), честный подъём границы тома
-# MAX_SOURCE_WORDS 0x1000 -> 0x2000 (8192 слов; MAX_USER_WORDS 8190) —
-# 24д-том = 4375 ток > 4094, budget-приговор по прецеденту W-120; stage1
-# пересобран из КОДЕНА — 22861 Б md5 984d90d4 (эмиссия байт-в-байт
-# неизменна против de5079df, probe125/_stage1_sem 20/20 SAME). Итог: том
-# 4375 ток (лимит 8190), 10663 Б; артефакт 10674 Б 0xFF md5 cc678b3e,
-# вердец 0xFF. ПРИЁМКА probe125 (_w122_verify): 21/25 BYTE-OK (ad 0/1/5,
-# gt 0/9, lt 0/2, gt9eq0, su1lt2, ad5ad3, gt0lt2ad5 + регресс su/eq/wc/pr),
-# честные SILENT = ml/em/wo + nb...ad...ne. Первый refusal на S_T сдвинулся
-# 1263 ('gt') -> 1424 ('ml'). 24д-фиксепоинт T(S_T)==T НЕ достигнут
-# (блокер: ml 92Б runtime-кольцо с вычисляемыми целями, em/wo).
+# Спринт 102 (regr120, W-122/24д-б): base regr120-W122 (24д-а, HEAD =
+# 26c00f4). ВЕХА-24 ФИКСЕПОИНТ ДОСТИГНУТ: T(S_T)==T.
+# 24д: ad/gt/lt в кольце через обобщённую pending-машину su/eq (тег цифры
+# 4628 + 2*EQOA + 3*SUPA + 6*GTUA + 7*LTOA; is_b2 B-виды на 4628/4634/4635),
+# честный подъём границы тома MAX_SOURCE_WORDS 0x1000 -> 0x2000 (8192 слов;
+# MAX_USER_WORDS 8190); stage1 пересобран из КОДЕНА — 22861 Б md5 984d90d4
+# (эмиссия байт-в-байт неизменна против de5079df).
+# 24д-б: em/wo — поглотители nb; ml — runtime-кольцо 17 рекордов / 92 Б с
+# вычисляемыми целями. КЛЮЧЕВОЙ ФИКС: 'ow' эмитит 14 Б (OP_OUTCELL_V +
+# FILE_PUT), а не 9 Б как 'pr'; старый PGOF·4 недосчитывал 5 Б/ow =>
+# -5 к EJ3 и -50 к TERM. Итог: S_T = 5586 ток (лимит 8190), T = 13084 Б
+# md5 30a90f3f, T(S_T) IDENTICAL (selfhost_check, --steps 50000000).
+# ПРИЁМКА: regr120 209/209 BYTE-OK + 30/30 honest-silence + 33/33
+# diverg-silence + 3/3 ddiv-tracked; probe125/_acc24db 272/275 GOOD
+# (3 BAD — устаревшие ожидания, ставшие BYTE-OK), cold IDENTICAL.
 # Спринт 100 (regr120, W-121): base regr119 (HEAD = 534d678 — промежуточный
 # статус W-121). СТУПЕНЬ 24г: управляющие слова if/es/mk/jb в кольце через
 # source-words + Stage2-патч TAIL до FILE_SEAL (site_store 392, cstore 124),
@@ -5493,7 +5494,10 @@ NEW = {
     # ---- веха-24 W-112 (спринт 92): кольцевой компилятор 24а —
     # generic 'nb <цифры>+ ne' + голые цифры; том-машина состояний
     # nb-прогона (SCAN/PS/EMIT/TAIL, слоты F3..FC, ARR 0xA01000) ----
-    'Python_compiler/pos_wc14v3ring.words': (0xFF, 'cc678b3e'),  # 24д W-122: 4375 ток 10674Б (было 22896d3f 4065ток 9955Б 24г; 64c0bed1 2724ток 24в-3)
+    # W-122/24д-б ВЕХА-24 ФИКСЕПОИНТ: 5586 ток, T = 13084 Б md5 30a90f3f;
+    #   T(S_T)==T, selfhost_check IDENTICAL (было cc678b3e 4375ток 10674Б 24д-а;
+    #   22896d3f 4065ток 9955Б 24г; 64c0bed1 2724ток 24в-3)
+    'Python_compiler/pos_wc14v3ring.words': (0xFF, '30a90f3f'),
     # ---- веха-23 W-59 (спринт 39): честный КРОСС-ФОРМНЫЙ T4×T3-том ----
     'Python_compiler/pos_wc14v3t43.words': (0xFF, 'beac8aea'),
     'Python_compiler/target_t43_33.words': (0xFF, '32448898'),
@@ -6450,8 +6454,10 @@ RING_CASES = [
     #   (ow/pr/te-эмит реализованы); их старые div-пины НЕ сохраняем:
     ('nb 7 zz', 'div'),
     ('nb 86 ne', 'div'),
-    ('nb 7 em', 'div'),
-    ('nb 7 wo', 'div'),
+    # W-122/24д-б MIGRATED из div: em/wo-поглотители nb реализованы,
+    #   'nb 7 em' = 072dfd7c(54), 'nb 7 wo' = 5829a700(59) BYTE-OK.
+    ('nb 7 em', 'ok'),
+    ('nb 7 wo', 'ok'),
     ('cp', 'div'),
     ('aa', 'div'),
     ('nb 12 va', 'div'),
@@ -6580,6 +6586,38 @@ RING_CASES = [
     ('ad 5 ad 3', 'ok'),
     ('gt 0 lt 2 ad 5', 'ok'),
     ('nb 3 ad 7 ne', 'sil'),
+    # ---- спринт 102 (W-122/24д-б): em/wo/ml + ВЕХА-24 ФИКСЕПОИНТ ----
+    # T(S_T)==T: 5586 ток, T = 13084 Б md5 30a90f3ff440ec249a132f58ee5a040a.
+    # Ключевой ФИКС прогноза: 'ow' = 14Б (OP_OUTCELL_V+FILE_PUT), а не 9Б
+    #   ('pr') — старый PGOF·4 недосчитывал 5Б/ow => -5 к EJ3, -50 к TERM.
+    # ml 0..9: runtime-кольцо 17 рекордов / 92Б, цели JZ/JMP вычисляемые.
+    ('ml 0', 'ok'),
+    ('ml 1', 'ok'),
+    ('ml 2', 'ok'),
+    ('ml 3', 'ok'),
+    ('ml 4', 'ok'),
+    ('ml 5', 'ok'),
+    ('ml 6', 'ok'),
+    ('ml 7', 'ok'),
+    ('ml 8', 'ok'),
+    ('ml 9', 'ok'),
+    ('nb 6 5 aa ml 2', 'ok'),
+    ('wc 5 ml 2', 'ok'),
+    ('nb 5 em', 'ok'),
+    ('nb 0 em', 'ok'),
+    ('nb 5 wo', 'ok'),
+    ('nb 0 wo', 'ok'),
+    ('nb 5 em nb 7 ne', 'ok'),
+    ('nb 5 wo nb 7 ne', 'ok'),
+    ('nb 3 wo', 'ok'),
+    # честные негативы: кольцо молчит rc=0, stage1 печатает 45Б-отчёт
+    ('nb 12 em', 'sil'),
+    ('em 5', 'sil'),
+    ('wo 5', 'sil'),
+    ('ml 12', 'sil'),
+    ('nb 5 ml 2', 'sil'),
+    # ddiv: ОБА печатают, байты РАЗНЫЕ (stage1 45Б-отчёт vs кольцо 92Б ml)
+    ('ml', 'ddiv'),
 ]
 n_ring_ok = sum(1 for _, k in RING_CASES if k == 'ok')
 n_ring_sil = sum(1 for _, k in RING_CASES if k == 'sil')
@@ -6672,7 +6710,7 @@ if fails:
     for f_ in fails:
         print(' ', f_)
     sys.exit(1)
-print('REGRESS OK W-122 ring-compiler-24d-partial (4375tok 10674B cc678b3e; boundary 0x2000/8190: stage1 22861B 984d90d4 emission=SAME vs de5079df; 24d ad/gt/lt BYTE-OK; FIXPOINT STILL BLOCKED at ml; legacy 24g 4065tok 9955B 22896d3f; boundary 0x1000/4094: 4094 OK 24604B, 4095 OVERFLOW, neg_big5 MIGRATED 0xFE/69ebc576 -> 0xFF/ade43dcd; ring-shelf 188/188 BYTE-OK + 25/25 honest-silences + 35/35 diverg-silence + 2/2 ddiv-tracked [wc 5 eq/eq]; probe124 smoke 53/53 BYTE-OK + 16/16 tracked-DIV, DIFF=0; loader 0x1000: tracked IDENTICAL + 4-word-shelf 80/80 + T3-shelf '
+print('REGRESS OK W-122 ring-compiler-24d-b FIXPOINT (5586tok 13084B 30a90f3f; boundary 0x2000/8190: stage1 22861B 984d90d4 emission=SAME vs de5079df; 24d ad/gt/lt + 24d-b em/wo/ml BYTE-OK; T(S_T)==T SELFHOST IDENTICAL; legacy 24g 4065tok 9955B 22896d3f; boundary 0x1000/4094: 4094 OK 24604B, 4095 OVERFLOW, neg_big5 MIGRATED 0xFE/69ebc576 -> 0xFF/ade43dcd; ring-shelf 209/209 BYTE-OK + 30/30 honest-silences + 33/33 diverg-silence + 3/3 ddiv-tracked [wc 5 eq/eq; ml]; probe124 smoke 53/53 BYTE-OK + 16/16 tracked-DIV, DIFF=0; loader 0x1000: tracked IDENTICAL + 4-word-shelf 80/80 + T3-shelf '
       '90/90 + micro-shelf t2d 10/10 + t1te 1/1 + t1pr 1/1 + t1as 1/1 '
       '+ t1va 1/1 + t1ow 1/1 + t1sp 1/1 + t1if 1/1 + t1sv 1/1 '
       '+ t1vw 1/1 + t2pr 1/1 + t2te 1/1 + t2as 1/1 + t2va 1/1 + '
