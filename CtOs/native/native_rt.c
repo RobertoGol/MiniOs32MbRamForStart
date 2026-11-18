@@ -9,6 +9,10 @@
  *   - контекст 0x150 WORK_CTX_SAVE, 0x151 WORK_CTX_RESTORE,
  *              0x152 WORK_CTX_YIELD;
  *   - таймер   0x153 TIMER_ARM, 0x154 TIMER_RET.
+ * A3 (принято): загрузка .ctos-модулей из контейнера CTMD v1 (описание
+ *   в CtOs/native/build_modules_image.py): --module <name> <image> ...
+ *   Каталог проверяется по границам, тело модуля — по CRC-32, затем
+ *   модуль исполняется с чистой VM-семантикой и тем же набором NID.
  * Плюс опкоды, реально исполняемые полной самосборкой stage1:
  *   0x11 STORE (адрес = смещение опкода), 0x20..0x26 NET_OPS (1-байтные
  *   маркеры etalon VM), 0x60 ASMBLOCK.
@@ -57,6 +61,13 @@
 
 #define SRC_MAX 65536u
 
+/* CTMD — контейнер модулей ядра (A3): 12-байтовый заголовок, 48-байтовые
+   каталожные записи и тела модулей, выровненные по 16 байт. Все числа LE. */
+#define CTMD_MAGIC    "CTMD"
+#define CTMD_VERSION  1u
+#define CTMD_ENTSZ    48u
+#define CTMD_NAMESZ   32u
+
 /* сетевые опкоды etalon VM: 1-байтные маркеры (NET_OPS в ctos_vm.py) */
 #define NET_FIRST 0x20u
 #define NET_LAST  0x26u
@@ -65,6 +76,12 @@ static uint8_t *code;
 static uint32_t code_len;
 static uint32_t entry_point;
 static const char *binary_path;
+
+/* A3: сведения о загруженном модуле (для events и честного лога) */
+static char module_name[CTMD_NAMESZ];
+static uint32_t module_len;
+static uint32_t module_crc;
+static int module_mode;
 
 static uint32_t ckey[CELL_CAP];
 static uint32_t cval[CELL_CAP];
@@ -471,21 +488,13 @@ static int do_syscall(uint32_t nid) {
 }
 
 /* ---- загрузка ---- */
-static void load_binary(const char *path) {
-    FILE *f = fopen(path, "rb");
-    if (!f)
-        fatal("не могу открыть бинарь", 0);
-    if (fseek(f, 0, SEEK_END) != 0)
-        fatal("fseek END", 0);
-    long n = ftell(f);
-    if (n < (long)HEADER_V10 || fseek(f, 0, SEEK_SET) != 0)
+/* Проверка одного .ctos-образа и установка точки входа. Используется и
+   прямым запуском файла, и загрузчиком модулей из контейнера CTMD. */
+static void verify_code(uint8_t *data, uint32_t len) {
+    code = data;
+    code_len = len;
+    if (len < HEADER_V10)
         fatal("файл меньше 16 байт — не CTOS-бинарник", 0);
-    code_len = (uint32_t)n;
-    code = (uint8_t *)malloc(code_len);
-    if (!code || fread(code, 1, code_len, f) != code_len)
-        fatal(" чтение файла", 0);
-    fclose(f);
-
     if (memcmp(code, "CTOS", 4) != 0)
         fatal("нет магии 'CTOS' в начале файла", 0);
     uint32_t ver = (uint32_t)code[4] | ((uint32_t)code[5] << 8);
@@ -519,6 +528,103 @@ static void load_binary(const char *path) {
     pc = entry_point;
 }
 
+static void load_binary(const char *path) {
+    FILE *f = fopen(path, "rb");
+    if (!f)
+        fatal("не могу открыть бинарь", 0);
+    if (fseek(f, 0, SEEK_END) != 0)
+        fatal("fseek END", 0);
+    long n = ftell(f);
+    if (n < (long)HEADER_V10 || fseek(f, 0, SEEK_SET) != 0)
+        fatal("файл меньше 16 байт — не CTOS-бинарник", 0);
+    uint8_t *buf = (uint8_t *)malloc((size_t)n);
+    if (!buf || fread(buf, 1, (size_t)n, f) != (size_t)n)
+        fatal("чтение файла", 0);
+    fclose(f);
+    verify_code(buf, (uint32_t)n);
+}
+
+/* A3: загрузка .ctos-модуля из контейнера CTMD.
+   Каталожная запись (48 Б): name[32] ASCIIZ, offset LE32, length LE32,
+   crc32 LE32 (тела модуля), reserved LE32.
+   Честные отказы: неизвестное имя, выход за файл, несовпадение CRC. */
+static uint32_t rd_le32(const uint8_t *p) {
+    return (uint32_t)p[0] | ((uint32_t)p[1] << 8) |
+           ((uint32_t)p[2] << 16) | ((uint32_t)p[3] << 24);
+}
+
+static void load_module(const char *image_path, const char *want) {
+    FILE *f = fopen(image_path, "rb");
+    if (!f)
+        fatal("CTMD: не могу открыть контейнер модулей", 0);
+    if (fseek(f, 0, SEEK_END) != 0)
+        fatal("CTMD: fseek END", 0);
+    long flen = ftell(f);
+    if (flen < (long)(12u + CTMD_ENTSZ) || fseek(f, 0, SEEK_SET) != 0)
+        fatal("CTMD: контейнер короче заголовка и одной записи", 0);
+    uint8_t *img = (uint8_t *)malloc((size_t)flen);
+    if (!img || fread(img, 1, (size_t)flen, f) != (size_t)flen)
+        fatal("CTMD: чтение контейнера", 0);
+    fclose(f);
+
+    if (memcmp(img, CTMD_MAGIC, 4) != 0)
+        fatal("CTMD: нет магии 'CTMD'", 0);
+    if (rd_le32(img + 4) != CTMD_VERSION)
+        fatal("CTMD: неизвестная версия контейнера", rd_le32(img + 4));
+    uint32_t count = rd_le32(img + 8);
+    if (!count || count > 4096u ||
+        (uint64_t)12u + (uint64_t)count * CTMD_ENTSZ > (uint64_t)flen)
+        fatal("CTMD: каталог выходит за контейнер", count);
+
+    uint32_t i;
+    for (i = 0; i < count; i++) {
+        const uint8_t *e = img + 12u + (size_t)i * CTMD_ENTSZ;
+        char name[CTMD_NAMESZ];
+        memcpy(name, e, CTMD_NAMESZ);
+        name[CTMD_NAMESZ - 1u] = '\0';
+        if (strcmp(name, want) != 0)
+            continue;
+
+        uint32_t off = rd_le32(e + CTMD_NAMESZ);
+        uint32_t len = rd_le32(e + CTMD_NAMESZ + 4u);
+        uint32_t crc = rd_le32(e + CTMD_NAMESZ + 8u);
+        if ((uint64_t)off + (uint64_t)len > (uint64_t)flen)
+            fatal("CTMD: тело модуля выходит за контейнер", off);
+        if (len < HEADER_V10)
+            fatal("CTMD: тело модуля короче CTOS-заголовка", len);
+        uint32_t real = crc32_body(img + off, len);
+        if (real != crc) {
+            fprintf(stderr,
+                    "FATAL: CTMD: честный брак целостности модуля '%s': "
+                    "в каталоге 0x%08X, CRC тела 0x%08X\n", name, crc, real);
+            exit(1);
+        }
+
+        uint8_t *body = (uint8_t *)malloc(len);
+        if (!body)
+            fatal("CTMD: malloc тела модуля", len);
+        memcpy(body, img + off, len);
+        free(img);
+
+        memset(module_name, 0, sizeof(module_name));
+        memcpy(module_name, name, strlen(name));
+        module_len = len;
+        module_crc = crc;
+        module_mode = 1;
+
+        /* артефакт FILE_* модуля пишется рядом с контейнером: <img>.<name>.out */
+        size_t need_len = strlen(image_path) + 1u + strlen(name) + 1u;
+        char *bp = (char *)malloc(need_len);
+        if (!bp)
+            fatal("CTMD: malloc пути артефакта", 0);
+        snprintf(bp, need_len, "%s.%s", image_path, name);
+        binary_path = bp;
+        verify_code(body, len);
+        return;
+    }
+    fatal("CTMD: модуль с таким именем не найден", 0);
+}
+
 static void load_source(const char *path) {
     FILE *f = fopen(path, "r");
     char line[8192];
@@ -546,19 +652,46 @@ static void load_source(const char *path) {
 }
 
 int main(int argc, char **argv) {
-    if (argc < 3 || argc > 4) {
-        fprintf(stderr,
-                "Использование: %s <binary.ctos> <events.txt> [source.words]\n",
-                argv[0]);
-        return 1;
+    const char *events_path;
+    const char *src_path = NULL;
+
+    if (argc >= 2 && strcmp(argv[1], "--module") == 0) {
+        /* <exe> --module <name> <image.ctmd> <events.txt> [source.words] */
+        if (argc < 5 || argc > 6) {
+            fprintf(stderr,
+                    "Использование: %s --module <name> <image.ctmd> "
+                    "<events.txt> [source.words]\n", argv[0]);
+            return 1;
+        }
+        load_module(argv[3], argv[2]);
+        events_path = argv[4];
+        if (argc == 6)
+            src_path = argv[5];
+    } else {
+        /* <exe> <binary.ctos> <events.txt> [source.words] */
+        if (argc < 3 || argc > 4) {
+            fprintf(stderr,
+                    "Использование: %s <binary.ctos> <events.txt> "
+                    "[source.words]\n"
+                    "           или: %s --module <name> <image.ctmd> "
+                    "<events.txt> [source.words]\n", argv[0], argv[0]);
+            return 1;
+        }
+        binary_path = argv[1];
+        load_binary(argv[1]);
+        events_path = argv[2];
+        if (argc == 4)
+            src_path = argv[3];
     }
-    binary_path = argv[1];
-    load_binary(argv[1]);
-    if (argc == 4)
-        load_source(argv[3]);
-    events = fopen(argv[2], "wb");
+
+    if (src_path)
+        load_source(src_path);
+    events = fopen(events_path, "wb");
     if (!events)
         fatal("не могу открыть events-файл", 0);
+    if (module_mode)
+        fprintf(events, "MODULE %s %u %08X\n",
+                module_name, module_len, module_crc);
 
     for (;;) {
         uint8_t op;

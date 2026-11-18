@@ -6,6 +6,9 @@ A2 — NID-слой (файл 0x130..0x137, контекст 0x150..0x152, та�
      сверка последовательностей SYSCALL/TICK/NET/PORT, счётчиков и байт
      артефакта, плюс честные негативы (брак порядка syscall / пустой аргумент).
      Полная самосборка S(S_T) нативом обязана дать тот же T, что и VM.
+A3 — загрузка .ctos-модулей из контейнера CTMD: каждый модуль стартует
+     загрузчиком --module и сверяется с прямой загрузкой в VM; негативы —
+     неизвестное имя и подмена тела с неверным CRC.
 
 Запуск:
     python -X utf8 Python_compiler/verify_native_rt.py
@@ -15,6 +18,7 @@ import io
 import os
 import re
 import shutil
+import struct
 import subprocess
 import sys
 import tempfile
@@ -75,6 +79,16 @@ NEGATIVES = [
 # ожидаемые итоги самосборки (TKT-052 / W-122)
 EXPECT_T_LEN = 13084
 EXPECT_T_MD5 = "30a90f3ff440ec249a132f58ee5a040a"
+
+# A3: модули в контейнере CTMD (имя, исходный .ctos, исходник для FILE_GET)
+BUILDER = os.path.join(REPO, "CtOs", "native", "build_modules_image.py")
+A3_MODULES = [
+    ("memmgr",       "CtOs/memmgr.ctos",                  None),
+    ("sched",        "CtOs/kernel_sched.ctos",            None),
+    ("syscall_test", "Python_compiler/syscall_test.ctos", None),
+    ("stage1",       "Compiler/stage1_compiler.ctos",
+                     "Python_compiler/pos_wc14v3ring.words"),
+]
 
 
 def clean(p):
@@ -143,6 +157,16 @@ def run_native(binp, src, events):
     outp = binp + ".out"
     clean(outp)
     cmd = [EXE, binp, events]
+    if src:
+        cmd += [src]
+    return subprocess.run(cmd, capture_output=True, encoding="utf-8",
+                          errors="replace", timeout=1200)
+
+
+def run_native_module(name, img, events, src):
+    outp = img + "." + name + ".out"
+    clean(outp)
+    cmd = [EXE, "--module", name, img, events]
     if src:
         cmd += [src]
     return subprocess.run(cmd, capture_output=True, encoding="utf-8",
@@ -292,6 +316,81 @@ def main():
               (rv.returncode, rn.returncode, "OK" if ok else "FAIL"))
         if not ok:
             fails.append("corrupt CRC")
+
+        # ---------- A3: загрузка .ctos-модулей из контейнера CTMD ----------
+        img = os.path.join(tmp, "modules.ctmd")
+        rb = subprocess.run([sys.executable, "-X", "utf8", BUILDER, img],
+                            capture_output=True, encoding="utf-8", timeout=120)
+        if rb.returncode:
+            print("CTMD build FAIL:", rb.stderr.strip()[:300])
+            fails.append("CTMD build")
+        else:
+            print("CTMD build:", rb.stdout.strip().splitlines()[-1])
+            raw_img = io.open(img, "rb").read()
+            for tag, rel, src_rel in A3_MODULES:
+                nm = os.path.basename(rel)
+                vb, _ = stage_pair(tmp, nm, rel, src_rel, "a3_" + tag)
+                vt = os.path.join(tmp, "a3_" + tag + ".vm.trace")
+                steps = 50000000 if src_rel else None
+                rv = run_vm(vb, src_rel, vt, steps=steps)
+                ni = os.path.join(tmp, "a3_" + tag + ".ctmd")
+                shutil.copy2(img, ni)
+                ne = os.path.join(tmp, "a3_" + tag + ".nat.events")
+                rn = run_native_module(tag, ni, ne, src_rel)
+
+                vv = vm_events(vt)
+                nv0, nc = native_events(ne)
+                modline = nv0[0] if nv0 and nv0[0].startswith("MODULE ") else None
+                nv = nv0[1:] if modline else nv0
+                pa, pb = vb + ".out", ni + "." + tag + ".out"
+                va = io.open(pa, "rb").read() if os.path.exists(pa) else None
+                vbts = io.open(pb, "rb").read() if os.path.exists(pb) else None
+                vc = vm_counts(rv.stdout)
+                art_ok = ((va is None and vbts is None) or
+                          (va is not None and va == vbts))
+                ok = (rv.returncode == 0 and rn.returncode == 0 and
+                      modline is not None and modline.startswith("MODULE " + tag + " ")
+                      and nv == vv and vc is not None and nc == [vc] and art_ok)
+                print("A3 %-12s rc=%d/%d %s events=%d/%d counts=%s art=%s  %s" % (
+                    tag, rv.returncode, rn.returncode,
+                    modline if modline else "-", len(nv), len(vv),
+                    nc[0] if nc else "-", "OK" if art_ok else "DIFF",
+                    "OK" if ok else "FAIL"))
+                if nv != vv:
+                    first_diff(vv, nv, "A3 events")
+                if rn.returncode:
+                    print("  NATIVE ERR:", rn.stderr.strip()[:300])
+                if not ok:
+                    fails.append("A3:" + tag)
+
+            # негативы загрузчика: неизвестное имя и подмена тела модуля
+            nimg = os.path.join(tmp, "a3_badname.ctmd")
+            shutil.copy2(img, nimg)
+            rn = subprocess.run(
+                [EXE, "--module", "nosuch", nimg,
+                 os.path.join(tmp, "a3_badname.events")],
+                capture_output=True, encoding="utf-8", errors="replace")
+            ok_name = (rn.returncode != 0 and "не найден" in
+                       (rn.stdout + rn.stderr))
+            print("A3 neg unknown-name rc=%d %s" % (rn.returncode,
+                  "OK" if ok_name else "FAIL"))
+            if not ok_name:
+                fails.append("A3:unknown-name")
+
+            # каталог: name[32] +offset +length +crc, запись 0 — memmgr
+            off = struct.unpack_from("<I", raw_img, 12 + 32)[0]
+            bad = bytearray(raw_img)
+            bad[off + 64] ^= 0x5A
+            bimg = os.path.join(tmp, "a3_badcrc.ctmd")
+            io.open(bimg, "wb").write(bad)
+            rn2 = run_native_module("memmgr", bimg,
+                                    os.path.join(tmp, "a3_badcrc.events"), None)
+            ok_crc = (rn2.returncode != 0 and "целостности модуля" in
+                      (rn2.stdout + rn2.stderr))
+            print("A3 neg module-CRC rc=%d %s" % (rn2.returncode,
+                  "OK" if ok_crc else "FAIL"))
+            if not ok_crc:
+                fails.append("A3:module-CRC")
     finally:
         shutil.rmtree(tmp, ignore_errors=True)
 
@@ -299,8 +398,8 @@ def main():
     if fails:
         print("NATIVE RT FAIL:", ", ".join(fails))
         return 1
-    print("NATIVE RT OK A1/A2: ядро/NID/NID-негативы/полная самосборка "
-          "совпадают с ctos_vm.py; T(S_T) байт-в-байт")
+    print("NATIVE RT OK A1/A2/A3: ядро/NID/модули CTMD/негативы/полная "
+          "самосборка совпадают с ctos_vm.py; T(S_T) байт-в-байт")
     return 0
 
 

@@ -4384,6 +4384,25 @@ t5gpr 1/1, T4-shelf 90/90) + T4 multi-statement кросс-молчания (8×
   байт-в-байт**. Честные негативы: `probe_seek`, `neg_ctx1`,
   `syscall_test_endfail`, `syscall_test_orderfail` — оба исполнителя rc=1 с
   одной диагностикой; CRC-негатив тоже честен. Границы: неизвестный NID/опкод
-  даёт `FATAL`; legacy-BIOS загрузчик MBR и QEMU — шаг A3, «на железе» не
+  даёт `FATAL`; legacy-BIOS загрузчик MBR и QEMU — шаг A3б, «на железе» не
   заявляется. tracked: CtOs/native/native_rt.c, CtOs/native/NATIVE_RT_SPEC.md,
   CtOs/BRINGUP_SPEC.md, Python_compiler/verify_native_rt.py.
+- **Спринт 105 (TKT-056, bring-up Ф2 шаг A3а) — загрузка `.ctos`-модулей ядра** —
+  добавлен детерминированный контейнер CTMD v1 (`CtOs/native/build_modules_image.py`:
+  магия `CTMD`, версия, каталог по 48 Б с именем/смещением/длиной/CRC-32, тела
+  выровнены по 16 Б) и режим `native_rt.exe --module <name> <image.ctmd> <events>
+  [source.words]`. Загрузчик проверяет границы тела и CRC-32 против каталога,
+  грузит модуль через общую функцию `verify_code`, пишет в events честный след
+  `MODULE <name> <len> <crc>`; артефакт модуля — `<image>.<name>.out`.
+  Честная сверка `python -X utf8 Python_compiler/verify_native_rt.py`:
+  `memmgr` 13/13 event'ов (1395 / 73), `sched` 12/12 (132552 / 313),
+  `syscall_test` 10/10 + 20-Б артефакт md5 совпал, `stage1` 17295/17295
+  (1348680 / 5657) + T 13084 Б md5 `30a90f3ff440ec249a132f58ee5a040a`
+  байт-в-байт. Негативы загрузчика честны: неизвестное имя ⇒ rc=1 «не найден»,
+  подмена тела ⇒ rc=1 «честный брак целостности модуля». Образ `*.ctmd` в VCS
+  не идёт (`*.ctmd` в `.gitignore`) — сборщик воспроизводит его по требованию.
+  Границы: A3б (сырой MBR, INT 13h, VGA text/COM1) и QEMU не сделаны,
+  «на железе» не заявляется. tracked: CtOs/native/native_rt.c,
+  CtOs/native/build_modules_image.py, CtOs/native/NATIVE_RT_SPEC.md,
+  CtOs/BRINGUP_SPEC.md, Python_compiler/verify_native_rt.py, .gitignore,
+  Readme.md.
