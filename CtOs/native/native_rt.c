@@ -1,30 +1,31 @@
 /*
- * native_rt.c — Этап 3 / bring-up Ф2, шаг A1: нативный интерпретатор
- * подмножества опкодов CtOs v1.1 (TKT-056, BRINGUP_SPEC.md).
+ * native_rt.c — Этап 3 / bring-up Ф2: нативный интерпретатор CtOs v1.1.
  *
- * ЧЕСТНЫЕ ГРАНИЦЫ A1:
- *   - поддерживаются только опкоды, реально исполняемые ядром
- *     memmgr.ctos / kernel_sched.ctos:
- *       NOP INIT ALLOC_ST CALL RET TERM JZ JMP
- *       CONST LOAD(0x14/0x15/0x16/0x17/0x18/0x19/0x1A/0x1B)
- *       STORE_A INCELL INCELL_IND STORE_IND OUTCELL OUTCELL_V
- *   - syscall/NID, таймер, контекстные NID 0x150..0x154, файловый слой,
- *     ASMBLOCK и сеть НЕ поддерживаются: при исполнении — честный FATAL,
- *     а не тихое пропускание.
- *   - заголовок v1.1 проверяется по CRC-32 тела (zlib-совместимый),
- *     как в CtOs-Emu/ctos_vm.py. v1.0 принимается с явным предупреждением.
- *   - все ячейки — строго 32 бита; арифметика маскируется & 0xFFFFFFFF
- *     (B-13, контракт TKT-009).
+ * A1 (принято): подмножество опкодов ядра memmgr/kernel_sched.
+ * A2 (принято): честный NID-слой
+ *   - файлы   0x130 FILE_BEGIN, 0x131 FILE_PUT, 0x132 FILE_U16,
+ *             0x133 FILE_END, 0x134 FILE_U8, 0x135 FILE_SEAL,
+ *             0x136 FILE_SEEK, 0x137 FILE_GET;
+ *   - контекст 0x150 WORK_CTX_SAVE, 0x151 WORK_CTX_RESTORE,
+ *              0x152 WORK_CTX_YIELD;
+ *   - таймер   0x153 TIMER_ARM, 0x154 TIMER_RET.
+ * Плюс опкоды, реально исполняемые полной самосборкой stage1:
+ *   0x11 STORE (адрес = смещение опкода), 0x20..0x26 NET_OPS (1-байтные
+ *   маркеры etalon VM), 0x60 ASMBLOCK.
  *
- * Выход: events-файл с детерминированными строками
+ * Всё, чего нет в контракте (неизвестный NID/опкод) — честный FATAL,
+ * никогда тихое пропускание. Заголовок v1.1 проверяется CRC-32
+ * тела (zlib-совместимый). Ячейки строго 32-битные (B-13 / TKT-009).
+ *
+ * Выход — events-файл с детерминированными строками:
  *   PORT <port:08X> <value:08X>
- * для каждого OUTCELL/OUTCELL_V и строка
+ *   SYSCALL <nid:03X>
+ *   TICK <pc:08X>
  *   OPS <count> CELLS <count>
- * в конце. Формат пригоден для побайтовой сверки с трассой ctos_vm.py
- * (Python_compiler/verify_native_rt.py).
+ * что позволяет побайтово сверять поведение с ctos_vm.py --trace.
  *
  * Сборка: gcc -O2 -std=c11 -Wall -Wextra -o native_rt.exe native_rt.c
- * Запуск: native_rt.exe <binary.ctos> <events.txt>
+ * Запуск: native_rt.exe <binary.ctos> <events.txt> [source.words]
  */
 
 #include <stdint.h>
@@ -41,11 +42,29 @@
 #define CELL_CAP  (1u << CELL_BITS)
 #define CELL_MASK (CELL_CAP - 1u)
 
-#define RTS_MAX 4096
+/* etalon VM держит rts без лимита; кольцевой компилятор при чтении потока
+   исходника делает глубокие вложенные CALL, поэтому запас честно широкий. */
+#define RTS_MAX 65536
+
+#define STREAM_CELL 0x00F00FF0u
+#define EOF_CELL    0x00F00FF2u
+#define STATIC_ZONE 0x00F00000u
+#define STATICS_MAX 0x50u
+
+#define CTX_MAGIC 0x43545831u  /* 'CTX1' */
+#define TCK_MAGIC 0x54434B31u  /* 'TCK1' */
+#define TMR_MAGIC 0x544D5231u  /* 'TMR1' */
+
+#define SRC_MAX 65536u
+
+/* сетевые опкоды etalon VM: 1-байтные маркеры (NET_OPS в ctos_vm.py) */
+#define NET_FIRST 0x20u
+#define NET_LAST  0x26u
 
 static uint8_t *code;
 static uint32_t code_len;
 static uint32_t entry_point;
+static const char *binary_path;
 
 static uint32_t ckey[CELL_CAP];
 static uint32_t cval[CELL_CAP];
@@ -59,6 +78,32 @@ static uint32_t acc;
 static uint32_t pc;
 static uint64_t ops;
 static FILE *events;
+
+/* файловый слой */
+static FILE *artifact;
+static uint32_t artifact_n;
+static uint32_t src_words[SRC_MAX];
+static uint32_t src_count;
+static uint32_t src_pos;
+
+/* контекст/таймер */
+typedef struct {
+    uint32_t pc;
+    uint32_t acc;
+    uint32_t len;
+    uint32_t rts[RTS_MAX];
+} Ctx;
+
+static Ctx kernel_ctx;
+static int have_kernel_ctx;
+static int tick_armed;
+static int tick_pending;
+static uint32_t tick_quantum;
+static uint32_t tick_next;
+static uint32_t tick_trap_block;
+static uint32_t tick_trap_entry;
+static uint32_t tick_st_base;
+static uint32_t tick_st_count;
 
 static void fatal(const char *msg, uint32_t arg) {
     fprintf(stderr, "FATAL: %s", msg);
@@ -126,7 +171,7 @@ static void cell_set(uint32_t key, uint32_t val) {
     cell_count++;
 }
 
-/* ---- чтение BE32 потока опкодов ---- */
+/* ---- поток опкодов ---- */
 static uint32_t be32(uint32_t at) {
     if (at + 4u > code_len)
         fatal("BE32 обрезан в конце файла", at);
@@ -139,11 +184,10 @@ static void need(uint32_t at, uint32_t n) {
         fatal("опкод обрезан в конце файла", at);
 }
 
-static void jump_to(uint32_t target) {
-    /* ровно контракт ctos_vm.jump_target: строго внутрь потока опкодов */
+static uint32_t jump_to(uint32_t target) {
     if (target <= entry_point || target >= code_len)
         fatal("переход вне потока опкодов", target);
-    pc = target;
+    return target;
 }
 
 static void emit_port(uint32_t port, uint32_t val) {
@@ -151,6 +195,282 @@ static void emit_port(uint32_t port, uint32_t val) {
     fprintf(events, "PORT %08X %08X\n", port, val);
 }
 
+static void le32(FILE *f, uint32_t v) {
+    fputc((int)(v & 0xFFu), f);
+    fputc((int)((v >> 8) & 0xFFu), f);
+    fputc((int)((v >> 16) & 0xFFu), f);
+    fputc((int)((v >> 24) & 0xFFu), f);
+}
+
+/* ---- контекстные блоки 'CTX1'/'TCK1' (TKT-055) ---- */
+static void ctx_write(uint32_t ptr, uint32_t save_pc, uint32_t magic) {
+    uint32_t i;
+    if (rts_len > 0x80u)
+        fatal("WORK_CTX: глубина стека сверх лимита 0x80", rts_len);
+    if (save_pc < entry_point || save_pc >= code_len)
+        fatal("WORK_CTX: pc снимка вне потока опкодов", save_pc);
+    cell_set(ptr, magic);
+    cell_set(ptr + 1u, save_pc);
+    cell_set(ptr + 2u, acc);
+    cell_set(ptr + 3u, rts_len);
+    for (i = 0; i < rts_len; i++)
+        cell_set(ptr + 4u + i, rts[i]);
+}
+
+static void ctx_read(uint32_t ptr, uint32_t magic, Ctx *out) {
+    uint32_t i;
+    uint32_t found = cell_get(ptr);
+    if (found != magic)
+        fatal("WORK_CTX: не та магия блока (контекст не инициализирован)", found);
+    out->pc = cell_get(ptr + 1u);
+    out->acc = cell_get(ptr + 2u);
+    out->len = cell_get(ptr + 3u);
+    if (out->len > 0x80u)
+        fatal("WORK_CTX: rts_len сверх лимита 0x80", out->len);
+    if (out->pc < entry_point || out->pc >= code_len)
+        fatal("WORK_CTX: pc блока вне потока опкодов", out->pc);
+    for (i = 0; i < out->len; i++)
+        out->rts[i] = cell_get(ptr + 4u + i);
+}
+
+static void statics_save(uint32_t ptr, uint32_t off) {
+    uint32_t i;
+    if (!tick_st_count)
+        return;
+    cell_set(ptr + off, tick_st_count);
+    cell_set(ptr + off + 1u, tick_st_base);
+    for (i = 0; i < tick_st_count; i++)
+        cell_set(ptr + off + 4u + i, cell_get(tick_st_base + i * 4u));
+}
+
+static void statics_load(uint32_t ptr, uint32_t off) {
+    uint32_t i;
+    uint32_t n = cell_get(ptr + off);
+    uint32_t base;
+    if (!n)
+        return;
+    if (n > STATICS_MAX)
+        fatal("статик-окно: count сверх лимита 0x50 (блок испорчен)", n);
+    base = cell_get(ptr + off + 1u);
+    if (!base)
+        fatal("статик-окно: count без базы (блок испорчен)", n);
+    for (i = 0; i < n; i++)
+        cell_set(base + i * 4u, cell_get(ptr + off + 4u + i));
+}
+
+/* ---- NID-слой ---- */
+static int do_syscall(uint32_t nid) {
+    uint32_t ptr, val;
+    fprintf(events, "SYSCALL %03X\n", nid);
+    switch (nid) {
+    case 0x130u: /* FILE_BEGIN */
+        if (artifact)
+            fatal("FILE_BEGIN: артефакт уже открыт", 0);
+        {
+            char path[4096];
+            if (strlen(binary_path) + 5 > sizeof(path))
+                fatal("FILE_BEGIN: слишком длинный путь", 0);
+            snprintf(path, sizeof(path), "%s.out", binary_path);
+            artifact = fopen(path, "w+b");
+        }
+        if (!artifact)
+            fatal("FILE_BEGIN: не могу открыть артефакт", 0);
+        artifact_n = 0;
+        return 0;
+    case 0x131u: /* FILE_PUT — 4 байта BE */
+        if (!artifact)
+            fatal("FILE_PUT до FILE_BEGIN — брак порядка syscall", 0);
+        val = cell_get(STREAM_CELL);
+        fputc((int)((val >> 24) & 0xFFu), artifact);
+        fputc((int)((val >> 16) & 0xFFu), artifact);
+        fputc((int)((val >> 8) & 0xFFu), artifact);
+        fputc((int)(val & 0xFFu), artifact);
+        artifact_n += 4;
+        return 0;
+    case 0x132u: /* FILE_U16 — 2 байта BE */
+        if (!artifact)
+            fatal("FILE_U16 до FILE_BEGIN — брак порядка syscall", 0);
+        val = cell_get(STREAM_CELL) & 0xFFFFu;
+        fputc((int)((val >> 8) & 0xFFu), artifact);
+        fputc((int)(val & 0xFFu), artifact);
+        artifact_n += 2;
+        return 0;
+    case 0x133u: /* FILE_END */
+        if (!artifact)
+            fatal("FILE_END без FILE_BEGIN — брак порядка syscall", 0);
+        fclose(artifact);
+        artifact = NULL;
+        return 0;
+    case 0x134u: /* FILE_U8 — 1 байт */
+        if (!artifact)
+            fatal("FILE_U8 до FILE_BEGIN — брак порядка syscall", 0);
+        fputc((int)(cell_get(STREAM_CELL) & 0xFFu), artifact);
+        artifact_n += 1;
+        return 0;
+    case 0x135u: { /* FILE_SEAL — CRC-32 тела артефакта */
+        uint8_t *blob;
+        long n;
+        uint32_t crc;
+        if (!artifact)
+            fatal("FILE_SEAL до FILE_BEGIN — брак порядка syscall", 0);
+        fflush(artifact);
+        /* etalon VM читает ВЕСЬ файл (seek(0); read()), а не до текущей
+           позиции записи: после FILE_SEEK позиция может быть меньше хвоста. */
+        if (fseek(artifact, 0, SEEK_END) != 0)
+            fatal("FILE_SEAL: fseek END", 0);
+        n = ftell(artifact);
+        if (n < (long)HEADER_V11)
+            fatal("FILE_SEAL: в артефакте меньше 20 байт", 0);
+        blob = (uint8_t *)malloc((size_t)n);
+        if (!blob)
+            fatal("FILE_SEAL: malloc", 0);
+        rewind(artifact);
+        if (fread(blob, 1, (size_t)n, artifact) != (size_t)n)
+            fatal("FILE_SEAL: чтение артефакта", 0);
+        crc = crc32_body(blob + HEADER_V11, (uint32_t)n - HEADER_V11);
+        free(blob);
+        if (fseek(artifact, 16, SEEK_SET) != 0)
+            fatal("FILE_SEAL: fseek 16", 0);
+        le32(artifact, crc);
+        if (fseek(artifact, 0, SEEK_END) != 0)
+            fatal("FILE_SEAL: fseek END", 0);
+        return 0;
+    }
+    case 0x136u: /* FILE_SEEK */
+        if (!artifact)
+            fatal("FILE_SEEK до FILE_BEGIN — брак порядка syscall", 0);
+        val = cell_get(STREAM_CELL);
+        fflush(artifact);
+        if (fseek(artifact, (long)val, SEEK_SET) != 0)
+            fatal("FILE_SEEK: честная позиция вне артефакта", val);
+        return 0;
+    case 0x137u: /* FILE_GET — слово исходника */
+        if (src_pos < src_count) {
+            cell_set(STREAM_CELL, src_words[src_pos++]);
+            cell_set(EOF_CELL, 0);
+        } else {
+            cell_set(EOF_CELL, 1);
+        }
+        return 0;
+    case 0x150u: /* WORK_CTX_SAVE */
+        ptr = cell_get(STREAM_CELL);
+        if (!ptr)
+            fatal("WORK_CTX_SAVE: нет протокола аргумента (Stream_Emit пуст)", 0);
+        ctx_write(ptr, pc + 5u, CTX_MAGIC);
+        statics_save(ptr, 166);
+        return 0;
+    case 0x151u: { /* WORK_CTX_RESTORE */
+        Ctx c;
+        ptr = cell_get(STREAM_CELL);
+        if (!ptr)
+            fatal("WORK_CTX_RESTORE: нет протокола аргумента", 0);
+        ctx_read(ptr, CTX_MAGIC, &c);
+        /* per-epoch контракт: ядерный контекст переустанавливается каждый раз */
+        kernel_ctx.pc = pc + 5u;
+        kernel_ctx.acc = acc;
+        kernel_ctx.len = rts_len;
+        memcpy(kernel_ctx.rts, rts, rts_len * sizeof(uint32_t));
+        have_kernel_ctx = 1;
+        if (c.len > RTS_MAX)
+            fatal("WORK_CTX_RESTORE: rts сверх ёмкости рантайма", c.len);
+        memcpy(rts, c.rts, c.len * sizeof(uint32_t));
+        rts_len = c.len;
+        acc = c.acc;
+        pc = jump_to(c.pc);
+        statics_load(ptr, 166);
+        return 1;
+    }
+    case 0x152u: { /* WORK_CTX_YIELD */
+        Ctx c;
+        ptr = cell_get(STREAM_CELL);
+        if (!ptr)
+            fatal("WORK_CTX_YIELD: нет протокола аргумента", 0);
+        if (!have_kernel_ctx) {
+            uint32_t ret_pc;
+            /* свежий вход задачи: снимаем один кадр OP_CALL */
+            if (!rts_len)
+                fatal("WORK_CTX_YIELD: свежая задача без кадра вызова", 0);
+            ctx_write(ptr, pc + 5u, CTX_MAGIC);
+            statics_save(ptr, 166);
+            ret_pc = rts[--rts_len];
+            acc = 0;
+            pc = jump_to(ret_pc);
+            return 1;
+        }
+        c = kernel_ctx;
+        have_kernel_ctx = 0;
+        ctx_write(ptr, pc + 5u, CTX_MAGIC);
+        statics_save(ptr, 166);
+        if (c.len > RTS_MAX)
+            fatal("WORK_CTX_YIELD: rts ядра сверх ёмкости", c.len);
+        memcpy(rts, c.rts, c.len * sizeof(uint32_t));
+        rts_len = c.len;
+        acc = c.acc;
+        pc = jump_to(c.pc);
+        return 1;
+    }
+    case 0x153u: { /* TIMER_ARM */
+        uint32_t quant, trap_block, trap_entry, st_hi, tb_hi;
+        ptr = cell_get(STREAM_CELL);
+        if (!ptr)
+            fatal("TIMER_ARM: нет протокола аргумента", 0);
+        if (cell_get(ptr) != TMR_MAGIC)
+            fatal("TIMER_ARM: блок не имеет магии 'TMR1'", ptr);
+        quant = cell_get(ptr + 1u);
+        trap_block = cell_get(ptr + 2u);
+        trap_entry = cell_get(ptr + 3u);
+        tick_st_base = cell_get(ptr + 4u);
+        tick_st_count = cell_get(ptr + 5u);
+        if (!quant)
+            fatal("TIMER_ARM: квант 0 — таймер без интервала", 0);
+        if (!trap_block)
+            fatal("TIMER_ARM: trap-блок не указан", 0);
+        if (tick_st_count && tick_st_base != STATIC_ZONE)
+            fatal("TIMER_ARM: база статик-окна вне STATIC_ZONE", tick_st_base);
+        if (tick_st_count > STATICS_MAX)
+            fatal("TIMER_ARM: окно статиков сверх лимита", tick_st_count);
+        st_hi = tick_st_base + tick_st_count * 4u;
+        tb_hi = trap_block + 136u + tick_st_count;
+        if (tick_st_count && tick_st_base < tb_hi && trap_block < st_hi)
+            fatal("TIMER_ARM: статик-окно перекрывает trap-блок", trap_block);
+        jump_to(trap_entry);
+        if (tick_pending)
+            fatal("TIMER_ARM: тик ещё не завершён (нет TIMER_RET)", 0);
+        tick_armed = 1;
+        tick_quantum = quant;
+        tick_next = (uint32_t)ops + quant;
+        tick_trap_block = trap_block;
+        tick_trap_entry = trap_entry;
+        return 0;
+    }
+    case 0x154u: { /* TIMER_RET */
+        Ctx c;
+        if (!tick_pending)
+            fatal("TIMER_RET: открытого тика нет (IRET без IRQ)", 0);
+        ptr = cell_get(STREAM_CELL);
+        if (!ptr)
+            fatal("TIMER_RET: нет протокола аргумента", 0);
+        ctx_read(ptr, TCK_MAGIC, &c);
+        if (c.len > RTS_MAX)
+            fatal("TIMER_RET: rts кадра сверх ёмкости", c.len);
+        memcpy(rts, c.rts, c.len * sizeof(uint32_t));
+        rts_len = c.len;
+        acc = c.acc;
+        pc = jump_to(c.pc);
+        statics_load(ptr, 132);
+        tick_pending = 0;
+        return 1;
+    }
+    default:
+        fprintf(stderr,
+                "FATAL: OP_SYSCALL: NID 0x%08X — драйвер не зарегистрирован "
+                "(файл 0x130..0x137, контекст 0x150..0x152, таймер 0x153/0x154)\n",
+                nid);
+        exit(1);
+    }
+}
+
+/* ---- загрузка ---- */
 static void load_binary(const char *path) {
     FILE *f = fopen(path, "rb");
     if (!f)
@@ -199,38 +519,94 @@ static void load_binary(const char *path) {
     pc = entry_point;
 }
 
+static void load_source(const char *path) {
+    FILE *f = fopen(path, "r");
+    char line[8192];
+    char *tok;
+    if (!f)
+        fatal("не могу открыть исходник FILE_GET", 0);
+    while (src_count < SRC_MAX && fgets(line, sizeof(line), f)) {
+        tok = strtok(line, " \t\r\n");
+        while (tok && src_count < SRC_MAX) {
+            size_t n = strlen(tok);
+            if (n == 0 || n > 2)
+                fatal("иходник: токен длиннее 2 символов (слово-язык стадии-1)", 0);
+            if ((unsigned char)tok[0] > 0x7Fu ||
+                (n == 2 && (unsigned char)tok[1] > 0x7Fu))
+                fatal("иходник: токен не ASCII", 0);
+            src_words[src_count++] = (uint32_t)(unsigned char)tok[0] |
+                (n == 2 ? ((uint32_t)(unsigned char)tok[1] << 8) : 0u);
+            tok = strtok(NULL, " \t\r\n");
+        }
+    }
+    fclose(f);
+    if (!src_count)
+        fatal("иходник пуст — компилировать нечего", 0);
+    src_words[src_count++] = 0x2Eu; /* CH_WORD_END '.' */
+}
+
 int main(int argc, char **argv) {
-    if (argc != 3) {
-        fprintf(stderr, "Использование: %s <binary.ctos> <events.txt>\n", argv[0]);
+    if (argc < 3 || argc > 4) {
+        fprintf(stderr,
+                "Использование: %s <binary.ctos> <events.txt> [source.words]\n",
+                argv[0]);
         return 1;
     }
+    binary_path = argv[1];
     load_binary(argv[1]);
+    if (argc == 4)
+        load_source(argv[3]);
     events = fopen(argv[2], "wb");
     if (!events)
         fatal("не могу открыть events-файл", 0);
 
     for (;;) {
+        uint8_t op;
+
+        /* честный IRQ-тик между инструкциями (TKT-055 спринт Б).
+           VM в этой ветке НЕ увеличивает op_count — и мы не увеличиваем. */
+        if (tick_armed && have_kernel_ctx && ops >= tick_next && !tick_pending) {
+            uint32_t at_pc = pc;
+            ctx_write(tick_trap_block, at_pc, TCK_MAGIC);
+            statics_save(tick_trap_block, 132);
+            pc = jump_to(tick_trap_entry);
+            tick_next = (uint32_t)ops + tick_quantum;
+            tick_pending = 1;
+            fprintf(events, "TICK %08X\n", at_pc);
+            continue;
+        }
+
         if (pc >= code_len)
             fatal("поток опкодов кончился без OP_TERM", pc);
-        uint8_t op = code[pc];
+        op = code[pc];
         ops++;
 
         switch (op) {
         case 0x00: /* NOP */
         case 0x01: /* INIT */
-        case 0x10: /* ALLOC_ST — маркер объявления статики */
+        case 0x10: /* ALLOC_ST */
+            pc++;
+            break;
+        case 0x11: /* STORE: ячейка адресуется смещением опкода (стадия-0) */
+            cell_set(pc, acc);
+            pc++;
+            break;
+        case NET_FIRST: case 0x21: case 0x22: case 0x23:
+        case 0x24: case 0x25: case NET_LAST: /* NET_OPS: 1-байтные маркеры */
+            fprintf(events, "NET %02X\n", op);
             pc++;
             break;
         case 0x03: { /* CALL */
+            uint32_t addr;
             need(pc, 5);
-            uint32_t addr = be32(pc + 1u);
+            addr = be32(pc + 1u);
             if (addr == 0) {
                 pc += 5;
             } else {
                 if (rts_len == RTS_MAX)
                     fatal("стек возвратов переполнен", rts_len);
                 rts[rts_len++] = pc + 5u;
-                jump_to(addr);
+                pc = jump_to(addr);
             }
             break;
         }
@@ -240,6 +616,8 @@ int main(int argc, char **argv) {
             pc = rts[--rts_len];
             break;
         case 0x05: /* TERM */
+            if (artifact)
+                fatal("честный артефакт не закрыт — FILE_END не вызван", 0);
             fprintf(events, "OPS %llu CELLS %u\n",
                     (unsigned long long)ops, cell_count);
             fclose(events);
@@ -247,18 +625,21 @@ int main(int argc, char **argv) {
             return 0;
         case 0x06: /* JZ */
         case 0x07: /* JMP */ {
+            uint32_t target;
             need(pc, 5);
-            uint32_t target = be32(pc + 1u);
-            if (op == 0x06 && acc != 0)
+            target = be32(pc + 1u);
+            if (op == 0x06u && acc != 0)
                 pc += 5;
             else
-                jump_to(target);
+                pc = jump_to(target);
             break;
         }
         case 0x12: { /* LOAD + режим */
+            uint8_t mode;
+            uint32_t arg;
             need(pc, 6);
-            uint8_t mode = code[pc + 1u];
-            uint32_t arg = be32(pc + 2u);
+            mode = code[pc + 1u];
+            arg = be32(pc + 2u);
             switch (mode) {
             case 0x14: acc = (acc + arg) & 0xFFFFFFFFu; break;
             case 0x15: acc = (acc + cell_get(arg)) & 0xFFFFFFFFu; break;
@@ -271,6 +652,14 @@ int main(int argc, char **argv) {
             default: fatal("OP_LOAD: недокументированный режим", mode);
             }
             pc += 6;
+            break;
+        }
+        case 0x13: { /* SYSCALL */
+            uint32_t nid;
+            need(pc, 5);
+            nid = be32(pc + 1u);
+            if (!do_syscall(nid))
+                pc += 5;
             break;
         }
         case 0x14: /* STORE_A */
@@ -302,7 +691,7 @@ int main(int argc, char **argv) {
             need(pc, 5);
             uint32_t holder = be32(pc + 1u);
             uint32_t addr = cell_get(holder);
-            if (addr == 0)
+            if (!addr)
                 fatal("STORE_IND: запись по адресу 0 — указатель не инициализирован",
                       holder);
             cell_set(addr, acc);
@@ -318,8 +707,17 @@ int main(int argc, char **argv) {
             cell_set(be32(pc + 1u), acc);
             pc += 5;
             break;
+        case 0x60: { /* ASMBLOCK: +LE u32 длина + байты */
+            uint32_t n;
+            need(pc, 5);
+            n = (uint32_t)code[pc + 1u] | ((uint32_t)code[pc + 2u] << 8) |
+                ((uint32_t)code[pc + 3u] << 16) | ((uint32_t)code[pc + 4u] << 24);
+            need(pc, 5u + n);
+            pc += 5u + n;
+            break;
+        }
         default:
-            fatal("опкод не в подмножестве A1 — честный отказ", op);
+            fatal("опкод не в подмножестве A1/A2 — честный отказ", op);
         }
     }
 }

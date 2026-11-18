@@ -4363,8 +4363,27 @@ t5gpr 1/1, T4-shelf 90/90) + T4 multi-statement кросс-молчания (8×
   `memmgr` 13/13 портов, 1395 опкодов, 73 ячейки; `sched` 12/12 портов,
   132552 опкода, 313 ячеек — совпадает с трассой `ctos_vm.py`; порча тела
   ловится обеими программами с `[TKT-040]` (VM rc=1, native rc=1).
-  Границы честные: syscall/NID, таймер, контекст и ASMBLOCK дают `FATAL`;
   на моноблоке R3700 только очень старый BIOS-аналог, UEFI/GRUB не подтверждены,
   QEMU в окружении нет, «на железе» не заявляется. tracked:
   CtOs/native/native_rt.c, CtOs/native/NATIVE_RT_SPEC.md,
+  CtOs/BRINGUP_SPEC.md, Python_compiler/verify_native_rt.py.
+- **Спринт 104 (TKT-056, bring-up Ф2 шаг A2) — NID-слой и полная самосборка нативом** —
+  в `CtOs/native/native_rt.c` добавлены файловые NID `0x130..0x137`, контекст
+  `0x150..0x152`, таймер `0x153/0x154` и опкоды полной самосборки
+  (`0x11 STORE`, `0x20..0x26 NET_OPS`, `0x60 ASMBLOCK`). Тик доставляется между
+  инструкциями до инкремента `op_count` — ровно как в эталонной VM. Найден и
+  исправлен контракт `FILE_SEAL`: CRC читает весь файл, а не до позиции записи
+  (после `FILE_SEEK` позиция меньше хвоста; расхождение ровно 4 байта CRC).
+  `RTS_MAX` поднят до 65536 — VM держит стек возвратов без лимита, компилятор
+  делает глубокие вложенные CALL при чтении потока исходника.
+  Честная сверка `python -X utf8 Python_compiler/verify_native_rt.py`:
+  `syscall_test` 10/10 event'ов + 20-Б артефакт md5 совпал;
+  `schedF` 44/44 (15382 опкода / 332 ячейки); `schedT` 41/41 с одним тиком
+  (16434 / 443); **полная самосборка S(S_T) — 17295/17295 event'ов,
+  1348680 опкодов, 5657 ячеек, T 13084 Б md5 `30a90f3ff440ec249a132f58ee5a040a`
+  байт-в-байт**. Честные негативы: `probe_seek`, `neg_ctx1`,
+  `syscall_test_endfail`, `syscall_test_orderfail` — оба исполнителя rc=1 с
+  одной диагностикой; CRC-негатив тоже честен. Границы: неизвестный NID/опкод
+  даёт `FATAL`; legacy-BIOS загрузчик MBR и QEMU — шаг A3, «на железе» не
+  заявляется. tracked: CtOs/native/native_rt.c, CtOs/native/NATIVE_RT_SPEC.md,
   CtOs/BRINGUP_SPEC.md, Python_compiler/verify_native_rt.py.
