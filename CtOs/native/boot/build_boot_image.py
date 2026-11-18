@@ -1,13 +1,16 @@
 # -*- coding: utf-8 -*-
-"""A4a: детерминированный сборщик legacy-BIOS образа CtOS (сырой диск).
+"""A5: детерминированный сборщик legacy-BIOS образа CtOS (сырой диск).
 
 Раскладка секторов (512 Б каждый):
   LBA 0      MBR: 16-битный код + сигнатура 55 AA
   LBA 1..4   stage2: 4 сектора, загружается в 0x1000:0000
-  LBA 5..7   зарезервированная пустота
+  LBA 5..7   A5: 16-битный установщик, загружается в 0x5000:0000
   LBA 8..71  CTMD v1: 64 сектора, загружается в 0x2000:0000
   LBA 72..135 A4a: плоский 32-битный рантайм, загружается в 0x4000:0000
-  ...        нулевое заполнение до 136 секторов
+  LBA 136    зарезервировано под sentinel закрепления (в образ НЕ входит)
+
+Установщик вызывается stage2 только при маркере CTOS-INST-A5 в LBA0+0x180;
+без маркера он молча возвращается, и поведение совпадает с A4a.
 
 BSS рантайма не занимает место в образе: pm_start.S обнуляет его по линкерным
 символам `_bss_start`/`_bss_end` (BSS лежит по 0x01000000, вдали от стека
@@ -34,6 +37,8 @@ SECTOR = 512
 MBR_LBA = 0
 STAGE2_LBA = 1
 STAGE2_SECTORS = 4
+INSTALL_LBA = 5
+INSTALL_SECTORS = 3
 CTMD_LBA = 8
 CTMD_SECTORS = 64
 CTMD_PHYS = 0x00020000
@@ -133,6 +138,13 @@ def build(out_path, tmp=None):
                          os.path.join(tmp, base + "_s2.bin"))
     if len(stage2) > STAGE2_SECTORS * SECTOR:
         raise SystemExit("A3b: stage2 не помещается: %d Б" % len(stage2))
+    install = flat_binary(os.path.join(HERE, "install.S"),
+                          os.path.join(HERE, "stage2.ld"), 0,
+                          os.path.join(tmp, base + "_inst.o"),
+                          os.path.join(tmp, base + "_inst.exe"),
+                          os.path.join(tmp, base + "_inst.bin"))
+    if len(install) > INSTALL_SECTORS * SECTOR:
+        raise SystemExit("A5: установщик не помещается: %d Б" % len(install))
 
     ctmd_path = os.path.join(tmp, base + "_modules.ctmd")
     ctmd = ctmd_builder.build(ctmd_path)
@@ -149,6 +161,8 @@ def build(out_path, tmp=None):
     struct.pack_into("<H", img, SECTOR - 2, 0xAA55)
     s2off = STAGE2_LBA * SECTOR
     img[s2off:s2off + len(stage2)] = stage2
+    ioff = INSTALL_LBA * SECTOR
+    img[ioff:ioff + len(install)] = install
     coff = CTMD_LBA * SECTOR
     img[coff:coff + len(ctmd)] = ctmd
     poff = PM_LBA * SECTOR
@@ -158,13 +172,16 @@ def build(out_path, tmp=None):
     for p in (os.path.join(tmp, base + "_mbr.o"),
               os.path.join(tmp, base + "_mbr.exe"),
               os.path.join(tmp, base + "_s2.o"),
-              os.path.join(tmp, base + "_s2.exe")):
+              os.path.join(tmp, base + "_s2.exe"),
+              os.path.join(tmp, base + "_inst.o"),
+              os.path.join(tmp, base + "_inst.exe")):
         if os.path.exists(p):
             os.remove(p)
     return {
         "image": bytes(img),
         "mbr": mbr,
         "stage2": stage2,
+        "install": install,
         "ctmd": ctmd,
         "pm": pm,
         "path": out_path,
@@ -176,11 +193,13 @@ if __name__ == "__main__":
         os.path.join(HERE, "ctos_boot.img")
     tmp = sys.argv[2] if len(sys.argv) > 2 else None
     r = build(out, tmp)
-    print("A4a BOOT OK: %s — %d Б, md5 %s" %
+    print("A5 BOOT OK: %s — %d Б, md5 %s" %
           (out, len(r["image"]), hashlib.md5(r["image"]).hexdigest()))
-    print("  MBR=%d Б, stage2=%d Б, CTMD=%d Б, PM=%d Б; "
-          "LBA: 0/1..%d/8..%d/%d..%d" %
-          (len(r["mbr"]), len(r["stage2"]), len(r["ctmd"]), len(r["pm"]),
+    print("  MBR=%d Б, stage2=%d Б, install=%d Б, CTMD=%d Б, PM=%d Б; "
+          "LBA: 0/1..%d/%d..%d/8..%d/%d..%d" %
+          (len(r["mbr"]), len(r["stage2"]), len(r["install"]),
+           len(r["ctmd"]), len(r["pm"]),
            STAGE2_LBA + STAGE2_SECTORS - 1,
+           INSTALL_LBA, INSTALL_LBA + INSTALL_SECTORS - 1,
            CTMD_LBA + CTMD_SECTORS - 1,
            PM_LBA, PM_LBA + PM_SECTORS - 1))

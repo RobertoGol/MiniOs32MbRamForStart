@@ -28,6 +28,55 @@ _start:
     mov $msg_stage2, %si
     call puts
 
+    /* A5: установщик в LBA 5..7 вызывается ТОЛЬКО при маркере CTOS-INST-A5.
+     * После самоудаления маркера LBA 5..7 затерты нулями, и зовём мы их
+     * не будем — иначе выполнились бы нули как код. AL установщика:
+     * 0 = нет установки, 1 = установлено, 2 = честный отказ. */
+    mov $dap_mbr_chk, %si
+    mov $0x42, %ah
+    mov drive, %dl
+    int $0x13
+    jc a5_skip
+    push %ds
+    push %es
+    mov $0x6000, %ax
+    mov %ax, %ds
+    mov $0x1000, %ax
+    mov %ax, %es
+    mov $0x8180, %si             /* 0x6000:0x8000 + 0x180 */
+    xor %bx, %bx
+a5_mk_cmp:
+    lodsb
+    cmp %es:a5_install_marker(%bx), %al
+    jne a5_no_marker
+    inc %bx
+    cmp $12, %bx
+    jb a5_mk_cmp
+    pop %es
+    pop %ds
+    jmp a5_call_install
+a5_no_marker:
+    pop %es
+    pop %ds
+    jmp a5_skip
+a5_call_install:
+    mov $dap_install, %si
+    mov $0x42, %ah
+    mov drive, %dl
+    int $0x13
+    jc install_read_fail
+    mov drive, %dl
+    lcall $0x5000, $0x0000
+    cmp $0, %al
+    je a5_skip
+    cmp $1, %al
+    jne install_fail
+    mov $msg_a5_install, %si
+    call puts
+    mov $msg_a5_autorun, %si
+    call puts
+a5_skip:
+
     /* EDD ещё раз; BIOS INT 10h мог заменить DL — берём его из переменной. */
     mov drive, %dl
     mov $0x41, %ah
@@ -164,6 +213,16 @@ pm_read_fail:
     mov $msg_pm_read, %si
     call puts
     jmp fail_11
+install_read_fail:
+    mov $msg_a5_read_fail, %si
+    call puts
+    mov $0x0011, %ax
+    jmp fail_exit
+install_fail:
+    mov $msg_a5_fail, %si
+    call puts
+    mov $0x0012, %ax          /* rc=37: установка честно refuse'на */
+    jmp fail_exit
 fail_11:
     mov $0x0011, %ax
 fail_exit:
@@ -373,6 +432,19 @@ dap_pm:
     .word 0x0000
     .word pm_load_seg
     .quad pm_lba
+/* A5: LBA0 -> 0x6000:0x8000 для проверки маркера, LBA5..7 -> 0x5000:0. */
+dap_mbr_chk:
+    .byte 0x10, 0x00
+    .word 1
+    .word 0x8000
+    .word 0x6000
+    .quad 0
+dap_install:
+    .byte 0x10, 0x00
+    .word 3
+    .word 0x0000
+    .word 0x5000
+    .quad 5
 ctmd_count: .long 0
 entry_index:.word 0
 entry_off:  .word 0
@@ -386,6 +458,11 @@ hex_val:    .word 0
 hexdigits:  .ascii "0123456789ABCDEF"
 
 msg_stage2:    .asciz "CTOS A3b STAGE2\r\n"
+msg_a5_install:   .asciz "CTOS A5 INSTALL OK\r\n"
+msg_a5_autorun:   .asciz "CTOS A5 AUTORUN memmgr\r\n"
+msg_a5_read_fail: .asciz "CTOS A5 INSTALL READ FAIL\r\n"
+msg_a5_fail:      .asciz "CTOS A5 REFUSED\r\n"
+a5_install_marker:.ascii "CTOS-INST-A5"
 msg_count:     .asciz "CTMD count="
 msg_crc_ok:    .asciz "CRC OK\r\n"
 msg_crc_bad:   .asciz "CRC FAIL\r\n"

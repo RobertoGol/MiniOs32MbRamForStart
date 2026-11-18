@@ -4448,3 +4448,30 @@ t5gpr 1/1, T4-shelf 90/90) + T4 multi-statement кросс-молчания (8×
   `CtOs/native/boot/stage2.S`, `CtOs/native/boot/pm/*`,
   `Python_compiler/verify_boot_image.py`, `CtOs/native/boot/BOOT_SPEC.md`,
   `CtOs/native/NATIVE_RT_SPEC.md`, `CtOs/BRINGUP_SPEC.md`, `Readme.md`.
+- **Спринт 108 (TKT-056, bring-up Ф2 шаг A5) — самоадаптивная установка принятой
+  базы, принятая в QEMU как эмуляционная контрольная точка** — добавлен отдельный
+  16-битный установщик `CtOs/native/boot/install.S` (LBA 5..7, 1188 Б,
+  `0x5000:0000`), который по маркеру `CTOS-INST-A5` в MBR+`0x180` сканирует диски
+  `0x80..0xEF`, находит цель с `CTOS-TGT-A5!`, копирует 136 секторов образа
+  порциями по 64 с перечиткой и `repe cmpsb`, закрепляет загрузку (`ACTIVE=0x80`,
+  sentinel `CTOS-LOCK-A5` в LBA136 с версией/размером/CRC-32 суммой/флагами),
+  снимает оба маркера, затирает LBA5..7 и оставляет автозапуск уже проверенного
+  `memmgr`. Шифрование отклонено: на R3700 нет TPM/надёжного ключа. Семантика
+  `native_rt.c` и PM-рантайма не тронута. В `stage2.S` добавлен guard: установщик
+  вызывается только при маркере на своём диске, иначе после самоудаления в
+  LBA5..7 оказались бы нули. Найдены и исправлены честные баги: запись `DL` до
+  смены `DS` (читался не тот диск), контрольная сумма обнулялась на каждой порции
+  (CRC покрывал только хвост), `ft_next` терял номер диска после пропуска
+  источника, неверный `%es:checksum` и сломанный `xlatb`. `python -X utf8
+  Python_compiler/verify_a5_install.py`: два raw-диска, холодная сборка ×2
+  IDENTICAL (69632 Б md5 `5d93840657833748049ced118906fb42`), установка `rc=39`
+  с 7 A5-строками, sentinel и оба диска проверены побайтово, перезагрузка с цели
+  `rc=39` с 24 линиями COM1 без единой A5-строки, негатив без маркера цели
+  `rc=37` с `CTOS A5 REFUSED`. `verify_boot_image.py` зелёный с новыми
+  контрольными числами (stage2 1392 Б, install 1188 Б), `verify_native_rt.py`
+  и `regr120.py` зелёные. Границы: **на R3700 не принято**, моноблок пока не
+  трогаем; `isa-debug-exit` — только тестовый хук QEMU. tracked:
+  `CtOs/native/boot/install.S`, `CtOs/native/boot/stage2.S`,
+  `CtOs/native/boot/build_boot_image.py`, `Python_compiler/verify_a5_install.py`,
+  `Python_compiler/verify_boot_image.py`, `CtOs/native/boot/BOOT_SPEC.md`,
+  `CtOs/native/NATIVE_RT_SPEC.md`, `CtOs/BRINGUP_SPEC.md`, `Readme.md`.

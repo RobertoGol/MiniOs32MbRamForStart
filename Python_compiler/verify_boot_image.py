@@ -51,12 +51,13 @@ PM_OFF = PM_LBA * SECTOR
 IMAGE_LEN = 136 * SECTOR
 
 EXPECT_MBR_LEN = 188
-EXPECT_S2_LEN = 1136
+EXPECT_S2_LEN = 1392
+EXPECT_INSTALL_LEN = 1188   # длина installer-секции без хвостовых нулей
 EXPECT_CTMD_LEN = 28425
 EXPECT_PM_LEN = 21220        # слот бинарника в образе
 EXPECT_PM_TAIL_LEN = 21217   # последний ненулевой байт + 1 (3 нуля в .data)
 EXPECT_CTMD_MD5 = "110b54e786544c561b64132e7557812d"
-EXPECT_IMAGE_MD5 = "a6f817c8aa371a5681d272b668f59a5a"
+EXPECT_IMAGE_MD5 = "5d93840657833748049ced118906fb42"
 EXPECT_MODULES = ("memmgr", "sched", "syscall_test", "stage1")
 
 # isa-debug-exit: (AX << 1) | 1
@@ -230,19 +231,27 @@ def main():
         if struct.unpack_from("<H", a, SECTOR - 2)[0] != 0xAA55:
             fails.append("MBR signature")
         mbr = a[0:SECTOR]
-        s2 = a[SECTOR:CTMD_OFF]
+        s2 = a[SECTOR:SECTOR + 4 * SECTOR]
         s2_len = len(s2.rstrip(b"\x00"))
+        inst = a[5 * SECTOR:8 * SECTOR]
+        inst_len = len(inst.rstrip(b"\x00"))
         ctmd = a[CTMD_OFF:CTMD_OFF + EXPECT_CTMD_LEN]
         pm = a[PM_OFF:PM_OFF + EXPECT_PM_LEN]
         pm_len = len(pm.rstrip(b"\x00"))
         print("layout: MBR<=%d(%d), stage2=%d(ожидалось %d), "
+              "install=%d(ожидалось %d), "
               "CTMD=%d(ожидалось %d), PM=%d/%d(ожидалось %d/%d), CTMD md5 %s" %
               (SECTOR - 2, len(mbr.rstrip(b"\x00")),
-               s2_len, EXPECT_S2_LEN, len(ctmd), EXPECT_CTMD_LEN,
+               s2_len, EXPECT_S2_LEN, inst_len, EXPECT_INSTALL_LEN,
+               len(ctmd), EXPECT_CTMD_LEN,
                pm_len, EXPECT_PM_LEN, EXPECT_PM_TAIL_LEN, EXPECT_PM_LEN,
                hashlib.md5(ctmd).hexdigest()))
         if s2_len != EXPECT_S2_LEN:
             fails.append("stage2 length %d" % s2_len)
+        if inst_len != EXPECT_INSTALL_LEN:
+            fails.append("install length %d" % inst_len)
+        if a[0x180:0x18C] != b"\x00" * 12:
+            fails.append("install marker in clean image")
         if pm_len != EXPECT_PM_TAIL_LEN:
             fails.append("PM length %d" % pm_len)
         if len(ctmd) != EXPECT_CTMD_LEN or \
