@@ -4355,3 +4355,15 @@ t5gpr 1/1, T4-shelf 90/90) + T4 multi-statement кросс-молчания (8×
   probe125 `_acc24db`: 272/275 GOOD (3 BAD — устаревшие ожидания, ставшие
   BYTE-OK, не регрессии). tracked: wc14v3ring_build.py, pos_wc14v3ring.words,
   selfhost_check.py, regr120.py, veha12_design.md, veha12g_probe_status.md.
+- **Спринт 103 (TKT-056, bring-up Ф2 шаг A1) — нативный интерпретатор ядра** —
+  `CtOs/native/native_rt.c` (C11) исполняет подмножество опкодов, реально
+  используемых `memmgr.ctos`/`kernel_sched.ctos`: CALL/RET/JZ/JMP/CONST/LOAD/
+  STORE_A/INCELL/INCELL_IND/STORE_IND/OUTCELL/OUTCELL_V/TERM; CRC-32 v1.1
+  и строго 32-битные ячейки. Честная сверка `Python_compiler/verify_native_rt.py`:
+  `memmgr` 13/13 портов, 1395 опкодов, 73 ячейки; `sched` 12/12 портов,
+  132552 опкода, 313 ячеек — совпадает с трассой `ctos_vm.py`; порча тела
+  ловится обеими программами с `[TKT-040]` (VM rc=1, native rc=1).
+  Границы честные: syscall/NID, таймер, контекст и ASMBLOCK дают `FATAL`;
+  QEMU в окружении нет, «на железе» не заявляется. tracked:
+  CtOs/native/native_rt.c, CtOs/native/NATIVE_RT_SPEC.md,
+  CtOs/BRINGUP_SPEC.md, Python_compiler/verify_native_rt.py.
