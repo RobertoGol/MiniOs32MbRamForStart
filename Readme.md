@@ -4475,3 +4475,29 @@ t5gpr 1/1, T4-shelf 90/90) + T4 multi-statement кросс-молчания (8×
   `CtOs/native/boot/build_boot_image.py`, `Python_compiler/verify_a5_install.py`,
   `Python_compiler/verify_boot_image.py`, `CtOs/native/boot/BOOT_SPEC.md`,
   `CtOs/native/NATIVE_RT_SPEC.md`, `CtOs/BRINGUP_SPEC.md`, `Readme.md`.
+- **Спринт 109 (TKT-056, bring-up Ф2 шаг A5b) — закрепление загрузки стало
+  двусторонним, принято в QEMU как эмуляционная контрольная точка** — A5 только
+  писал sentinel, но сам загрузчик его не проверял. В `stage2.S` добавлена
+  проверка до EDD/CTMD/перехода в PM: `ACTIVE != 0x80` в LBA0 означает чистую
+  установочную систему и проверка молча пропускается (лог A4a байт-в-байт
+  прежний); `ACTIVE == 0x80` требует валидного sentinel в LBA136 (магия
+  `CTOS-LOCK-A5`, версия 1, `image_sectors=136`, флаги 0) и совпадения 32-битной
+  суммы dword по LBA0..135, пересчитываемой тремя порциями 64/64/8 секторов.
+  Любое расхождение — `CTOS A5 PIN FAIL`, `rc=35`, без `CTMD ALL OK`/`PM OK`;
+  отказ чтения LBA136 — `CTOS A5 PIN READ FAIL`. Найдены и исправлены честные
+  баги: в `repe cmpsb` были перепутаны `DS:SI` и `ES:DI` (сравнивался код stage2
+  с областью за sentinel), флаги читались по `+0x20` вместо `+0x1C`, а сборка
+  `verify_pin` попала в `.code32` (добавлен `.code16`). Вся временная печать
+  (`GOT`/`WANT`/`FIRST`/`PIN MAGIC`/`PIN VER`/`PIN SIZE`/`PIN FLAGS`) удалена.
+  `python -X utf8 Python_compiler/verify_a5_install.py`: 7 подмен (сектор PM
+  внутри LBA0..135, checksum/magic/version/size/flags sentinel, стёртый
+  sentinel) дают честный `rc=35` с `PIN FAIL`; положительная перезагрузка с
+  цели осталась `rc=39`, 24 линии, ни одной A5-строки. Холодная сборка ×2
+  `IDENTICAL` (69632 Б md5 `dc90a080710efb03b3ccbfe640cebb9e`, stage2 1720 Б,
+  install 1188 Б). Все четыре гейта зелёные: `verify_native_rt.py`, `regr120.py`,
+  `verify_boot_image.py`, `verify_a5_install.py`. Границы: это проверка
+  целостности, **не криптография** — снятие `ACTIVE` пропускает проверку, сумму
+  dword несложно подделать; **на R3700 не принято**, моноблок пока не трогаем.
+  tracked: `CtOs/native/boot/stage2.S`, `Python_compiler/verify_a5_install.py`,
+  `Python_compiler/verify_boot_image.py`, `CtOs/native/boot/BOOT_SPEC.md`,
+  `CtOs/native/NATIVE_RT_SPEC.md`, `CtOs/BRINGUP_SPEC.md`, `Readme.md`.

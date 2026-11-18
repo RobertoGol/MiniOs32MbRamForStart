@@ -9,6 +9,8 @@
 .set pm_lba, 72
 .set pm_sectors, 64
 .set pm_load_seg, 0x4000
+.set image_sectors, 136
+.set sentinel_lba, 136
 
 .code16
 .section .text
@@ -76,6 +78,13 @@ a5_call_install:
     mov $msg_a5_autorun, %si
     call puts
 a5_skip:
+
+    /* A5b: закрепление загрузки проверяется САМИМ загрузчиком. Если в MBR
+     * выставлен ACTIVE, sentinel в LBA136 обязан существовать и сходиться;
+     * чистый установочный образ (ACTIVE=0) проверку пропускает. При успехе
+     * печать не делается, чтобы лог A4a остался байт-в-байт прежним. */
+    call verify_pin
+    jc pin_fail_boot
 
     /* EDD ещё раз; BIOS INT 10h мог заменить DL — берём его из переменной. */
     mov drive, %dl
@@ -223,6 +232,10 @@ install_fail:
     call puts
     mov $0x0012, %ax          /* rc=37: установка честно refuse'на */
     jmp fail_exit
+pin_fail_boot:
+    /* verify_pin уже напечатал конкретную причину. */
+    mov $0x0011, %ax          /* rc=35: честный отказ закреплённой системы */
+    jmp fail_exit
 fail_11:
     mov $0x0011, %ax
 fail_exit:
@@ -314,6 +327,107 @@ com_puts32:
     out %al, %dx
     jmp 1b
 2:
+    ret
+
+/* ---- A5b: проверка закрепления загрузки ----
+ * Читаем LBA0: если ACTIVE не выставлен — это чистая установочная система,
+ * pin не ожидается, выходим молча. Иначе LBA136 обязан содержать валидный
+ * sentinel, а сумма dword по LBA0..135 — совпасть с записанной установщиком.
+ * Любое расхождение — честный отказ с диагностикой, без перехода в PM.
+ */
+.code16
+verify_pin:
+    push %ds
+    push %es
+    mov $dap_mbr_chk, %si
+    mov $0x42, %ah
+    mov drive, %dl
+    int $0x13
+    jc vp_absent
+    mov $0x6000, %ax
+    mov %ax, %es
+    cmpb $0x80, %es:0x81BE     /* 0x6000:0x8000 + MBR+0x1BE */
+    jne vp_absent
+
+    mov $dap_sentinel, %si
+    mov $0x42, %ah
+    mov drive, %dl
+    int $0x13
+    jc vp_read_fail
+    mov $0x7000, %ax
+    mov %ax, %es
+    /* DS:SI = эталон в stage2, ES:DI = прочитанный sentinel.
+     * Перепутанные регистры сравнивали код stage2 с мусором за sentinel. */
+    mov $lock_marker, %si
+    xor %di, %di
+    mov $12, %cx
+    cld
+    repe cmpsb
+    jne vp_bad
+    cmpl $1, %es:0x10
+    jne vp_bad
+    cmpl $image_sectors, %es:0x14
+    jne vp_bad
+    cmpl $0, %es:0x1C
+    jne vp_bad
+
+    xor %ebp, %ebp             /* накопитель на все 136 секторов */
+    xor %bx, %bx
+vp_chunk:
+    cmp $3, %bx
+    jae vp_compare
+    mov %bx, %ax
+    shl $6, %ax
+    mov %ax, dap_verify + 8    /* LBA младшее слово */
+    movw $0, dap_verify + 10   /* LBA старшее слово */
+    mov $image_sectors, %cx
+    sub %ax, %cx
+    cmp $64, %cx
+    jbe vp_count
+    mov $64, %cx
+vp_count:
+    mov %cx, dap_verify + 2
+    mov $dap_verify, %si
+    mov $0x42, %ah
+    mov drive, %dl
+    int $0x13
+    jc vp_read_fail
+    mov dap_verify + 2, %ax
+    mov $128, %cx              /* dword на сектор: 512/4 */
+    mul %cx
+    mov %ax, %cx
+    mov $0x6000, %ax
+    mov %ax, %ds
+    xor %si, %si
+vp_sum:
+    addl (%si), %ebp
+    add $4, %si
+    loop vp_sum
+    mov $0x1000, %ax
+    mov %ax, %ds
+    inc %bx
+    jmp vp_chunk
+
+vp_compare:
+    cmpl %es:0x18, %ebp
+    jne vp_bad
+    clc
+    jmp vp_done
+vp_absent:
+    clc
+    jmp vp_done
+vp_read_fail:
+    mov $msg_pin_read, %si
+    call puts
+    stc
+    jmp vp_done
+vp_bad:
+    mov $msg_pin_fail, %si
+    call puts
+    stc
+vp_done:
+    pop %es
+    pop %ds
     ret
 
 /* ---- 16-битные помощники ---- */
@@ -445,6 +559,19 @@ dap_install:
     .word 0x0000
     .word 0x5000
     .quad 5
+/* A5b: sentinel LBA136 -> 0x7000:0; образ LBA0..135 -> 0x6000:0 порциями. */
+dap_sentinel:
+    .byte 0x10, 0x00
+    .word 1
+    .word 0x0000
+    .word 0x7000
+    .quad sentinel_lba
+dap_verify:
+    .byte 0x10, 0x00
+    .word 64
+    .word 0x0000
+    .word 0x6000
+    .quad 0
 ctmd_count: .long 0
 entry_index:.word 0
 entry_off:  .word 0
@@ -463,6 +590,10 @@ msg_a5_autorun:   .asciz "CTOS A5 AUTORUN memmgr\r\n"
 msg_a5_read_fail: .asciz "CTOS A5 INSTALL READ FAIL\r\n"
 msg_a5_fail:      .asciz "CTOS A5 REFUSED\r\n"
 a5_install_marker:.ascii "CTOS-INST-A5"
+lock_marker:   .ascii "CTOS-LOCK-A5"
+               .byte 0, 0, 0, 0
+msg_pin_fail:  .asciz "CTOS A5 PIN FAIL\r\n"
+msg_pin_read:  .asciz "CTOS A5 PIN READ FAIL\r\n"
 msg_count:     .asciz "CTMD count="
 msg_crc_ok:    .asciz "CRC OK\r\n"
 msg_crc_bad:   .asciz "CRC FAIL\r\n"

@@ -1,6 +1,6 @@
 # A1/A2/A3 — нативный интерпретатор (bring-up Ф2)
 
-Статус: ✅ A1, A2, A3а приняты; A3b, A4a и A5 приняты **в QEMU как эмуляционная контрольная точка**, 2026-11-18/19. Связано: `CtOs/BRINGUP_SPEC.md` (Ф2/Ф3, вариант A), `CtOs/native/boot/BOOT_SPEC.md`, TKT-056 / TKT-055 / TKT-052.
+Статус: ✅ A1, A2, A3а приняты; A3b, A4a, A5 и A5b приняты **в QEMU как эмуляционная контрольная точка**, 2026-11-18/19. Связано: `CtOs/BRINGUP_SPEC.md` (Ф2/Ф3, вариант A), `CtOs/native/boot/BOOT_SPEC.md`, TKT-056 / TKT-055 / TKT-052.
 
 ## A1 — подмножество ядра (принято ранее)
 
@@ -58,7 +58,7 @@ LE32 смещение, LE32 длина, LE32 CRC-32 тела, LE32 reserved), т
 
 `verify_boot_image.py` теперь проверяет:
 
-- холодную сборку ×2: образ 69632 Б md5 `5d93840657833748049ced118906fb42`;
+- холодную сборку ×2: образ 69632 Б md5 `dc90a080710efb03b3ccbfe640cebb9e` (stage2 1720 Б);
 - positive QEMU: `rc=39` (`AX=0x13`), 24 линии COM1, из них 15 event'ов **байт-в-байт** совпадают с хост-запуском `native_rt.exe --module memmgr` (`MODULE`, 13 × `PORT`, `OPS 1395 CELLS 73`);
 - негативы stage2: `rc=35`;
 - негатив рантайма: порча тела `memmgr` с пересчётом CRC в каталоге CTMD проходит stage2, но `verify_code()` ловит внутренний CRC v1.1 ⇒ `FATAL: [TKT-040]`, `rc=41` (`AX=0x14`).
@@ -77,9 +77,22 @@ LE32 смещение, LE32 длина, LE32 CRC-32 тела, LE32 reserved), т
 
 `python -X utf8 Python_compiler/verify_a5_install.py`: два raw-диска в QEMU, холодная сборка ×2 IDENTICAL, md5 образа совпадает с A4a-гейтом, установка даёт `rc=39` и 7 A5-строк, sentinel и состояние обоих дисков проверены побайтово, перезагрузка с цели — `rc=39`, 24 строки COM1, **ни одной A5-строки**, негатив без маркера цели — `rc=37`. На R3700 не принято.
 
+## A5b — закрепление загрузки стало двусторонним (принят в QEMU)
+
+A5 писал sentinel, но сам загрузчик его не читал. В A5b `stage2.S` проверяет закрепление **до** EDD/CTMD/перехода в PM:
+
+- LBA0 с `ACTIVE != 0x80` — чистая установочная система, проверка молча пропускается, чтобы A4a-лог остался байт-в-байт прежним;
+- `ACTIVE == 0x80` — читается LBA136: магия `CTOS-LOCK-A5` + 4 нуля, версия 1 (`+0x10`), `image_sectors=136` (`+0x14`), контрольная сумма (`+0x18`), флаги 0 (`+0x1C`);
+- сумма dword по LBA0..135 пересчитывается тремя порциями 64/64/8 секторов (`INT 13h AH=42h`, буфер `0x6000:0000`) и сравнивается с записанной установщиком;
+- любое расхождение — `CTOS A5 PIN FAIL`, `AX=0x11` (rc=35), **без** `CTMD ALL OK` и `PM OK`; отказ чтения LBA136 — `CTOS A5 PIN READ FAIL`.
+
+Исправлены два конкретных бага, найденных трассой: в `repe cmpsb` были перепутаны `DS:SI` и `ES:DI` (сравнивался код stage2 с областью за sentinel), а флаги читались по `+0x20` вместо `+0x1C`. Временная отладочная печать (`GOT`/`WANT`/`FIRST`/`PIN MAGIC`/`PIN VER`/`PIN SIZE`/`PIN FLAGS`) удалена; при успехе A5b не печатает ничего.
+
+Верификатор добавлен к `verify_a5_install.py`: 7 честных негативов — подмена сектора PM внутри LBA0..135, подмена checksum/magic/version/size/flags sentinel и стёртый sentinel. Все дают `rc=35` + `CTOS A5 PIN FAIL` и не доходят до PM.
+
 ## Честные границы (НЕ сделано)
 
-- **A3b/A4a/A5 на железе:** boot shim, PM-рантайм и самоустановка реально проходят в QEMU 11.1.0, но на **R3700 не приняты** — доступа к моноблоку нет, интернета на нём нет. На R3700 только очень старый BIOS-аналог; UEFI/GRUB не подтверждены. «Работает на железе» **не заявляется**, моноблок пока не трогаем. `isa-debug-exit` — тестовый хук QEMU, не честное завершение для реального стенда.
+- **A3b/A4a/A5/A5b на железе:** boot shim, PM-рантайм, самоустановка и проверка закрепления реально проходят в QEMU 11.1.0, но на **R3700 не приняты** — доступа к моноблоку нет, интернета на нём нет. На R3700 только очень старый BIOS-аналог; UEFI/GRUB не подтверждены. «Работает на железе» **не заявляется**, моноблок пока не трогаем. `isa-debug-exit` — тестовый хук QEMU, не честное завершение для реального стенда.
 - A1/A2/A3а — хостовый нативный рантайм для сверки семантики и загрузки модулей; A4a — исполнение того же кода в PM, но пока только для модуля `memmgr`. `sched`, `syscall_test`, `stage1` в PM не запускались; полная самосборка `S(S_T)` остаётся хостовым гейтом.
 - Неизвестный NID/опкод даёт `FATAL`, а не тихое пропускание. Нативная периферия, HAL физической памяти, реальные прерывания — шаги A4a/Ф3.
 
@@ -87,7 +100,7 @@ LE32 смещение, LE32 длина, LE32 CRC-32 тела, LE32 reserved), т
 
 `python -X utf8 Python_compiler/verify_native_rt.py` — автобилд в TEMP, дерево не засоряется.
 
-Дополнительные гейты: `python -X utf8 Python_compiler/verify_boot_image.py` (A3b/A4a, образ в QEMU) и `python -X utf8 Python_compiler/verify_a5_install.py` (A5, самоустановка с двумя дисками). Все три проходят на финальном коде; `python -X utf8 Python_compiler/regr120.py` зелёный.
+Дополнительные гейты: `python -X utf8 Python_compiler/verify_boot_image.py` (A3b/A4a, образ в QEMU) и `python -X utf8 Python_compiler/verify_a5_install.py` (A5/A5b, самоустановка с двумя дисками и 7 подмен закрепления). Все три проходят на финальном коде; `python -X utf8 Python_compiler/regr120.py` зелёный.
 
 | Случай | EVENT'ы VM/NAT | Опкоды/ячейки | Артефакт |
 |---|---:|---:|---|
@@ -111,5 +124,5 @@ CtOs/native/native_rt.exe --module memmgr /tmp/kernel.ctmd events.txt
 python -X utf8 Python_compiler/verify_native_rt.py   # автобилд в TEMP, дерево не засоряется
 python -X utf8 CtOs/native/boot/build_boot_image.py ctos_boot.img <TEMP>
 python -X utf8 Python_compiler/verify_boot_image.py  # A3b + A4a в QEMU
-python -X utf8 Python_compiler/verify_a5_install.py # A5: два диска в QEMU
+python -X utf8 Python_compiler/verify_a5_install.py # A5/A5b: два диска в QEMU
 ```

@@ -9,7 +9,11 @@
   3. перезагрузка с цели: rc=39, COM1 байт-в-байт = host native_rt и НИ ОДНОЙ
      строки A5 — установщик самоудалился и больше не вызывается;
   4. негатив: маркер источника есть, цели нет -> AL=2 -> rc=37, «REFUSED»,
-     без «CTMD ALL OK» и без «PM OK».
+     без «CTMD ALL OK» и без «PM OK»;
+  5. A5b: перезагрузка с закреплённой цели сама проверяет sentinel. Подмена
+     любого из 136 секторов образа или любого поля sentinel (магия, версия,
+     размер, флаги, контрольная сумма), а также стёртый sentinel — честный
+     rc=35 с «CTOS A5 PIN FAIL», без «CTMD ALL OK» и без «PM OK».
 
 QEMU — только локальная эмуляционная контрольная точка. На R3700 НЕ заявляется.
 Запуск только: python -X utf8 Python_compiler/verify_a5_install.py
@@ -43,6 +47,7 @@ TARGET_SECTORS = IMAGE_SECTORS + 4
 
 RC_OK = 39
 RC_INSTALL_REFUSE = 37          # AX=0x12
+RC_PIN_REFUSE = 35              # AX=0x11: честный отказ закреплённой системы
 
 A5_LINES = [
     "CTOS A5 INSTALL: START",
@@ -92,6 +97,23 @@ def check(name, cond, fails):
     print("  %-28s %s" % (name, "OK" if cond else "FAIL"))
     if not cond:
         fails.append(name)
+
+
+def pin_negative(name, disk, tmp_root, tag):
+    """A5b: закреплённая система обязана отказать до перехода в PM."""
+    rc, raw, err, _ = boot([disk], tmp_root, tag)
+    got = a4.lines_of(raw)
+    ok = (rc == RC_PIN_REFUSE and
+          "CTOS A5 PIN FAIL" in got and
+          "CTMD ALL OK" not in got and "PM OK" not in got and
+          "CTOS A5 INSTALL OK" not in got and
+          not err)
+    print("neg %-24s rc=%s  %s" % (name, rc, "OK" if ok else "FAIL"))
+    if not ok:
+        print("  LOG:", " | ".join(got))
+        if err:
+            print("  ERR:", err)
+    return ok
 
 
 def main():
@@ -199,6 +221,43 @@ def main():
             if err:
                 print("  ERR:", err)
             fails.append("neg no-target")
+
+        # ---------- 6. A5b: честные отказы при повреждении закрепления ----------
+        # tgt_after — уже закреплённый диск: ACTIVE=0x80 и валидный sentinel.
+        # Каждая подмена обязана дать rc=35 и «CTOS A5 PIN FAIL» до PM.
+        pin_cases = []
+
+        d = bytearray(tgt_after)
+        d[72 * SECTOR + 100] ^= 0x5A          # сектор PM внутри LBA0..135
+        pin_cases.append(("image sector", bytes(d)))
+
+        d = bytearray(tgt_after)
+        d[sbase + 0x18] ^= 0x01               # контрольная сумма
+        pin_cases.append(("sentinel checksum", bytes(d)))
+
+        d = bytearray(tgt_after)
+        d[sbase + 0x00] = ord("X")            # магия
+        pin_cases.append(("sentinel magic", bytes(d)))
+
+        d = bytearray(tgt_after)
+        struct.pack_into("<I", d, sbase + 0x10, 2)   # версия
+        pin_cases.append(("sentinel version", bytes(d)))
+
+        d = bytearray(tgt_after)
+        struct.pack_into("<I", d, sbase + 0x14, IMAGE_SECTORS - 1)  # размер
+        pin_cases.append(("sentinel size", bytes(d)))
+
+        d = bytearray(tgt_after)
+        struct.pack_into("<I", d, sbase + 0x1C, 1)   # флаги, смещение +0x1C
+        pin_cases.append(("sentinel flags", bytes(d)))
+
+        d = bytearray(tgt_after)
+        d[sbase:sbase + SECTOR] = b"\x00" * SECTOR   # sentinel стёрт
+        pin_cases.append(("sentinel zeroed", bytes(d)))
+
+        for i, (name, data) in enumerate(pin_cases):
+            if not pin_negative(name, data, tmp_root, "pin_%d" % i):
+                fails.append("neg " + name)
     finally:
         shutil.rmtree(tmp_root, ignore_errors=True)
 
@@ -208,8 +267,9 @@ def main():
         print("Эмуляционная контрольная точка НЕ пройдена; на железе не заявляется.")
         return 1
     print("A5 INSTALL OK: двухдисковая самоустановка, ACTIVE+sentinel, "
-          "самоудаление, перезагрузка с цели rc=39 без A5-строк, "
-          "честный отказ rc=37. QEMU — контрольная точка, R3700 не тронут.")
+          "самоудаление, перезагрузка с цели rc=39 без A5-строк, честный "
+          "отказ rc=37; A5b: 7 подмен дали rc=35 с PIN FAIL. "
+          "QEMU — контрольная точка, R3700 не тронут.")
     return 0
 
 

@@ -51,13 +51,13 @@ PM_OFF = PM_LBA * SECTOR
 IMAGE_LEN = 136 * SECTOR
 
 EXPECT_MBR_LEN = 188
-EXPECT_S2_LEN = 1392
+EXPECT_S2_LEN = 1720
 EXPECT_INSTALL_LEN = 1188   # длина installer-секции без хвостовых нулей
 EXPECT_CTMD_LEN = 28425
 EXPECT_PM_LEN = 21220        # слот бинарника в образе
 EXPECT_PM_TAIL_LEN = 21217   # последний ненулевой байт + 1 (3 нуля в .data)
 EXPECT_CTMD_MD5 = "110b54e786544c561b64132e7557812d"
-EXPECT_IMAGE_MD5 = "5d93840657833748049ced118906fb42"
+EXPECT_IMAGE_MD5 = "dc90a080710efb03b3ccbfe640cebb9e"
 EXPECT_MODULES = ("memmgr", "sched", "syscall_test", "stage1")
 
 # isa-debug-exit: (AX << 1) | 1
