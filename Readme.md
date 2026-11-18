@@ -4364,6 +4364,7 @@ t5gpr 1/1, T4-shelf 90/90) + T4 multi-statement кросс-молчания (8×
   132552 опкода, 313 ячеек — совпадает с трассой `ctos_vm.py`; порча тела
   ловится обеими программами с `[TKT-040]` (VM rc=1, native rc=1).
   Границы честные: syscall/NID, таймер, контекст и ASMBLOCK дают `FATAL`;
+  на моноблоке R3700 только очень старый BIOS-аналог, UEFI/GRUB не подтверждены,
   QEMU в окружении нет, «на железе» не заявляется. tracked:
   CtOs/native/native_rt.c, CtOs/native/NATIVE_RT_SPEC.md,
   CtOs/BRINGUP_SPEC.md, Python_compiler/verify_native_rt.py.
