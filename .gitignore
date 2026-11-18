@@ -2,3 +2,5 @@ __pycache__/
 *.pyc
 *.ctos.out
 *.ctmd
+*.img
+CtOs/native/boot/_build_tmp/

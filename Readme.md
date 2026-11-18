@@ -4406,3 +4406,22 @@ t5gpr 1/1, T4-shelf 90/90) + T4 multi-statement кросс-молчания (8×
   CtOs/native/build_modules_image.py, CtOs/native/NATIVE_RT_SPEC.md,
   CtOs/BRINGUP_SPEC.md, Python_compiler/verify_native_rt.py, .gitignore,
   Readme.md.
+- **Спринт 106 (TKT-056, bring-up Ф2 шаг A3b) — сырой legacy-BIOS загрузчик,
+  принятый в QEMU как эмуляционная контрольная точка** — добавлены
+  `CtOs/native/boot/mbr.S` (LBA 0, 188 Б, EDD `INT 13h AH=41h` → `AH=42h`,
+  читает stage2 в `0x1000:0000`), `stage2.S` (LBA 1..4, 1056 Б; CTMD с LBA 8
+  в `0x2000:0000`; magic/каталог/CRC-32 четырёх модулей; VGA text + COM1;
+  защищённый режим), линкерские скрипты и `build_boot_image.py`.
+  Найден честный баг: плоский CS имеет base=0, поэтому 16-битный far jump
+  оставлял EIP=0x19A и исполнял мусор по физическому 0x19A (`#UD` в трассе
+  QEMU `-d in_asm,int`); исправлен 32-битным far jump `66 EA <offset32>
+  <sel16>` на линейный адрес `0x1019A`. `python -X utf8
+  Python_compiler/verify_boot_image.py`: холодная сборка ×2 `IDENTICAL`
+  (65536 Б md5 `2b8847fc192c3c7595e9240d9091730a`; CTMD 28425 Б md5
+  `110b54e786544c561b64132e7557812d`), positive `rc=33` с логом до
+  `CTOS A3b PM OK`, негативы magic/CRC `rc=35`. QEMU 11.1.0 поставлен
+  локально через winget; моноблок без интернета. Границы: **на R3700 не
+  принято**, `isa-debug-exit` — только тестовый хук, нативный интерпретатор
+  `.ctos` в PM ещё не запущен (Ф3). tracked: `CtOs/native/boot/*`,
+  `Python_compiler/verify_boot_image.py`, `CtOs/BRINGUP_SPEC.md`,
+  `CtOs/native/NATIVE_RT_SPEC.md`, `.gitignore`, `Readme.md`.
