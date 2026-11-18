@@ -4315,3 +4315,26 @@ t5gpr 1/1, T4-shelf 90/90) + T4 multi-statement кросс-молчания (8×
   ml(50), ad(9), wo(7), gt(5), em(1), lt(1). Это отдельный фронт 24д/W-122.
   tracked: wc14v3ring_build.py, pos_wc14v3ring.words, regr120.py,
   selfhost_check.py, veha12g_probe_status.md. Дальше — 24д (фиксепоинт).
+- **Спринт 101 (W-122) — ступень 24д-а: ad/gt/lt в кольце + честный подъём
+  границы 0x1000 → 0x2000** — приёмка probe125 (`_w122_et/_w122_cmp/_w122_verify/
+  _stage1_sem/_w122_bisect`): **BYTE-OK 21/25**; новые `ad 0/1/5`, `gt 0/9`,
+  `lt 0/2`, `nb 6 1 va gt 9 eq 0`, `nb 6 5 aa su 1 lt 2`, `ad 5 ad 3`,
+  `gt 0 lt 2 ad 5` — байт-в-байт; 4 честных SILENT = `ml/em/wo` (ещё не в кольце)
+  и `nb 3 ad 7 ne` (stage1-0xFE, кольцо молчит). Механика: обобщённая
+  pending-машина `su/eq`, `TAGTAB[8] = 4628 + 2·EQOA + 3·SUPA + 6·GTUA + 7·LTOA`
+  (теги `eq 0x1216 / su 0x1217 / ad 0x1214 / gt 0x121A / lt 0x121B`),
+  sticky `(2·PDG + X_old + is_X)==1`; `ml` в сумме тега требует локального
+  стеша S в `SSAV=198`. Бюджет-приговор: 24д-том 4375 ток > 4094 ⇒
+  `MAX_SOURCE_WORDS 0x1000→0x2000` (8192), `MAX_USER_WORDS 8190` — прецедент
+  W-120; stage1 пересобран из КОДЕНА — 22861 Б md5 **984d90d4**, эмиссия
+  byte-exact неизменна против de5079df (20/20 SAME). Итог: том 4375 ток
+  10663 Б; компил 0xFF md5 **cc678b3e**, 10674 Б, вердец 0xFF.
+  `regr120.py` (base W-121) — **REGRESS OK / rc=0**, новый пин cc678b3e:
+  ring-полка **188/188 BYTE-OK + 25/25 честных молчаний + 35/35 diverg-silence
+  + 2/2 ddiv-tracked**, cold IDENTICAL. `selfhost_check.py`: фиксепоинт
+  **T(S_T)==T НЕ достигнут**, но первый отказ сдвинут 1263 → **1424** (`ml`);
+  остаток неподдерживаемых source-words: ml(50), wo(7), em(1). `ml` —
+  92-Б runtime-кольцо с тремя вычисляемыми целями; байты выразимы через
+  record-эмиттер `[X][TAG16]` — отдельный фронт 24д-б. tracked:
+  Compiler/stage1_compiler.kt/.ctos, Python_compiler/wc14v3ring_build.py,
+  pos_wc14v3ring.words, regr120.py, veha12_design.md, veha12g_probe_status.md.

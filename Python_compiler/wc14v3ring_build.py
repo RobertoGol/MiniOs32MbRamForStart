@@ -4,9 +4,11 @@
 # через site_store-патч TAIL до FILE_SEAL; 3 if + 3 es + 2 mk + 2 jb, sticky
 # BADIF/BADEJ/BADJB; исходное слово 'su' (KW_SUB 0x7573) с pending-литералом
 # и тегом 0x1217; forecast pr/ow = 4Б хвоста поверх 5Б базы (урок кейса 68:
-# старый ml·9 сдвигал все if/es/jb-цели). Итог: 4065 ток (лимит 4094),
-# 9955 Б 0xFF md5 22896d3f; probe124 Smoke 69 кейсов: BYTE-OK=53 OK-DIV=16
-# DIFF=0. Generic 'nb d+ ne' + голые цифры (24а) + A-виды
+# старый ml·9 сдвигал все if/es/jb-цели). 24д (спринт 101 W-122): ad/gt/lt
+# через обобщённую pending-машину su/eq; MAX_SOURCE_WORDS 0x1000->0x2000
+# ( MAX_USER_WORDS 8190, прецедент W-120 ); Итог: 4375 ток (лимит 8190),
+# 10674 Б 0xFF md5 cc678b3e; probe125 21/25 BYTE-OK, фиксепоинт BLOCKED at ml.
+# Generic 'nb d+ ne' + голые цифры (24а) + A-виды
 # nb-пары sv/sc (24б-1) + gp/sp (24б-2) + B-виды va/cp/aa (24б-3, спринт 96:
 # граница тома поднята W-116 0x400->0x800 по бюджет-приговору W-115) +
 # T3-формы 'wc d va|sv|gp|sp' и голые va/sv/gp/sp (24в-1, спринт 97: S-машина
@@ -145,6 +147,16 @@ IFTGT = 233                                    # scratch цели if (НЕ за�
 SUW, SUWC = 30067, 57                          # KW_SUB 0x7573 / ячейка self-консты
 SUFL, SUPA = 58, 59                            # is_su / sticky «pending от su»
 TAGEQ = 4630                                   # TAGTAB[8] по умолчанию (eq)
+# 24д W-122: ad/gt/lt — такие же pending-опы (word+digit), что eq/su.
+#   Тег цифры = 4628 + 2*EQOA + 3*SUPA + 6*GTUA + 7*LTOA:
+#   eq 4630(0x1216), su 4631(0x1217), ad 4628(0x1214), gt 4634(0x121A), lt 4635(0x121B).
+ADW, GTW, LTW = 25697, 29799, 29804
+ADWC, GTWC, LTWC = 184, 185, 186
+ADFL, GTFL, LTFL = 187, 188, 189
+EQSG = 190                                     # is_eq «чистый» (до OR с su/ad/gt/lt)
+EQOA, ADOA, GTUA, LTOA = 191, 192, 193, 194    # sticky-флаги тега
+TAGV = 197                                     # scratch суммы тега
+SSAV = 198                                     # стеш S вокруг ml-суммы тега
 
 def sel_val(anchor, flag):
     """acc = flag ? cell[candB] : cell[candA]; двойной gp (ячейки держат АДРЕСА)."""
@@ -234,6 +246,7 @@ INIT += N(1) + ABS(5376, 'sv') + ABS(21760, 'sv') + ABS(4864, 'sv') \
     + ABS(1536, 'sv') + ABS(1792, 'sv')  # ne/dig, sv, sc, gp, sp, pr/ow, if, es — A-виды
 INIT += N(2) + ABS(4633, 'sv') + ABS(4632, 'sv') + ABS(4629, 'sv') \
     + ABS(4630, 'sv') + ABS(4631, 'sv')   # va, cp, aa/as, eq, su — B-виды
+INIT += ABS(4628, 'sv') + ABS(4634, 'sv') + ABS(4635, 'sv')  # ad/gt/lt — B-виды (24д)
 # 24в-1: SLC := 0xF00FF1 (WORK_CELL — честный дефолт W_Current stage1;
 #   зонд b_va: голая 'va' на свежем stage1 = [12 19 00F00FF1] 2e1d1bb3)
 INIT += N(15732721) + ABS(SLC, 'sv')
@@ -275,6 +288,9 @@ INIT += N(1792) + ABS(TAGTAB + 13, 'sv')    # [13] 0x0700 (es/jb)
 INIT += N(16) + [t for c in (SITE1, SITE2, SITE3, ESITE1, ESITE2)
                  for t in ABS(c, 'sv')]
 INIT += N(SUW) + ABS(SUWC, 'sv')            # self-конста 'su' (cp = OP_LOAD 0x18 живёт при cell[SUWC]=SUW)
+INIT += N(ADW) + ABS(ADWC, 'sv')            # self-конста 'ad' (24д)
+INIT += N(GTW) + ABS(GTWC, 'sv')            # self-конста 'gt' (24д)
+INIT += N(LTW) + ABS(LTWC, 'sv')            # self-конста 'lt' (24д)
 INIT += N(100) + ABS(C100, 'sv')            # C100 := 100
 INIT += N(SITE_DUMP) + ABS(CSDP, 'sv')      # CSDP := 392 (база site_store)
 INIT += N(CS_DUMP) + ABS(CSD, 'sv')         # CSD := 124 (свалка cstore)
@@ -315,7 +331,7 @@ LB += ['wc', '8', 'gp'] + ABS(AAWC, 'cp') + ABS(AAFA, 'sv')      # is_aa (24б-3
 LB += ['wc', '8', 'gp'] + ABS(WCW, 'cp') + ABS(WCFA, 'sv')       # is_wc (24в-1)
 # 24в-2: is_eq/is_as/is_vw — новые слова ('eq'=0x7165, 'as'=0x7361,
 #   'vw'=0x7776; ячейки word-кодов 129/130/131)
-LB += ['wc', '8', 'gp'] + ABS(EQWC, 'cp') + ABS(EQFA, 'sv')      # is_eq
+LB += ['wc', '8', 'gp'] + ABS(EQWC, 'cp') + ABS(EQFA, 'sv')     + ABS(EQSG, 'sv')                                             # is_eq + is_eq «чистый» (24д)
 LB += ['wc', '8', 'gp'] + ABS(ASWC, 'cp') + ABS(ASFA, 'sv')      # is_as
 LB += ['wc', '8', 'gp'] + ABS(VWWC, 'cp') + ABS(VWFA, 'sv')      # is_vw
 # 24в-3: is_te/is_pr/is_ow ('te'=0x6574, 'pr'=0x7270, 'ow'=0x776F)
@@ -330,8 +346,11 @@ LB += ['wc', '8', 'gp'] + ABS(JBWC, 'cp') + ABS(JBFA, 'sv')      # is_jb
 # 24г W-121: is_su — self-конста + 'cp' (OP_LOAD 0x18); su берёт ТОЛЬКО одну
 #   цифру-литерал (Num_Pending=0), поэтому вычитание 30067 здесь не работает.
 LB += ['wc', '8', 'gp'] + ABS(SUWC, 'cp') + ABS(SUFL, 'sv')  # is_su
-# su — тот же pending, что eq (EQFA := is_eq | is_su; слова взаимоисключающи)
-LB += ABS(SUFL, 'va') + ABS(EQFA, 'aa') + ABS(EQFA, 'sv')
+LB += ['wc', '8', 'gp'] + ABS(ADWC, 'cp') + ABS(ADFL, 'sv')  # is_ad (24д)
+LB += ['wc', '8', 'gp'] + ABS(GTWC, 'cp') + ABS(GTFL, 'sv')  # is_gt (24д)
+LB += ['wc', '8', 'gp'] + ABS(LTWC, 'cp') + ABS(LTFL, 'sv')  # is_lt (24д)
+# eq/su/ad/gt/lt — один pending (слова взаимоисключающи)
+LB += ABS(SUFL, 'va') + ABS(ADFL, 'aa') + ABS(GTFL, 'aa')     + ABS(LTFL, 'aa') + ABS(EQFA, 'aa') + ABS(EQFA, 'sv')
 LB += ['wc', '8', 'gp'] + ['su', '8'] * 6 + ABS(VSC, 'sv')   # V = W-48 (gp через FB)
 LB += ABS(VSC, 'va') + ['gt', '9', 'eq', '0'] + ABS(DGFA, 'sv')  # is_dig
 # 24в-2: PDG = pending-цифра = (EQPA_old + is_dig)==2 — цифра-операнд eq.
@@ -339,13 +358,30 @@ LB += ABS(VSC, 'va') + ['gt', '9', 'eq', '0'] + ABS(DGFA, 'sv')  # is_dig
 #   ([12 16][BE32(цифра)], X = V — probe121/10 'eq 3', /04 'wc 5 eq 3':
 #   X = ЦИФРА, НЕ SLC — потому pending-цифра идёт через bareK, не k4K).
 LB += ABS(EQPA, 'va') + ABS(DGFA, 'aa') + ['eq', '2'] + ABS(PDGFA, 'sv')
-# 24г W-121: тег операнда su = 0x1217 вместо 0x1216; SUPA' = (su+SUPA+PDG)==1
-LB += N(TAGEQ) + ABS(SUPA, 'aa') + ABS(TAGTAB + 8, 'sv')
+# 24д W-122: тег = 4628 + 2*EQOA + 3*SUPA + 6*GTUA + 7*LTOA;
+#   ml жжёт слот S — стешим S в SSAV вокруг суммы (TAGV), восстанавливаем сразу.
+LB += ['wc', '6', 'va'] + ABS(SSAV, 'sv')
+LB += N(4628) + ABS(TAGV, 'sv')
+LB += ABS(EQOA, 'va') + ['ml', '2'] + ABS(TAGV, 'aa') + ABS(TAGV, 'sv')
+LB += ABS(SUPA, 'va') + ['ml', '3'] + ABS(TAGV, 'aa') + ABS(TAGV, 'sv')
+LB += ABS(GTUA, 'va') + ['ml', '6'] + ABS(TAGV, 'aa') + ABS(TAGV, 'sv')
+LB += ABS(LTOA, 'va') + ['ml', '7'] + ABS(TAGV, 'aa') + ABS(TAGV, 'sv')
+LB += ABS(TAGV, 'va') + ABS(TAGTAB + 8, 'sv')
+LB += ABS(SSAV, 'va') + ['wc', '6', 'sv']
 #   SUPA' = (2·PDG + SUPA_old + is_su)==1: цифра ЗАКРЫВАЕТ pending (в том
 #   числе обычного eq — урок regr120 'eq 3 eq 4', где старая формула
 #   (su+SUPA+PDG)==1 ставила su-тег на втором eq).
 LB += ABS(PDGFA, 'va') + ABS(PDGFA, 'aa') + ABS(SUPA, 'aa') \
     + ABS(SUFL, 'aa') + ['eq', '1'] + ABS(SUPA, 'sv')
+# 24д: sticky эка/ad/gt/lt — та же формула (2*PDG + X_old + is_X)==1
+LB += ABS(PDGFA, 'va') + ABS(PDGFA, 'aa') + ABS(EQOA, 'aa') \
+    + ABS(EQSG, 'aa') + ['eq', '1'] + ABS(EQOA, 'sv')
+LB += ABS(PDGFA, 'va') + ABS(PDGFA, 'aa') + ABS(ADOA, 'aa') \
+    + ABS(ADFL, 'aa') + ['eq', '1'] + ABS(ADOA, 'sv')
+LB += ABS(PDGFA, 'va') + ABS(PDGFA, 'aa') + ABS(GTUA, 'aa') \
+    + ABS(GTFL, 'aa') + ['eq', '1'] + ABS(GTUA, 'sv')
+LB += ABS(PDGFA, 'va') + ABS(PDGFA, 'aa') + ABS(LTOA, 'aa') \
+    + ABS(LTFL, 'aa') + ['eq', '1'] + ABS(LTOA, 'sv')
 # взвешенный k = sv + 2sc + 3gp + 4sp + 5va + 6cp + 7(aa|as) + 8·(is_eq +
 #   EQPA_old) + 9vw — 24в-2 ml-форма (va + ml w + aa в K2FA): aa-форма не
 #   умеет 8·(is_eq+EQPA_old), ml дешевле 10-членной суммы; одна eq-строка
@@ -811,7 +847,7 @@ PS += ['te']
 
 PROGRAM = INIT + ['mk'] + LB + PS
 
-MAX_USER_WORDS = 4094  # 24в-3 W-120: граница тома поднята 2046→4094 (MAX_SOURCE_WORDS 0x800→0x1000, спринт 99 — прецедент W-116)
+MAX_USER_WORDS = 8190  # 24д W-122: граница тома поднята 4094→8190 (MAX_SOURCE_WORDS 0x1000→0x2000, спринт 101 — прецедент W-120)
 flat = ' '.join(PROGRAM)
 TOKENS = len(flat.split())
 POS_PATH = r'H:\Project\MiniOS_CtOS\Python_compiler\pos_wc14v3ring.words'

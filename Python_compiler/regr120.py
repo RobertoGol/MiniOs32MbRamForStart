@@ -1,4 +1,18 @@
 # -*- coding: utf-8 -*-
+# Спринт 101 (regr120, W-122): base regr120-W121 (HEAD = 1522e0c — приёмка
+# 24г). СТУПЕНЬ 24д (ЧАСТИЧНО): ad/gt/lt в кольце через обобщённую
+# pending-машину su/eq (тег цифры 4628 + 2*EQOA + 3*SUPA + 6*GTUA + 7*LTOA;
+# is_b2 B-виды на 4628/4634/4635), честный подъём границы тома
+# MAX_SOURCE_WORDS 0x1000 -> 0x2000 (8192 слов; MAX_USER_WORDS 8190) —
+# 24д-том = 4375 ток > 4094, budget-приговор по прецеденту W-120; stage1
+# пересобран из КОДЕНА — 22861 Б md5 984d90d4 (эмиссия байт-в-байт
+# неизменна против de5079df, probe125/_stage1_sem 20/20 SAME). Итог: том
+# 4375 ток (лимит 8190), 10663 Б; артефакт 10674 Б 0xFF md5 cc678b3e,
+# вердец 0xFF. ПРИЁМКА probe125 (_w122_verify): 21/25 BYTE-OK (ad 0/1/5,
+# gt 0/9, lt 0/2, gt9eq0, su1lt2, ad5ad3, gt0lt2ad5 + регресс su/eq/wc/pr),
+# честные SILENT = ml/em/wo + nb...ad...ne. Первый refusal на S_T сдвинулся
+# 1263 ('gt') -> 1424 ('ml'). 24д-фиксепоинт T(S_T)==T НЕ достигнут
+# (блокер: ml 92Б runtime-кольцо с вычисляемыми целями, em/wo).
 # Спринт 100 (regr120, W-121): base regr119 (HEAD = 534d678 — промежуточный
 # статус W-121). СТУПЕНЬ 24г: управляющие слова if/es/mk/jb в кольце через
 # source-words + Stage2-патч TAIL до FILE_SEAL (site_store 392, cstore 124),
@@ -5479,7 +5493,7 @@ NEW = {
     # ---- веха-24 W-112 (спринт 92): кольцевой компилятор 24а —
     # generic 'nb <цифры>+ ne' + голые цифры; том-машина состояний
     # nb-прогона (SCAN/PS/EMIT/TAIL, слоты F3..FC, ARR 0xA01000) ----
-    'Python_compiler/pos_wc14v3ring.words': (0xFF, '22896d3f'),  # 24г W-121: 4065 ток 9955Б (было 64c0bed1 2724ток 6507Б 24в-3; 249bc5ff 2041ток 24в-2)
+    'Python_compiler/pos_wc14v3ring.words': (0xFF, 'cc678b3e'),  # 24д W-122: 4375 ток 10674Б (было 22896d3f 4065ток 9955Б 24г; 64c0bed1 2724ток 24в-3)
     # ---- веха-23 W-59 (спринт 39): честный КРОСС-ФОРМНЫЙ T4×T3-том ----
     'Python_compiler/pos_wc14v3t43.words': (0xFF, 'beac8aea'),
     'Python_compiler/target_t43_33.words': (0xFF, '32448898'),
@@ -6553,6 +6567,19 @@ RING_CASES = [
     ('nb 7 ne sv mk va jb', 'ok'),
     ('nb 7 ne sv mk jb', 'ok'),
     ('nb 3 ne sv pr mk va su 1 sv pr va eq 0 if te es jb', 'ok'),
+    # 24д W-122: ad/gt/lt — обобщённая pending-машина su/eq (BYTE-OK probe125)
+    ('ad 0', 'ok'),
+    ('ad 1', 'ok'),
+    ('ad 5', 'ok'),
+    ('gt 0', 'ok'),
+    ('gt 9', 'ok'),
+    ('lt 0', 'ok'),
+    ('lt 2', 'ok'),
+    ('nb 6 1 va gt 9 eq 0', 'ok'),
+    ('nb 6 5 aa su 1 lt 2', 'ok'),
+    ('ad 5 ad 3', 'ok'),
+    ('gt 0 lt 2 ad 5', 'ok'),
+    ('nb 3 ad 7 ne', 'sil'),
 ]
 n_ring_ok = sum(1 for _, k in RING_CASES if k == 'ok')
 n_ring_sil = sum(1 for _, k in RING_CASES if k == 'sil')
@@ -6645,7 +6672,7 @@ if fails:
     for f_ in fails:
         print(' ', f_)
     sys.exit(1)
-print('REGRESS OK W-121 ring-compiler-24g (4065tok 9955B 22896d3f; boundary 0x1000/4094: 4094 OK 24604B, 4095 OVERFLOW, neg_big5 MIGRATED 0xFE/69ebc576 -> 0xFF/ade43dcd; ring-shelf 177/177 BYTE-OK + 24/24 honest-silences + 35/35 diverg-silence + 2/2 ddiv-tracked [wc 5 eq/eq]; probe124 smoke 53/53 BYTE-OK + 16/16 tracked-DIV, DIFF=0; loader 0x1000: tracked IDENTICAL + 4-word-shelf 80/80 + T3-shelf '
+print('REGRESS OK W-122 ring-compiler-24d-partial (4375tok 10674B cc678b3e; boundary 0x2000/8190: stage1 22861B 984d90d4 emission=SAME vs de5079df; 24d ad/gt/lt BYTE-OK; FIXPOINT STILL BLOCKED at ml; legacy 24g 4065tok 9955B 22896d3f; boundary 0x1000/4094: 4094 OK 24604B, 4095 OVERFLOW, neg_big5 MIGRATED 0xFE/69ebc576 -> 0xFF/ade43dcd; ring-shelf 188/188 BYTE-OK + 25/25 honest-silences + 35/35 diverg-silence + 2/2 ddiv-tracked [wc 5 eq/eq]; probe124 smoke 53/53 BYTE-OK + 16/16 tracked-DIV, DIFF=0; loader 0x1000: tracked IDENTICAL + 4-word-shelf 80/80 + T3-shelf '
       '90/90 + micro-shelf t2d 10/10 + t1te 1/1 + t1pr 1/1 + t1as 1/1 '
       '+ t1va 1/1 + t1ow 1/1 + t1sp 1/1 + t1if 1/1 + t1sv 1/1 '
       '+ t1vw 1/1 + t2pr 1/1 + t2te 1/1 + t2as 1/1 + t2va 1/1 + '
