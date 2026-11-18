@@ -1,15 +1,20 @@
 # -*- coding: utf-8 -*-
-"""A3b: детерминированный сборщик legacy-BIOS образа CtOS (сырой диск).
+"""A4a: детерминированный сборщик legacy-BIOS образа CtOS (сырой диск).
 
 Раскладка секторов (512 Б каждый):
   LBA 0      MBR: 16-битный код + сигнатура 55 AA
   LBA 1..4   stage2: 4 сектора, загружается в 0x1000:0000
   LBA 5..7   зарезервированная пустота
   LBA 8..71  CTMD v1: 64 сектора, загружается в 0x2000:0000
-  ...        нулевое заполнение до 128 секторов
+  LBA 72..135 A4a: плоский 32-битный рантайм, загружается в 0x4000:0000
+  ...        нулевое заполнение до 136 секторов
+
+BSS рантайма не занимает место в образе: pm_start.S обнуляет его по линкерным
+символам `_bss_start`/`_bss_end` (BSS лежит по 0x01000000, вдали от стека
+0x90000 и VGA 0xB8000).
 
 Образ `*.img` и промежуточные `*.bin` не отслеживаются VCS: builder
-воспроизводит их по требованию из исходников `mbr.S`/`stage2.S` и CTMD.
+воспроизводит их по требованию из исходников и CTMD.
 """
 import hashlib
 import io
@@ -31,13 +36,20 @@ STAGE2_LBA = 1
 STAGE2_SECTORS = 4
 CTMD_LBA = 8
 CTMD_SECTORS = 64
-TOTAL_SECTORS = 128
+CTMD_PHYS = 0x00020000
+PM_LBA = 72
+PM_SECTORS = 64
+TOTAL_SECTORS = PM_LBA + PM_SECTORS
+
+PM_BASE = 0x00040000
+PM_BSS_BASE = 0x01000000
+PM_CTMD_PHYS = CTMD_PHYS
 
 
 def tool(name):
     p = shutil.which(name)
     if not p:
-        raise SystemExit("A3b: не найден инструмент %s в PATH" % name)
+        raise SystemExit("A4a: не найден инструмент %s в PATH" % name)
     return p
 
 
@@ -49,6 +61,55 @@ def flat_binary(src, ldscript, base, obj, exe, out):
     subprocess.run([cp_p, "-O", "binary", "--only-section=.text", exe, out],
                    check=True)
     return io.open(out, "rb").read()
+
+
+def pm_flags(include_dir):
+    return ["-m32", "-O2", "-std=c11", "-ffreestanding", "-fno-builtin",
+            "-fno-stack-protector", "-fno-pic", "-fno-common", "-nostdinc",
+            "-mno-mmx", "-mno-sse", "-mno-sse2", "-I", include_dir,
+            "-DPM_CTMD_PHYS=0x%08Xu" % PM_CTMD_PHYS]
+
+
+def pm_binary(tmp):
+    """Тот же native_rt.c без правок семантики + freestanding-shim."""
+    gcc_p, as_p, ld_p, cp_p = (tool("gcc"), tool("as"), tool("ld"),
+                               tool("objcopy"))
+    pm_dir = os.path.join(HERE, "pm")
+    inc = os.path.join(pm_dir, "include")
+    src = os.path.join(NATIVE, "native_rt.c")
+    shim = os.path.join(pm_dir, "shim.c")
+    start = os.path.join(pm_dir, "pm_start.S")
+    lds = os.path.join(pm_dir, "pm.ld")
+    flags = pm_flags(inc)
+
+    obj_rt = os.path.join(tmp, "a4a_native_rt.o")
+    obj_shim = os.path.join(tmp, "a4a_shim.o")
+    obj_start = os.path.join(tmp, "a4a_start.o")
+    exe = os.path.join(tmp, "a4a_pm.exe")
+    out = os.path.join(tmp, "a4a_pm.bin")
+
+    subprocess.run([gcc_p] + flags + ["-c", "-o", obj_rt, src], check=True)
+    subprocess.run([gcc_p] + flags + ["-c", "-o", obj_shim, shim], check=True)
+    subprocess.run([as_p, "--32", "-o", obj_start, start], check=True)
+    subprocess.run([ld_p, "-m", "i386pe", "--image-base=0",
+                    "-e", "_start", "-T", lds, "-o", exe,
+                    obj_start, obj_rt, obj_shim], check=True)
+    subprocess.run([cp_p, "-O", "binary",
+                    "--only-section=.text", "--only-section=.rdata",
+                    "--only-section=.data", exe, out], check=True)
+
+    undef = subprocess.run([tool("nm"), "-u", exe], check=True,
+                           capture_output=True, text=True).stdout.strip()
+    if undef:
+        raise SystemExit("A4a: неразрешённые символы в PM-рантайме:\n%s" % undef)
+
+    data = io.open(out, "rb").read()
+    if len(data) > PM_SECTORS * SECTOR:
+        raise SystemExit("A4a: PM-рантайм не помещается: %d Б" % len(data))
+    for p in (obj_rt, obj_shim, obj_start, exe):
+        if os.path.exists(p):
+            os.remove(p)
+    return data
 
 
 def build(out_path, tmp=None):
@@ -78,17 +139,20 @@ def build(out_path, tmp=None):
     ctmd_builder.verify(ctmd)
     if len(ctmd) > CTMD_SECTORS * SECTOR:
         raise SystemExit("A3b: CTMD не помещается: %d Б" % len(ctmd))
+    if PM_CTMD_PHYS != CTMD_PHYS:
+        raise SystemExit("A4a: PM_CTMD_PHYS не совпадает с загрузкой CTMD")
+
+    pm = pm_binary(tmp)
 
     img = bytearray(TOTAL_SECTORS * SECTOR)
-    # MBR
     img[:len(mbr)] = mbr
     struct.pack_into("<H", img, SECTOR - 2, 0xAA55)
-    # stage2
     s2off = STAGE2_LBA * SECTOR
     img[s2off:s2off + len(stage2)] = stage2
-    # CTMD
     coff = CTMD_LBA * SECTOR
     img[coff:coff + len(ctmd)] = ctmd
+    poff = PM_LBA * SECTOR
+    img[poff:poff + len(pm)] = pm
 
     io.open(out_path, "wb").write(img)
     for p in (os.path.join(tmp, base + "_mbr.o"),
@@ -102,6 +166,7 @@ def build(out_path, tmp=None):
         "mbr": mbr,
         "stage2": stage2,
         "ctmd": ctmd,
+        "pm": pm,
         "path": out_path,
     }
 
@@ -111,10 +176,11 @@ if __name__ == "__main__":
         os.path.join(HERE, "ctos_boot.img")
     tmp = sys.argv[2] if len(sys.argv) > 2 else None
     r = build(out, tmp)
-    print("A3b BOOT OK: %s — %d Б, md5 %s" %
-          (out, len(r["image"]),
-           hashlib.md5(r["image"]).hexdigest()))
-    print("  MBR=%d Б, stage2=%d Б, CTMD=%d Б; LBA: 0/%d..%d/8..%d" %
-          (len(r["mbr"]), len(r["stage2"]), len(r["ctmd"]),
-           STAGE2_LBA, STAGE2_LBA + STAGE2_SECTORS - 1,
-           CTMD_LBA + CTMD_SECTORS - 1))
+    print("A4a BOOT OK: %s — %d Б, md5 %s" %
+          (out, len(r["image"]), hashlib.md5(r["image"]).hexdigest()))
+    print("  MBR=%d Б, stage2=%d Б, CTMD=%d Б, PM=%d Б; "
+          "LBA: 0/1..%d/8..%d/%d..%d" %
+          (len(r["mbr"]), len(r["stage2"]), len(r["ctmd"]), len(r["pm"]),
+           STAGE2_LBA + STAGE2_SECTORS - 1,
+           CTMD_LBA + CTMD_SECTORS - 1,
+           PM_LBA, PM_LBA + PM_SECTORS - 1))

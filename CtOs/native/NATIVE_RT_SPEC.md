@@ -1,6 +1,6 @@
 # A1/A2/A3 — нативный интерпретатор (bring-up Ф2)
 
-Статус: ✅ A1, A2, A3а приняты; A3b принят **в QEMU как эмуляционная контрольная точка**, 2026-11-18. Связано: `CtOs/BRINGUP_SPEC.md` (Ф2/Ф3, вариант A), `CtOs/native/boot/BOOT_SPEC.md`, TKT-056 / TKT-055 / TKT-052.
+Статус: ✅ A1, A2, A3а приняты; A3b и A4a приняты **в QEMU как эмуляционная контрольная точка**, 2026-11-18. Связано: `CtOs/BRINGUP_SPEC.md` (Ф2/Ф3, вариант A), `CtOs/native/boot/BOOT_SPEC.md`, TKT-056 / TKT-055 / TKT-052.
 
 ## A1 — подмножество ядра (принято ранее)
 
@@ -50,11 +50,24 @@ LE32 смещение, LE32 длина, LE32 CRC-32 тела, LE32 reserved), т
 
 `python -X utf8 Python_compiler/verify_boot_image.py`: холодная сборка дважды в разных TEMP ⇒ `IDENTICAL`, образ 65536 Б md5 `2b8847fc192c3c7595e9240d9091730a`; QEMU positive `rc=33` с полным логом до `CTOS A3b PM OK`; негативы (подмена магии `CTMD`→`XXXX`, порча тела `memmgr`) ⇒ `rc=35` с диагностикой без `PM OK`. Детали — `CtOs/native/boot/BOOT_SPEC.md`.
 
+## A4a — нативный интерпретатор в защищённом режиме (принят в QEMU)
+
+Рантайм в PM — **тот же `CtOs/native/native_rt.c`**, собранный в flat 32-bit код. Меняется только окружение: `CtOs/native/boot/pm/` даёт freestanding-заголовки, `pm_start.S` (BSS-clear, `argc=5`, argv `native_rt --module memmgr CTMD:image events:com1`) и `shim.c` (COM1 вместо event-файла, in-memory `FILE` для CTMD/артефакта, bump-allocator, свой `fprintf`/`snprintf`). ctmd физически лежит по `0x20000`, PM-код грузится с LBA 72 по `0x40000`, BSS по `0x01000000`, стек `0x90000`.
+
+Флаги сборки включают `-mno-mmx -mno-sse -mno-sse2`: иначе GCC выдаёт `pcmpeqd %xmm3,%xmm3`, а при `CR4=0` это `#UD`. `nm -u` PM-рантайма пуст — builder падает, если остался неразрешённый символ.
+
+`verify_boot_image.py` теперь проверяет:
+
+- холодную сборку ×2: образ 69632 Б md5 `a6f817c8aa371a5681d272b668f59a5a`;
+- positive QEMU: `rc=39` (`AX=0x13`), 24 линии COM1, из них 15 event'ов **байт-в-байт** совпадают с хост-запуском `native_rt.exe --module memmgr` (`MODULE`, 13 × `PORT`, `OPS 1395 CELLS 73`);
+- негативы stage2: `rc=35`;
+- негатив рантайма: порча тела `memmgr` с пересчётом CRC в каталоге CTMD проходит stage2, но `verify_code()` ловит внутренний CRC v1.1 ⇒ `FATAL: [TKT-040]`, `rc=41` (`AX=0x14`).
+
 ## Честные границы (НЕ сделано)
 
-- **A3b на железе:** boot shim реально грузится и проходит в QEMU 11.1.0, но на **R3700 не принят** — доступа к моноблоку нет, интернета на нём нет. На R3700 только очень старый BIOS-аналог; UEFI/GRUB не подтверждены. «Работает на железе» **не заявляется**. `isa-debug-exit` — тестовый хук QEMU, не честное завершение для реального стенда.
-- A1/A2/A3а — хостовый нативный рантайм для сверки семантики и загрузки модулей; A3b — загрузчик сектора, но ещё не исполняющая среда для `.ctos` в защищённом режиме (это Ф3).
-- Неизвестный NID/опкод даёт `FATAL`, а не тихое пропускание. Нативная периферия, HAL физической памяти, реальные прерывания — шаги A3б/Ф3.
+- **A3b/A4a на железе:** boot shim и PM-рантайм реально грузятся и проходят в QEMU 11.1.0, но на **R3700 не приняты** — доступа к моноблоку нет, интернета на нём нет. На R3700 только очень старый BIOS-аналог; UEFI/GRUB не подтверждены. «Работает на железе» **не заявляется**. `isa-debug-exit` — тестовый хук QEMU, не честное завершение для реального стенда.
+- A1/A2/A3а — хостовый нативный рантайм для сверки семантики и загрузки модулей; A4a — исполнение того же кода в PM, но пока только для модуля `memmgr`. `sched`, `syscall_test`, `stage1` в PM не запускались; полная самосборка `S(S_T)` остаётся хостовым гейтом.
+- Неизвестный NID/опкод даёт `FATAL`, а не тихое пропускание. Нативная периферия, HAL физической памяти, реальные прерывания — шаги A4a/Ф3.
 
 ## Приёмка
 
@@ -80,4 +93,6 @@ CtOs/native/native_rt.exe Compiler/stage1_compiler.ctos events.txt Python_compil
 python -X utf8 CtOs/native/build_modules_image.py /tmp/kernel.ctmd
 CtOs/native/native_rt.exe --module memmgr /tmp/kernel.ctmd events.txt
 python -X utf8 Python_compiler/verify_native_rt.py   # автобилд в TEMP, дерево не засоряется
+python -X utf8 CtOs/native/boot/build_boot_image.py ctos_boot.img <TEMP>
+python -X utf8 Python_compiler/verify_boot_image.py  # A3b + A4a в QEMU
 ```

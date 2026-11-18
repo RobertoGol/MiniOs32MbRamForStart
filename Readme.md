@@ -4425,3 +4425,26 @@ t5gpr 1/1, T4-shelf 90/90) + T4 multi-statement кросс-молчания (8×
   `.ctos` в PM ещё не запущен (Ф3). tracked: `CtOs/native/boot/*`,
   `Python_compiler/verify_boot_image.py`, `CtOs/BRINGUP_SPEC.md`,
   `CtOs/native/NATIVE_RT_SPEC.md`, `.gitignore`, `Readme.md`.
+- **Спринт 107 (TKT-056, bring-up Ф2 шаг A4a) — нативный интерпретатор `.ctos`
+  в защищённом режиме, принятый в QEMU как эмуляционная контрольная точка** —
+  тот же `CtOs/native/native_rt.c` (семантика не тронута) собран в flat 32-bit
+  PM-код; `CtOs/native/boot/pm/` даёт freestanding-заголовки, `pm_start.S`
+  (BSS-clear, `_main(5, argv)` с `native_rt --module memmgr CTMD:image
+  events:com1`) и `shim.c` (COM1 для событий, in-memory `FILE` для CTMD и
+  артефактов, bump-allocator, свой `fprintf`/`snprintf`). stage2 грузит PM
+  с LBA 72 по `0x40000`; найдены и исправлены два честных бага handoff:
+  относительный `jmp` из-за VMA 0 уходил в `0x50000`, а `66 EA` в `.code32`
+  декодировался как 16-битный far jump; нужен голый `EA <offset32> <sel16>`.
+  Флаги `-mno-mmx -mno-sse -mno-sse2` убирают `pcmpeqd %xmm3,%xmm3` (`#UD`
+  при `CR4=0`). `python -X utf8 Python_compiler/verify_boot_image.py`:
+  холодная сборка ×2 `IDENTICAL` (69632 Б md5
+  `a6f817c8aa371a5681d272b668f59a5a`; PM 21220 Б), positive `rc=39` с 24
+  линиями COM1, из которых 15 event'ов байт-в-байт совпадают с хост-запуском
+  `native_rt.exe --module memmgr` (`MODULE`, 13 × `PORT`, `OPS 1395 CELLS 73`),
+  негативы magic/CRC `rc=35`, runtime-fatal (порча тела + пересчёт CRC каталога)
+  `rc=41`. Границы: **на R3700 не принято**, `isa-debug-exit` — только тестовый
+  хук; в PM исполняется пока только `memmgr`, полная самосборка `S(S_T)`
+  остаётся хостовым гейтом. tracked: `CtOs/native/boot/build_boot_image.py`,
+  `CtOs/native/boot/stage2.S`, `CtOs/native/boot/pm/*`,
+  `Python_compiler/verify_boot_image.py`, `CtOs/native/boot/BOOT_SPEC.md`,
+  `CtOs/native/NATIVE_RT_SPEC.md`, `CtOs/BRINGUP_SPEC.md`, `Readme.md`.

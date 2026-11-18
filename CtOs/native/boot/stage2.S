@@ -1,11 +1,14 @@
-/* CtOS A3b — legacy-BIOS stage2 (LBA 1..4, 0x1000:0000).
+/* CtOS A3b/A4a — legacy-BIOS stage2 (LBA 1..4, 0x1000:0000).
  * Настоящий код, не псевдокод. Читает CTMD с LBA 8 (64 сектора в 0x2000:0000),
- * проверяет magic/каталог и CRC-32 каждого тела, печатает в VGA text + COM1,
- * затем переходит в 32-битный защищённый режим и завершается через
- * isa-debug-exit (только контрольная точка QEMU).
+ * проверяет magic/каталог и CRC-32 каждого тела, затем грузит плоский PM-рантайм
+ * с LBA 72 (0x4000:0000), переходит в защищённый режим и передаёт управление
+ * main() нативного интерпретатора. isa-debug-exit — только контроль QEMU.
  */
 /* stage2 исполняется по физическому 0x10000 = сегмент 0x1000:0 */
 .set stage2_base, 0x10000
+.set pm_lba, 72
+.set pm_sectors, 64
+.set pm_load_seg, 0x4000
 
 .code16
 .section .text
@@ -126,6 +129,13 @@ next_entry:
     jne all_bad
     mov $msg_all_ok, %si
     call puts
+
+    /* A4a: плоский PM-рантайм: LBA 72..135 -> 0x4000:0000. */
+    mov $dap_pm, %si
+    mov $0x42, %ah
+    mov drive, %dl
+    int $0x13
+    jc pm_read_fail
     jmp pm_switch
 
 all_bad:
@@ -148,6 +158,10 @@ edd_fail:
     jmp fail_11
 read_fail:
     mov $msg_read, %si
+    call puts
+    jmp fail_11
+pm_read_fail:
+    mov $msg_pm_read, %si
     call puts
     jmp fail_11
 fail_11:
@@ -204,9 +218,14 @@ pm_done:
 
     mov $stage2_base + pm_com_msg, %esi
     call com_puts32
-    mov $0xF4, %dx
-    mov $0x0010, %ax
-    out %ax, %dx
+    mov $stage2_base + pm_exec_msg, %esi
+    call com_puts32
+    /* Явный 32-битный far jump: метки stage2 имеют VMA 0, а исполняются
+     * по 0x10000, поэтому относительный jmp уехал бы в 0x50000. */
+    /* В .code32 префикс 0x66 сделал бы 16-битный far jump — он не нужен. */
+    .byte 0xEA
+    .long 0x00040000
+    .word 0x08
 pm_halt:
     hlt
     jmp pm_halt
@@ -348,6 +367,12 @@ dap_ctmd:
     .word 0x0000
     .word 0x2000
     .quad 8
+dap_pm:
+    .byte 0x10, 0x00
+    .word pm_sectors
+    .word 0x0000
+    .word pm_load_seg
+    .quad pm_lba
 ctmd_count: .long 0
 entry_index:.word 0
 entry_off:  .word 0
@@ -371,6 +396,7 @@ msg_magic_bad: .asciz "CTMD magic FAIL\r\n"
 msg_count_bad: .asciz "CTMD count FAIL\r\n"
 msg_edd:       .asciz "CTOS A3b STAGE2: NO EDD\r\n"
 msg_read:      .asciz "CTOS A3b STAGE2: READ FAIL\r\n"
+msg_pm_read:   .asciz "CTOS A4a PM READ FAIL\r\n"
 msg_nl:        .asciz "\r\n"
 msg_space:     .asciz " "
 
@@ -378,6 +404,7 @@ msg_space:     .asciz " "
 .code32
 pm_msg:          .asciz "CTOS A3b PM OK"
 pm_com_msg:      .asciz "CTOS A3b PM OK\r\n"
+pm_exec_msg:     .asciz "CTOS A4a EXEC\r\n"
 pm_vga_fail_msg: .asciz "CTOS A3b VGA FAIL\r\n"
 .code16
 
