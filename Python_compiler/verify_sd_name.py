@@ -361,6 +361,35 @@ def main():
         if not ok:
             fails.append("a14_sep_a5_reboot")
 
+        # ---------- A5-установка name_sep без селектора: A9-автозапуск всех модулей + отдельный диск ----------
+        ctmd_sep = sep1[a4.CTMD_OFF:a4.CTMD_OFF + a4.EXPECT_CTMD_LEN]
+        host_all = []
+        for mod in a4.EXPECT_MODULES:
+            host_all += a4.host_event_lines(ctmd_sep, tmp_root,
+                                            "a14_sep_auto_" + mod, mod)
+        src_auto = bytearray(sep1)
+        src_auto[a5.MARKER_OFF:a5.MARKER_OFF + 16] = a5.SRC_MARKER
+        tgt_auto = bytearray(a5.TARGET_SECTORS * SECTOR)
+        tgt_auto[a5.MARKER_OFF:a5.MARKER_OFF + 16] = a5.TGT_MARKER
+        rc, raw, err, disks = a5.boot([bytes(src_auto), bytes(tgt_auto), data],
+                                      tmp_root, "a14_sep_a5_auto_inst")
+        got = a4.lines_of(raw)
+        tgt_after_auto = disks[1]
+        inst_auto_ok = (rc == 39 and
+                        "CTOS A5 INSTALL OK" in got and
+                        "CTOS A5 AUTORUN ALL" in got and
+                        not err)
+        print("a14_sep_a5_auto_install rc=%s %s" %
+              (rc, "OK" if inst_auto_ok else "FAIL"))
+        if not inst_auto_ok:
+            show("a14_sep_a5_auto_install", rc, got, err)
+            fails.append("a14_sep_a5_auto_install")
+        ok, _, _ = run_sep_case(tgt_after_auto, data_path, tmp_root,
+                                "a14_sep_a5_auto_reboot",
+                                expect_sep(host_all))
+        if not ok:
+            fails.append("a14_sep_a5_auto_reboot")
+
         print("\nA14 SD NAME: FAILED=%d" % len(fails))
         if fails:
             print("  " + ", ".join(fails))
