@@ -9,6 +9,8 @@ A2 — NID-слой (файл 0x130..0x137, контекст 0x150..0x152, та�
 A3 — загрузка .ctos-модулей из контейнера CTMD: каждый модуль стартует
      загрузчиком --module и сверяется с прямой загрузкой в VM; негативы —
      неизвестное имя и подмена тела с неверным CRC.
+A11 — позитивный TIMER_RET (schedTR): RESTORE -> ARM -> 10 тиков ->
+     TIMER_RET(154) -> продолжение работы; честный негатив — IRET без тика.
 
 Запуск:
     python -X utf8 Python_compiler/verify_native_rt.py
@@ -59,6 +61,8 @@ CORE = [
     ("syscall_test", "Python_compiler/syscall_test.ctos", None, True, True),
     ("schedF",       "Python_compiler/schedF_test.ctos",  None, True, False),
     ("schedT",       "Python_compiler/schedT_test.ctos",  None, True, False),
+    # A11: честный позитивный TIMER_RET — RESTORE -> ARM -> TICK -> IRET(154).
+    ("schedTR",      "Python_compiler/schedTR_test.ctos", None, True, False),
 ]
 SELFHOST = (
     "stage1_selfhost",
@@ -75,6 +79,9 @@ NEGATIVES = [
      None, "FILE_END"),
     ("syscall_orderfail",    "Python_compiler/syscall_test_orderfail.ctos",
      None, "FILE_PUT до FILE_BEGIN"),
+    # A11: IRET без IRQ — TIMER_RET обязан отказать и в VM, и в нативе.
+    ("neg_tret",             "Python_compiler/neg_tret.ctos",
+     None, "TIMER_RET"),
 ]
 # ожидаемые итоги самосборки (TKT-052 / W-122)
 EXPECT_T_LEN = 13084
@@ -398,8 +405,8 @@ def main():
     if fails:
         print("NATIVE RT FAIL:", ", ".join(fails))
         return 1
-    print("NATIVE RT OK A1/A2/A3: ядро/NID/модули CTMD/негативы/полная "
-          "самосборка совпадают с ctos_vm.py; T(S_T) байт-в-байт")
+    print("NATIVE RT OK A1/A2/A3/A11: ядро/NID/модули CTMD/таймер+TIMER_RET/"
+          "негативы/полная самосборка совпадают с ctos_vm.py; T(S_T) байт-в-байт")
     return 0
 
 

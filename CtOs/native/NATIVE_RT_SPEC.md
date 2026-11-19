@@ -1,6 +1,6 @@
 # A1/A2/A3 — нативный интерпретатор (bring-up Ф2)
 
-Статус: ✅ A1, A2, A3а приняты; A3b, A4a, A5, A5b, A6, A7, A8, A9 и A10 приняты **в QEMU как эмуляционная контрольная точка**, 2026-11-18/19. Связано: `CtOs/BRINGUP_SPEC.md` (Ф2/Ф3, вариант A), `CtOs/native/boot/BOOT_SPEC.md`, TKT-056 / TKT-055 / TKT-052.
+Статус: ✅ A1, A2, A3а приняты; A3b, A4a, A5, A5b, A6, A7, A8, A9, A10 и A11 приняты **в QEMU как эмуляционная контрольная точка**, 2026-11-18/19. Связано: `CtOs/BRINGUP_SPEC.md` (Ф2/Ф3, вариант A), `CtOs/native/boot/BOOT_SPEC.md`, TKT-056 / TKT-055 / TKT-052.
 
 ## A1 — подмножество ядра (принято ранее)
 
@@ -100,7 +100,7 @@ A5 писал sentinel, но сам загрузчик его не читал. �
 
 `python -X utf8 Python_compiler/verify_native_rt.py` — автобилд в TEMP, дерево не засоряется.
 
-Дополнительные гейты: `python -X utf8 Python_compiler/verify_boot_image.py` (A3b/A4a/A6/A7/A8/A10 + A9-образ в QEMU), `python -X utf8 Python_compiler/verify_a5_install.py` (A5/A5b/A9, самоустановка с двумя дисками и 8 подмен закрепления), `python -X utf8 Python_compiler/verify_data_image.py` (A7/A8, FAT16 + каталог + тела, без QEMU). Все проходят на финальном коде; `python -X utf8 Python_compiler/regr120.py` зелёный.
+Дополнительные гейты: `python -X utf8 Python_compiler/verify_boot_image.py` (A3b/A4a/A6/A7/A8/A10/A11 + A9-образ в QEMU), `python -X utf8 Python_compiler/verify_a5_install.py` (A5/A5b/A9, самоустановка с двумя дисками и 8 подмен закрепления), `python -X utf8 Python_compiler/verify_data_image.py` (A7/A8, FAT16 + каталог + тела, без QEMU). Все проходят на финальном коде; `python -X utf8 Python_compiler/regr120.py` зелёный.
 
 | Случай | EVENT'ы VM/NAT | Опкоды/ячейки | Артефакт |
 |---|---:|---:|---|
@@ -150,7 +150,13 @@ Stage2 находит диск сканированием `0x80..0xEF`, чита
 
 В QEMU гейт использует **уже существующий** A8-путь (маркер `CTOS-DISK-A8` + индекс 3): `pm_start.S` берёт имя `schedT` из CAT, `shim.c` собирает синтетический CTMD, неизменный `native_rt.c` исполняет его. Результат `rc=39`, 53 строки COM1 = 10 строк preamble + 43 строки хостового `native_rt --module schedT`: `MODULE schedT 4589 92BF0F8A`, 41 событие, `TICK 00000FE5`, `OPS 16434 CELLS 443`, маркеры `B901/B910/B911/B920/B921/B930/B940/B941/B94F/B90F/B9D0/B9D1/B9FF` (13/13). COM1 байт-в-байт совпадает с хостом. Негативы: порча тела в CAT ⇒ `rc=41` + `FATAL: CTMD:`; сбитый индекс ⇒ fallback на memmgr без тика. `native_rt.c`, `pm_start.S`, `shim.c` не меняются.
 
-Честная граница: это **opcode-driven тик**, а не PIT/APIC и не полный No-HZ. Тик считается между инструкциями до `ops++`, условие — `tick_armed && have_kernel_ctx && ops >= tick_next && !tick_pending`; подавление есть только вне эпохи задачи. Нет ready-queue empty check, sleep/wakeup, idle/deep sleep, метрик пустых тиков и wall-clock 10 мс; `TIMER_RET` позитивно не покрыт (в `schedT` ре-диспетч идёт через YIELD). На R3700 не принято.
+Честная граница: это **opcode-driven тик**, а не PIT/APIC и не полный No-HZ. Тик считается между инструкциями до `ops++`, условие — `tick_armed && have_kernel_ctx && ops >= tick_next && !tick_pending`; подавление есть только вне эпохи задачи. Нет ready-queue empty check, sleep/wakeup, idle/deep sleep, метрик пустых тиков и wall-clock 10 мс; `TIMER_RET` позитивно не покрыт (в `schedT` ре-диспетч идёт через YIELD) — этот пробел закрыт A11. На R3700 не принято.
+
+## A11 — позитивный TIMER_RET: schedTR с IRET вместо YIELD (принят в QEMU)
+
+`have_kernel_ctx` в `native_rt.c` выставляется **только** в `WORK_CTX_RESTORE` (NID `0x151`), и тик без него не доставляется. Поэтому `schedTR_test.kt` честно строит ядерный ctx-блок (`CTX_NODE 0x00A12C00`: magic `CTX1`, `pc=Task_Entry`, `acc=0`, `rts_len=0`, пустое окно статиков) и вызывает `sys_call(NID_RESTORE)`, после чего заводит таймер и исполняет длинную работу. Обработчик тика (`Tick_Ret_Handler`) в отличие от `schedT` **не** вызывает YIELD: он печатает C940/C941, инкрементирует счётчик тиков в обычной ячейке (статики обработчика честно выбрасываются `statics_load` из кадра `TCK1`) и передаёт кадр в `sys_call(NID_TRET)` / `0x154` — честный IRET в прерванную точку. `native_rt.c` и `ctos_vm.py` не меняются.
+
+Профиль `timer_ret` в `build_modules_image.py` / `build_data_image.py` подменяет 4-ю запись (`stage1` → `schedTR` с телом `Python_compiler/schedTR_test.ctos`, 665 Б md5 `85904b08ec0216b98e67d65e56e5f0ea`): CTMD 6229 Б md5 `9537d798be949c2048943b1cf4c230df`, диск 32 МиБ md5 `6d0e78e6891f4121b27377b597d11163`. Дефолтные образы и профиль `timer` не изменились. Через A8-индекс 3 в QEMU: `rc=39`, 70 строк COM1 = 10 preamble + 60 host (`MODULE schedTR 665 799B74EB`, 58 событий, `OPS 753 CELLS 60`, 10 тиков, 10 `SYSCALL 154`, маркеры `C901/C910/C940/C941/C94F/C9FF`, нет `C9E0/C9E1/C9E5`), COM1 байт-в-байт совпадает с хостом. Негативы: порча тела ⇒ `rc=41` + `FATAL: CTMD:`, сбитый индекс ⇒ fallback без тика; отдельный `neg_tret` (IRET без открытого тика) отклоняется и VM, и нативом. `verify_native_rt.py` CORE пополнен `schedTR` (58/58 событий) и негативом `neg_tret`. На R3700 не принято.
 
 ## Сборка/запуск
 

@@ -36,12 +36,13 @@
   остаток 8 секторов — нули.
 
 Запуск:
-  python -X utf8 CtOs/native/build_data_image.py [out.img] [default|timer]
+  python -X utf8 CtOs/native/build_data_image.py [out.img] [default|timer|timer_ret]
 
 A10: профиль `timer` подменяет 4-ю APPS-запись CAT (и файл в FAT16) модулем
 schedT_test.ctos. Имя CAT-записи — ровно `schedT`: A8-шим берёт его как argv[2]
-для хостового эталона `native_rt --module schedT`. Дефолтный профиль остаётся
-байт-в-байт прежним.
+для хостового эталона `native_rt --module schedT`. A11: профиль `timer_ret`
+подменяет её же модулем schedTR_test.ctos с именем `schedTR` (TIMER_RET).
+Дефолтный профиль остаётся байт-в-байт прежним.
 """
 import hashlib
 import io
@@ -90,6 +91,12 @@ MODULES_TIMER = [
     ("sched.CTS",    "CtOs/kernel_sched.ctos",             "SCHED   CTS"),
     ("syscall.CTS",  "Python_compiler/syscall_test.ctos",  "SYSCALL CTS"),
     ("schedT",       "Python_compiler/schedT_test.ctos",   "SCHEDT  CTS"),
+]
+MODULES_TIMER_RET = [
+    ("memmgr.CTS",   "CtOs/memmgr.ctos",                   "MEMMGR  CTS"),
+    ("sched.CTS",    "CtOs/kernel_sched.ctos",             "SCHED   CTS"),
+    ("syscall.CTS",  "Python_compiler/syscall_test.ctos",  "SYSCALL CTS"),
+    ("schedTR",      "Python_compiler/schedTR_test.ctos",  "SCHEDTR CTS"),
 ]
 FOLDERS = ("APPS", "GAMES", "MUSIC", "VIDEO")
 README = {
@@ -197,7 +204,8 @@ def catalog_entry(kind, name, lba, data, body_off=0):
 
 
 def build(out_path, profile="default"):
-    modules = MODULES_TIMER if profile == "timer" else MODULES
+    modules = {"timer": MODULES_TIMER,
+               "timer_ret": MODULES_TIMER_RET}.get(profile, MODULES)
     fs = Fat16()
 
     # 1. Файлы: сначала резервируем все кластеры, потом пишем данные.

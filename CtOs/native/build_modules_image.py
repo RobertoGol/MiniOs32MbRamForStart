@@ -14,10 +14,12 @@
   тела модулей подряд, каждое выровнено по 16 Б нулями.
 
 Запуск:
-  python -X utf8 CtOs/native/build_modules_image.py [out.ctmd] [default|timer]
+  python -X utf8 CtOs/native/build_modules_image.py [out.ctmd] [default|timer|timer_ret]
 
 A10: профиль `timer` подменяет 4-ю запись (stage1) модулем schedT_test.ctos
-с именем `schedT`. Дефолтный профиль остаётся байт-в-байт прежним.
+с именем `schedT`. A11: профиль `timer_ret` подменяет её же модулем
+schedTR_test.ctos с именем `schedTR` (позитивный TIMER_RET). Дефолтный профиль
+остаётся байт-в-байт прежним.
 """
 import hashlib
 import io
@@ -41,6 +43,12 @@ MODULES_TIMER = [
     ("syscall_test", "Python_compiler/syscall_test.ctos"),
     ("schedT",       "Python_compiler/schedT_test.ctos"),
 ]
+MODULES_TIMER_RET = [
+    ("memmgr",       "CtOs/memmgr.ctos"),
+    ("sched",        "CtOs/kernel_sched.ctos"),
+    ("syscall_test", "Python_compiler/syscall_test.ctos"),
+    ("schedTR",      "Python_compiler/schedTR_test.ctos"),
+]
 
 MAGIC = b"CTMD"
 VERSION = 1
@@ -49,7 +57,8 @@ NAMESZ = 32
 
 
 def build(out_path, profile="default"):
-    modules = MODULES_TIMER if profile == "timer" else MODULES
+    modules = {"timer": MODULES_TIMER,
+               "timer_ret": MODULES_TIMER_RET}.get(profile, MODULES)
     entries = []
     body = bytearray()
     for name, rel in modules:
