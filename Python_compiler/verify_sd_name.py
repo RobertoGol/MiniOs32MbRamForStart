@@ -187,6 +187,8 @@ def main():
             show("a14_install", rc, got, err)
             fails.append("a14_install")
         sd_after = disks[1]
+        check("SD selector preserved after install",
+              sd_after[SELECT_OFF:SELECT_OFF + 13] == A14_MARKER, fails)
 
         ok, _, _ = run_case(sd_after, tmp_root, "a14_sd_alone",
                             expect_boot(host))
