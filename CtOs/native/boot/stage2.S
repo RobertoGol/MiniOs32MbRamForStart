@@ -15,7 +15,7 @@
 .set pm_flags_off, 0x7000    /* внутри 64-секторного слота PM, за бинарником */
 .set data_marker_off, 0x180  /* A7: маркер роли «диск данных» в LBA0 */
 .set data_cat_lba, 8
-.set data_cat_sectors, 8
+.set data_cat_sectors, 64    /* A7-каталог + A8-тела модулей (32 КиБ) */
 .set data_load_seg, 0x5000   /* каталог данных, после возврата установщика */
 
 .code16

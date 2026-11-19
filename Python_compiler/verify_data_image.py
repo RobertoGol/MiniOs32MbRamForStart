@@ -8,8 +8,9 @@
      с ожидаемыми LBA/размером;
   3. BPB разделя и FAT-цепочки: independently обходим root -> CTOS -> APPS,
      GAMES, MUSIC, VIDEO; проверяем записи "."/"..", имена 8.3 и атрибуты;
-  4. каталог в LBA 8..15: magic CTOSCAT1, version=1, count, CRC-32; каждая
+  4. каталог в LBA 8..71: magic CTOSCAT1, version=1, count, CRC-32; каждая
      запись сверяется с байтами по её LBA и с исходным .ctos-файлом;
+     A8-тела в хвосте CAT-области сверяются с теми же байтами;
   5. негативы: испорченный маркер, CRC каталога, байт внутри файла и сломанная
      FAT-цепочка обязаны детектироваться.
 
@@ -37,7 +38,7 @@ import build_data_image as a7  # noqa: E402
 
 SECTOR = 512
 IMAGE_LEN = a7.IMAGE_SECTORS * SECTOR
-EXPECT_MD5 = "714e0e39a7c55137f9c5db80e6be25fd"
+EXPECT_MD5 = "5f54256087028a0cc71dfcfde77b9073"
 
 NAME_DOT = b".          "
 NAME_DOTDOT = b"..         "
@@ -206,7 +207,7 @@ def catalog_errors(img, expect):
         kind = ent[0]
         name = ent[1:16].split(b"\x00", 1)[0].decode("ascii")
         name = name.rstrip(" ")
-        lba, nsect, size, crc = struct.unpack_from("<IIII", ent, 16)
+        lba, nsect, size, crc, body_off = struct.unpack_from("<IIIII", ent, 16)
         if name not in expect:
             e.append("CAT_NAME_" + name)
             continue
@@ -223,6 +224,15 @@ def catalog_errors(img, expect):
         on_disk = img[lba * SECTOR:lba * SECTOR + size]
         if on_disk != data:
             e.append("CAT_LBA_BYTES_" + name)
+        # A8: тело внутри прочитанной CAT-области — точная копия FAT-файла.
+        is_module = any(name == m[0] for m in a7.MODULES)
+        if is_module:
+            if body_off < a7.A8_BODY_BASE or body_off + size > len(cat):
+                e.append("CAT_BODY_RANGE_" + name)
+            elif cat[body_off:body_off + size] != data:
+                e.append("CAT_BODY_BYTES_" + name)
+        elif body_off != 0:
+            e.append("CAT_BODY_SPURIOUS_" + name)
     if seen != set(expect):
         e.append("CAT_MISSING")
     return e
@@ -347,6 +357,15 @@ def main():
         if not ok:
             fails.append("neg catalog LBA")
 
+        # A8-тело не входит в CRC каталога: детектор обязан поймать подмену
+        # именно по байтам тела, а не по CRC каталога.
+        bad_body = bytearray(a)
+        bad_body[a7.CAT_LBA * SECTOR + a7.A8_BODY_BASE + 3] ^= 0x01
+        ok = bool(catalog_errors(bytes(bad_body), expect))
+        print("neg A8 body: %s" % ("OK" if ok else "FAIL"))
+        if not ok:
+            fails.append("neg A8 body")
+
         bad_fat = bytearray(a)
         bad_fat[fat.fat_off + 2 * 3:fat.fat_off + 2 * 3 + 2] = b"\xFF\xFF"
         f2 = Fat(bytes(bad_fat))
@@ -361,8 +380,9 @@ def main():
     if fails:
         print("DATA IMAGE FAIL: %s" % ", ".join(fails))
         return 1
-    print("DATA IMAGE OK A7: FAT16 + каталог LBA8, %d файлов; QEMU не нужен "
-          "(чисто байтовый гейт), на R3700 НЕ принято." % len(expect))
+    print("DATA IMAGE OK A7/A8: FAT16 + каталог LBA8..71, %d файлов и A8-тела; "
+          "QEMU не нужен (чисто байтовый гейт), на R3700 НЕ принято." %
+          len(expect))
     return 0
 
 

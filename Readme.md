@@ -4522,28 +4522,59 @@ t5gpr 1/1, T4-shelf 90/90) + T4 multi-statement кросс-молчания (8×
   human-readable FAT16 с папками `CTOS/APPS`, `CTOS/GAMES`, `CTOS/MUSIC`,
   `CTOS/VIDEO` (в каждой `README.TXT`, куда что класть; в APPS уже лежат четыре
   готовых `.ctos`-модуля) + машинный каталог в зарезервированных секторах LBA8..15
-  с magic `CTOSCAT1`, version=1, CRC-32 и 8 записями (kind/имя/LBA/размер/CRC).
+  с magic `CTOSCAT1`, version=1, CRC-32 и 8 записями (kind/имя/LBA/размер/CRC);
+  в спринте 112 область расширена до LBA8..71 и в её хвост добавлены A8-тела.
   Загрузчику FAT-драйвер не нужен: он сканирует диски `0x80..0xEF` по маркеру
   `CTOS-DATA-A7!` в LBA0+`0x180`, читает каталог в `0x5000:0000` и проверяет его
   через уже существующий `crc32_body`. Успех — `CTOS A7 DATA OK`, порча — честный
   `rc=35` с `CTOS A7 DATA BAD`, отсутствие диска — тихий старт без A7-строки.
   Диск данных собирается отдельно: `python -X utf8 CtOs/native/build_data_image.py
-  ctos_data.img` (32 МиБ, md5 `714e0e39a7c55137f9c5db80e6be25fd`), проверяется
+  ctos_data.img` (32 МиБ, md5 `714e0e39a7c55137f9c5db80e6be25fd` на момент A7;
+  после A8 — `5f54256087028a0cc71dfcfde77b9073`), проверяется
   `python -X utf8 Python_compiler/verify_data_image.py` (обход FAT-дерева, сверка
-  всех 8 файлов с исходниками и 4 негатива). В `verify_boot_image.py` добавлен
+  всех 8 файлов с исходниками; 4 негатива на момент A7, 5 после A8). В `verify_boot_image.py` добавлен
   двухдисковый QEMU-гейт: `rc=39`, 25 строк, A7-строка между `CTMD ALL OK` и
   `PM OK`. Найденные и исправленные баги сборщика: таблица разделов была записана
   в LBA2048 вместо LBA0; корневой каталог из 64 Б сжимал `bytearray` на 16320 Б
   и съезжали все LBA; имена 8.3 не были длинной 11 Б; в сравнении магии `CAT1`
   был перепутан порядок dword (`0x31544143`). Контрольные числа загрузочного
   образа: stage2 2040 Б из 2048, образ 69632 Б md5
-  `5496ffc520ee0b9f7bd3c3031053f3ae`. Пять гейтов зелёные:
+  `5496ffc520ee0b9f7bd3c3031053f3ae`; после A8 — md5
+  `a7eb6752965696dfba48b3938556cba9`, PM 22289/22292 Б. Пять гейтов зелёные:
   `verify_native_rt.py`, `regr120.py`, `verify_boot_image.py`,
   `verify_a5_install.py`, `verify_data_image.py`. Границы: аудио/видео пока только
   хранятся без декодирования; native x86/PE не поддерживается; PM не читает диск
-  (ни одного `INT 13h`), запуск `.ctos` с HDD — следующий шаг (A8); загрузка с SD
-  на R3700 BIOS не проверялась, моноблок пока не трогаем. tracked:
+  (ни одного `INT 13h`); запуск выбранного `.ctos` с HDD сделан в спринте 112 (A8);
+  загрузка с SD на R3700 BIOS не проверялась, моноблок пока не трогаем. tracked:
   `CtOs/native/boot/stage2.S`, `CtOs/native/build_data_image.py`,
   `Python_compiler/verify_boot_image.py`, `Python_compiler/verify_data_image.py`,
   `CtOs/native/boot/BOOT_SPEC.md`, `CtOs/native/NATIVE_RT_SPEC.md`,
   `CtOs/BRINGUP_SPEC.md`, `Readme.md`.
+- **Спринт 112 (TKT-056, bring-up Ф2 шаг A8) — запуск выбранного `.ctos` с диска
+  данных, принято в QEMU как эмуляционная контрольная точка.** Владелец попросил
+  «сама находит целевой диск, прошивает принятую базу, удаляет установщик,
+  закрепляет загрузку и запускает все написанные модули» — A8 закрывает последний
+  пункт для диска данных: запускается ровно один выбранный модуль. Маркер
+  `CTOS-DISK-A8` (12 Б) в MBR+`0x1A0` и байт индекса записи в `+0x1AC` имеют
+  приоритет над A6; `pm_start.S` видит маркер по `0x7DA0` и передаёт argv
+  `native_rt --module <имя> DISK:image events:com1`. CAT-область расширена с
+  LBA8..15 до LBA8..71 (64 сектора, 32 КиБ): в её хвост с `0x1000` встроены тела
+  первых четырёх модулей (смещение в записи каталога `[32..36)`), поэтому шил
+  берёт уже прочитанные stage2 байты и собирает синтетический CTMD v1 с одной
+  записью (off=60, len=size, crc=CRC записи), а `native_rt.c` не меняется и INT
+  13h в PM по-прежнему не нужен. `verify_boot_image.py`: индекс 2 ⇒ `rc=39`,
+  22 строки COM1, `MODULE syscall.CTS 131 D9B6E367`, event'ы байт-в-байт совпадают
+  с хост-запуском синтетического CTMD; три негатива — порча тела ⇒ `rc=41` +
+  `FATAL: CTMD:`, сбитый индекс ⇒ честный fallback на A4a/A6 (`rc=39`), маркер без
+  диска ⇒ `rc=41` + `CTOS A8 NO DATA`. `verify_data_image.py` проверяет A8-тела
+  побайтово (5-й негатив). Контрольные числа: загрузочный образ 69632 Б md5
+  `a7eb6752965696dfba48b3938556cba9` (stage2 2040 Б, PM 22289 из 22292 Б),
+  диск данных 32 МиБ md5 `5f54256087028a0cc71dfcfde77b9073`. Все пять гейтов
+  зелёные: `verify_native_rt.py`, `regr120.py`, `verify_boot_image.py`,
+  `verify_a5_install.py`, `verify_data_image.py`. Границы: **на R3700 не принято**,
+  моноблок пока не трогаем; аудио/видео только хранятся, native x86/PE не
+  поддерживается. tracked: `CtOs/native/boot/pm/shim.c`,
+  `CtOs/native/boot/pm/pm_start.S`, `CtOs/native/boot/stage2.S`,
+  `CtOs/native/build_data_image.py`, `Python_compiler/verify_boot_image.py`,
+  `Python_compiler/verify_data_image.py`, `CtOs/native/boot/BOOT_SPEC.md`,
+  `CtOs/native/NATIVE_RT_SPEC.md`, `CtOs/BRINGUP_SPEC.md`, `Readme.md`.

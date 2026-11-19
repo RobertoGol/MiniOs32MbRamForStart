@@ -12,9 +12,10 @@
      В каждой папке лежит README.TXT с объяснением, куда что класть; в APPS
      дополнительно скопированы готовые модули из CTMD.
 
-  2. Свой каталог в зарезервированных секторах LBA 8..15 (вне FAT16-раздела).
+  2. Свой каталог в зарезервированных секторах LBA 8..71 (вне FAT16-раздела).
      У него фиксированные смещения и CRC-32, поэтому загрузчику не нужен
-     FAT-драйвер: он читает 8 секторов по INT 13h и проверяет CRC.
+     FAT-драйвер: он читает 64 сектора по INT 13h и проверяет CRC каталога.
+     В хвосте этой области лежат тела модулей для A8.
      FAT — для человека, каталог — для машины.
 
 Каталог (все числа LE):
@@ -30,7 +31,8 @@
               [20..24) число секторов
               [24..28) размер файла
               [28..32) CRC-32 файла
-              [32..64) нули
+              [32..36) A8: смещение тела внутри CAT-области (0 = нет тела)
+              [36..64) нули
   остаток 8 секторов — нули.
 
 Запуск:
@@ -64,8 +66,10 @@ assert 4085 <= CLUSTERS < 0xFFF0, CLUSTERS
 assert FAT_BYTES <= FAT_SECTORS * SECTOR, (FAT_BYTES, FAT_SECTORS * SECTOR)
 
 CAT_LBA = 8
-CAT_SECTORS = 8
+CAT_SECTORS = 64                      # LBA 8..71: 32 КиБ, A7-каталог + A8-тела
 CAT_MAGIC = b"CTOSCAT1"
+A8_BODY_BASE = 0x1000                 # смещение первого тела внутри CAT-области
+A8_BODY_ALIGN = 16
 MARKER_OFF = 0x180
 DATA_MARKER = b"CTOS-DATA-A7!\x00\x00\x00\x00"
 
@@ -170,14 +174,14 @@ class Fat16:
         return self.img
 
 
-def catalog_entry(kind, name, lba, data):
+def catalog_entry(kind, name, lba, data, body_off=0):
     e = bytearray(64)
     e[0] = kind
     nm = name.encode("ascii")[:15]
     e[1:1 + len(nm)] = nm
-    struct.pack_into("<IIII", e, 16, lba,
+    struct.pack_into("<IIIII", e, 16, lba,
                      (len(data) + SECTOR - 1) // SECTOR,
-                     len(data), zlib.crc32(data) & 0xFFFFFFFF)
+                     len(data), zlib.crc32(data) & 0xFFFFFFFF, body_off)
     return bytes(e)
 
 
@@ -265,10 +269,25 @@ def build(out_path):
     struct.pack_into("<H", img, SECTOR - 2, 0xAA55)
     img[PART_LBA * SECTOR:PART_LBA * SECTOR + len(partition)] = partition
 
-    # 7. Машинный каталог в LBA 8..15.
+    # 7. Машинный каталог LBA 8..71 + A8-тела в хвосте этой же области.
+    #    Тела — точная копия байт из FAT-файлов, но загрузчик читает их
+    #    одним INT 13h вместе с каталогом, и PM получает их без INT 13h.
+    bodies = bytearray()
+    body_offsets = {}
+    for kind, cname, _fatname, data, cl in files:
+        body_off = 0
+        if kind == 1 and "/" not in cname:
+            bodies += b"\x00" * ((-len(bodies)) % A8_BODY_ALIGN)
+            body_off = A8_BODY_BASE + len(bodies)
+            bodies += data
+        body_offsets[cname] = body_off
+    if A8_BODY_BASE + len(bodies) > CAT_SECTORS * SECTOR:
+        raise SystemExit("A8: тела модулей не помещаются в CAT-область")
+
     entries = bytearray()
     for kind, cname, _fatname, data, cl in files:
-        entries += catalog_entry(kind, cname, fs.lba_of(cl), data)
+        entries += catalog_entry(kind, cname, fs.lba_of(cl), data,
+                                 body_offsets[cname])
     cat = bytearray(CAT_MAGIC)
     cat += le32(1) + le32(len(files)) + le32(0) + le32(0)
     cat += entries
@@ -277,6 +296,9 @@ def build(out_path):
     crc = zlib.crc32(bytes(cat)) & 0xFFFFFFFF
     struct.pack_into("<I", cat, 20, crc)
     cat += b"\x00" * (CAT_SECTORS * SECTOR - len(cat))
+    # Тела лежат после каталога и НЕ входят в его CRC; каждое из них
+    # покрывается CRC своей записи и перепроверяется в native_rt.c.
+    cat[A8_BODY_BASE:A8_BODY_BASE + len(bodies)] = bodies
     img[CAT_LBA * SECTOR:CAT_LBA * SECTOR + len(cat)] = cat
 
     io.open(out_path, "wb").write(bytes(img))
@@ -286,5 +308,7 @@ def build(out_path):
 if __name__ == "__main__":
     out = sys.argv[1] if len(sys.argv) > 1 else DEFAULT_OUT
     img = build(out)
-    print("CTOS DATA OK: %s — %d Б, md5 %s, папки CTOS/{APPS,GAMES,MUSIC,VIDEO}" %
-          (out, len(img), hashlib.md5(img).hexdigest()))
+    print("CTOS DATA OK: %s — %d Б, md5 %s, папки CTOS/{APPS,GAMES,MUSIC,VIDEO}, "
+          "каталог LBA8..%d" %
+          (out, len(img), hashlib.md5(img).hexdigest(),
+           CAT_LBA + CAT_SECTORS - 1))

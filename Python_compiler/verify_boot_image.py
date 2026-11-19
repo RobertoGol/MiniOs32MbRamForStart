@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""A4a/A6: честная приёмка загрузчика и нативного рантайма CtOS в QEMU.
+"""A4a/A6/A7/A8: честная приёмка загрузчика и нативного рантайма CtOS в QEMU.
 
 Проверяется ровно то, что реально исполняется:
   1. детерминированная сборка образа ДВАЖДЫ в разных TEMP-каталогах
@@ -11,9 +11,13 @@
   3a. A6: маркер CTOS-AUTORUN-A6 в MBR+0x190 заставляет PM вызвать main()
       четырежды — по разу на каждый модуль CTMD; каждая event-последовательность
       байт-в-байт сверяется с хост-запуском;
-  3b. A7: второй диск с маркером CTOS-DATA-A7! и каталогом в LBA8: stage2
+  3b. A7: второй диск с маркером CTOS-DATA-A7! и каталогом в LBA8..71: stage2
       проверяет magic/version/count/CRC и печатает CTOS A7 DATA OK; порча
       каталога даёт честный rc=35, сбитый маркер — тихий старт без строки;
+  3c. A8: маркер CTOS-DISK-A8 в MBR+0x1A0 и индекс записи каталога запускают
+      один выбранный модуль из CAT-области; шим собирает синтетический CTMD,
+      COM1 байт-в-байт сверяется с хост-запуском тех же байт; порча тела даёт
+      честный rc=41, сбитый индекс — отказ без MODULE-строки;
   3. негативы загрузчика: подмена магии CTMD и порча тела модуля дают
      честный отказ rc=35 (AX=0x11) без «PM OK»;
   4. негатив рантайма: порча тела memmgr с пересчётом CRC каталога
@@ -46,6 +50,10 @@ TMP_BASE = (os.environ.get("OPENCODE_TMP") or
 BUILDER = os.path.join(REPO, "CtOs", "native", "boot", "build_boot_image.py")
 BOOT_DIR = os.path.dirname(BUILDER)
 DATA_BUILDER = os.path.join(REPO, "CtOs", "native", "build_data_image.py")
+DATA_DIR = os.path.dirname(DATA_BUILDER)
+if DATA_DIR not in sys.path:
+    sys.path.insert(0, DATA_DIR)
+import build_data_image as a7data  # noqa: E402
 HOST_SRC = os.path.join(REPO, "CtOs", "native", "native_rt.c")
 HOST_EXE = os.path.join(tempfile.gettempdir(), "ctos_native_rt",
                         "native_rt.exe")
@@ -61,16 +69,21 @@ EXPECT_MBR_LEN = 188
 EXPECT_S2_LEN = 2040
 EXPECT_INSTALL_LEN = 1188   # длина installer-секции без хвостовых нулей
 EXPECT_CTMD_LEN = 28425
-EXPECT_PM_LEN = 21300        # слот бинарника в образе
-EXPECT_PM_TAIL_LEN = 21297   # последний ненулевой байт + 1 (3 нуля в .data)
+EXPECT_PM_LEN = 22292        # слот бинарника в образе
+EXPECT_PM_TAIL_LEN = 22289   # последний ненулевой байт + 1
 EXPECT_CTMD_MD5 = "110b54e786544c561b64132e7557812d"
-EXPECT_IMAGE_MD5 = "5496ffc520ee0b9f7bd3c3031053f3ae"
+EXPECT_IMAGE_MD5 = "a7eb6752965696dfba48b3938556cba9"
 AUTORUN_MARKER_OFF = 0x190
 AUTORUN_MARKER = b"CTOS-AUTORUN-A6\x00"
 A7_MARKER_OFF = 0x180
 A7_MARKER = b"CTOS-DATA-A7!"
 A7_CAT_OFF = 8 * SECTOR
 A7_LINE = "CTOS A7 DATA OK"
+A8_SELECT_OFF = 0x1A0
+A8_MARKER = b"CTOS-DISK-A8"
+A8_INDEX_OFF = 0x1AC
+A8_INDEX = 2                 # syscall.CTS — третий модуль CAT-каталога
+A8_MODULES = ("memmgr.CTS", "sched.CTS", "syscall.CTS", "stage1.CTS")
 EXPECT_MODULES = ("memmgr", "sched", "syscall_test", "stage1")
 
 # isa-debug-exit: (AX << 1) | 1
@@ -170,6 +183,23 @@ def build_data_image(tmp_root):
     if r.returncode:
         raise RuntimeError("A7 data build: %s %s" % (r.stdout, r.stderr))
     return io.open(out, "rb").read(), out
+
+
+def a8_ctmd(data_img, index):
+    """Собрать тот же синтетический CTMD, что собирает PM-шим из CAT-области."""
+    cat = data_img[a7data.CAT_LBA * SECTOR:
+                   (a7data.CAT_LBA + a7data.CAT_SECTORS) * SECTOR]
+    ent = cat[24 + 64 * index:24 + 64 * (index + 1)]
+    if ent[0] != 1:
+        raise RuntimeError("A8: запись %d не APPS" % index)
+    name = ent[1:16].split(b"\x00", 1)[0].decode("ascii")
+    size, crc, body_off = struct.unpack_from("<III", ent, 24)
+    body = cat[body_off:body_off + size]
+    rec = bytearray(48)
+    rec[0:len(name)] = name.encode("ascii")
+    struct.pack_into("<III", rec, 32, 60, size, crc)
+    out = b"CTMD" + struct.pack("<II", 1, 1) + bytes(rec) + body
+    return out, name
 
 
 def boot_log(data, tmp_root, tag, data_disk=None):
@@ -393,6 +423,80 @@ def main():
                 print("  ERR:", err)
             fails.append("neg A7 role")
 
+        # ---------- 3c. A8: выбранный модуль с диска данных ----------
+        a8_img = bytearray(a)
+        sel = A8_MARKER + bytes([A8_INDEX])
+        a8_img[A8_SELECT_OFF:A8_SELECT_OFF + len(sel)] = sel
+        ctmd_a8, a8_name = a8_ctmd(data_img, A8_INDEX)
+        host_a8 = host_event_lines(ctmd_a8, tmp_root, "a8_" + a8_name, a8_name)
+        rc, raw, err = boot_log(bytes(a8_img), tmp_root, "a8", data_path)
+        got = lines_of(raw)
+        want = (list(POS_PREAMBLE[:7]) + [A7_LINE] +
+                list(POS_PREAMBLE[7:]) + host_a8)
+        a8_ok = (rc == RC_OK and got == want and not err)
+        print("A8 module %s: rc=%s lines=%d (ожидалось %d), COM1==host  %s" %
+              (a8_name, rc, len(got), len(want), "OK" if a8_ok else "FAIL"))
+        if not a8_ok:
+            print("  LOG:", show_lines(raw))
+            if err:
+                print("  ERR:", err)
+            fails.append("A8 disk module")
+
+        # A8 негатив: порча тела выбранного модуля (CRC каталога не меняется)
+        # обязана дать runtime-fatal до нормальных event'ов.
+        ent_off = A7_CAT_OFF + 24 + 64 * A8_INDEX
+        body_off = struct.unpack_from("<I", data_img, ent_off + 32)[0]
+        bad_body = bytearray(data_img)
+        bad_body[A7_CAT_OFF + body_off + 3] ^= 0x01
+        body_path = os.path.join(os.path.dirname(data_path), "data_a8_bad.img")
+        clean(body_path)
+        io.open(body_path, "wb").write(bytes(bad_body))
+        rc, raw, err = boot_log(bytes(a8_img), tmp_root, "a8_body", body_path)
+        got = lines_of(raw)
+        # lines_of() декодирует COM1 как ASCII: русский текст диагностики
+        # превращается в replacement-символы, поэтому ищем ASCII-префикс.
+        body_bad_ok = (rc == RC_FATAL and
+                       any(s.startswith("FATAL: CTMD:") for s in got) and
+                       not any(s.startswith("OPS ") for s in got))
+        print("neg A8 body: rc=%s diag=%s  %s" %
+              (rc, body_bad_ok, "OK" if body_bad_ok else "FAIL"))
+        if not body_bad_ok:
+            print("  LOG:", show_lines(raw))
+            if err:
+                print("  ERR:", err)
+            fails.append("neg A8 body")
+
+        # A8 негатив: сбитый индекс -> не выполняем чужой модуль, честно
+        # возвращаемся к A4a/A6-пути (диск данных при этом на месте).
+        bad_idx = bytearray(a8_img)
+        bad_idx[A8_INDEX_OFF] = 9
+        rc, raw, err = boot_log(bytes(bad_idx), tmp_root, "a8_index", data_path)
+        got = lines_of(raw)
+        idx_ok = (rc == RC_OK and got == want[:len(want) - len(host_a8)] +
+                  EXPECT_HOST_EVENTS)
+        print("neg A8 index: rc=%s fallback=%s  %s" %
+              (rc, idx_ok, "OK" if idx_ok else "FAIL"))
+        if not idx_ok:
+            print("  LOG:", show_lines(raw))
+            if err:
+                print("  ERR:", err)
+            fails.append("neg A8 index")
+
+        # A8 негатив: маркер есть, а диска данных нет — шим обязан честно
+        # отказать, а не взять модуль из загрузочного контейнера.
+        rc, raw, err = boot_log(bytes(a8_img), tmp_root, "a8_nodata")
+        got = lines_of(raw)
+        nodata_ok = (rc == RC_FATAL and "CTOS A8 NO DATA" in got and
+                     A7_LINE not in got)
+        print("neg A8 no disk: rc=%s diag=%s  %s" %
+              (rc, "CTOS A8 NO DATA" in got,
+               "OK" if nodata_ok else "FAIL"))
+        if not nodata_ok:
+            print("  LOG:", show_lines(raw))
+            if err:
+                print("  ERR:", err)
+            fails.append("neg A8 no disk")
+
         # ---------- 4. negative: подмена магии CTMD -> rc=35 ----------
         bad_magic = bytearray(a)
         bad_magic[CTMD_OFF:CTMD_OFF + 4] = b"XXXX"
@@ -457,10 +561,11 @@ def main():
         print("BOOT IMAGE FAIL:", ", ".join(fails))
         print("Эмуляционная контрольная точка НЕ пройдена; на железе не заявляется.")
         return 1
-    print("BOOT IMAGE OK A4a/A6/A7: детерминированный образ, QEMU rc=39, COM1 "
-          "байт-в-байт совпадает с host native_rt (A4a: memmgr, A6: все 4 "
-          "модуля CTMD, A7: диск данных с папками), отказы rc=35 и "
-          "runtime-fatal rc=41. QEMU — контрольная точка, на R3700 НЕ принято.")
+    print("BOOT IMAGE OK A4a/A6/A7/A8: детерминированный образ, QEMU rc=39, "
+          "COM1 байт-в-байт совпадает с host native_rt (A4a: memmgr, A6: все 4 "
+          "модуля CTMD, A7: диск данных с папками, A8: выбранный модуль с диска), "
+          "отказы rc=35 и runtime-fatal rc=41. QEMU — контрольная точка, "
+          "на R3700 НЕ принято.")
     return 0
 
 

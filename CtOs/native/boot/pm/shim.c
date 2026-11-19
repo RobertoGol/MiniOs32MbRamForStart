@@ -10,6 +10,14 @@
 #ifndef PM_CTMD_PHYS
 #define PM_CTMD_PHYS 0x00020000u
 #endif
+/* A8: CAT-область диска данных уже прочитана stage2 по 0x50000;
+ * селектор лежит в MBR+0x1A0 (0x7DA0). INT 13h в PM не используется. */
+#define PM_A8_CAT_PHYS      0x00050000u
+#define PM_A8_SELECT_PHYS   0x00007DA0u
+#define PM_A8_CAT_SECTORS   64u
+#define PM_A8_CAT_BYTES     (PM_A8_CAT_SECTORS * 512u)
+#define PM_A8_BODY_BASE     0x1000u
+#define PM_A8_MAX_INDEX     8u
 
 #define PMF_COM1      0
 #define PMF_MEM_READ  1
@@ -129,6 +137,12 @@ void free(void *ptr) {
 /* ---- streamy ---- */
 static FILE com_stream = {NULL, 0, 0, 0, PMF_COM1, 1};
 static FILE ctmd_stream = {NULL, 0, 0, 0, PMF_MEM_READ, 0};
+static FILE disk_stream = {NULL, 0, 0, 0, PMF_MEM_READ, 0};
+/* Синтетический CTMD: 12 Б заголовка + 48 Б записи + тело out-of-CAT.
+ * Размер выбран с запасом на всю CAT-область (32 КиБ). */
+static unsigned char disk_ctmd[12u + 48u + PM_A8_CAT_BYTES];
+/* Имя записи, на которое указывает argv[2] при A8. Заполняется в a8_open(). */
+char a8_name[16];
 static unsigned char artifact_mem[64u * 1024u];
 static FILE artifact_stream = {artifact_mem, 0, sizeof(artifact_mem), 0,
                                PMF_MEM_WRITE, 1};
@@ -140,6 +154,15 @@ static unsigned long pm_le32(const unsigned char *p) {
     return (unsigned long)p[0] | ((unsigned long)p[1] << 8) |
            ((unsigned long)p[2] << 16) | ((unsigned long)p[3] << 24);
 }
+
+static void pm_put32(unsigned char *p, unsigned long v) {
+    p[0] = (unsigned char)(v & 0xFFu);
+    p[1] = (unsigned char)((v >> 8) & 0xFFu);
+    p[2] = (unsigned char)((v >> 16) & 0xFFu);
+    p[3] = (unsigned char)((v >> 24) & 0xFFu);
+}
+
+static FILE *a8_open(void);
 
 static unsigned long ctmd_body_len(const unsigned char *p) {
     unsigned long count, i, end;
@@ -177,6 +200,8 @@ FILE *fopen(const char *path, const char *mode) {
         ctmd_stream.pos = 0;
         return ctmd_stream.len ? &ctmd_stream : NULL;
     }
+    if (strcmp(path, "DISK:image") == 0)
+        return a8_open();
     if (mode[0] == 'w' && ends_with(path, ".out")) {
         artifact_stream.len = 0;
         artifact_stream.pos = 0;
@@ -448,6 +473,70 @@ int snprintf(char *buf, size_t size, const char *fmt, ...) {
     if (size)
         buf[tmp.len] = '\0';
     return n;
+}
+
+/* ---- A8: DISK:image -> синтетический CTMD из CAT-области ----
+ * stage2 уже считала CAT-область LBA 8..71 в 0x50000 и проверила CRC
+ * каталога. Здесь выбирается запись по индексу из MBR, имя кладётся в
+ * a8_name (на него указывает argv[2]), а тело — в синтетический контейнер
+ * CTMD v1 с одной записью. native_rt.c читает его как обычный CTMD и сам
+ * перепроверяет CRC тела; семантика интерпретатора не меняется. */
+static void a8_die(const char *msg) {
+    fprintf(stderr, msg);
+    fprintf(stderr, "\r\n");
+    exit(1);                     /* isa-debug-exit -> rc=41 */
+}
+
+static FILE *a8_open(void) {
+    static const char sel_marker[12] = {
+        'C', 'T', 'O', 'S', '-', 'D', 'I', 'S', 'K', '-', 'A', '8'
+    };
+    const unsigned char *sel = (const unsigned char *)PM_A8_SELECT_PHYS;
+    const unsigned char *cat = (const unsigned char *)PM_A8_CAT_PHYS;
+    unsigned long i, idx, count, ent, body_off, size, crc;
+    unsigned char *out = disk_ctmd;
+    for (i = 0; i < 12u; i++) {
+        if (sel[i] != (unsigned char)sel_marker[i])
+            a8_die("CTOS A8 NO SELECT");
+    }
+    idx = sel[12];
+    if (idx >= PM_A8_MAX_INDEX)
+        a8_die("CTOS A8 BAD INDEX");
+    if (memcmp(cat, "CTOSCAT1", 8) != 0 || pm_le32(cat + 8u) != 1u)
+        a8_die("CTOS A8 NO DATA");
+    count = pm_le32(cat + 12u);
+    if (count <= idx || count > 63u)
+        a8_die("CTOS A8 BAD COUNT");
+
+    ent = 24u + 64u * idx;
+    if (cat[ent] != 1u)
+        a8_die("CTOS A8 BAD KIND");
+    size = pm_le32(cat + ent + 24u);
+    crc = pm_le32(cat + ent + 28u);
+    body_off = pm_le32(cat + ent + 32u);
+    if (size < 16u || body_off < PM_A8_BODY_BASE ||
+        body_off + size > PM_A8_CAT_BYTES)
+        a8_die("CTOS A8 BAD ENTRY");
+
+    for (i = 0; i < 15u; i++)
+        a8_name[i] = (char)cat[ent + 1u + i];
+    a8_name[15] = '\0';
+
+    out[0] = 'C'; out[1] = 'T'; out[2] = 'M'; out[3] = 'D';
+    pm_put32(out + 4u, 1u);
+    pm_put32(out + 8u, 1u);
+    memset(out + 12u, 0, 48u);
+    for (i = 0; i < 15u; i++)
+        out[12u + i] = (unsigned char)a8_name[i];
+    pm_put32(out + 12u + 32u, 60u);
+    pm_put32(out + 12u + 36u, size);
+    pm_put32(out + 12u + 40u, crc);
+    memcpy(out + 60u, cat + body_off, size);
+
+    disk_stream.buf = out;
+    disk_stream.len = 60u + size;
+    disk_stream.pos = 0;
+    return &disk_stream;
 }
 
 /* ---- chestnyi otkaz i init mingw ---- */
