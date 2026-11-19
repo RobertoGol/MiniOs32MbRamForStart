@@ -39,6 +39,7 @@ if BOOT not in sys.path:
 import verify_boot_image as a4  # noqa: E402
 import verify_sd_migration as a12  # noqa: E402
 import verify_sd_module as a13  # noqa: E402
+import verify_a5_install as a5  # noqa: E402
 import build_boot_image as boot_builder  # noqa: E402
 
 SECTOR = 512
@@ -331,6 +332,32 @@ def main():
                                 "a14_sep_reordered_index", expect_sep(host_sw))
         if not ok:
             fails.append("a14_sep_reordered_index")
+
+        # ---------- A5-установка name_sep: селектор сохраняется, цель загружается ----------
+        src_inst = bytearray(write_sel(sep1, selector(A14_NAME), pin=False))
+        src_inst[a5.MARKER_OFF:a5.MARKER_OFF + 16] = a5.SRC_MARKER
+        tgt_blank = bytearray(a5.TARGET_SECTORS * SECTOR)
+        tgt_blank[a5.MARKER_OFF:a5.MARKER_OFF + 16] = a5.TGT_MARKER
+        rc, raw, err, disks = a5.boot([bytes(src_inst), bytes(tgt_blank), data],
+                                      tmp_root, "a14_sep_a5_inst")
+        got = a4.lines_of(raw)
+        tgt_after_sep = disks[1]
+        inst_ok = (rc == 39 and
+                   "CTOS A5 INSTALL OK" in got and
+                   "CTOS A5 AUTORUN ALL" in got and
+                   tgt_after_sep[SELECT_OFF:SELECT_OFF + 13] == A14_MARKER and
+                   not err)
+        print("a14_sep_a5_install rc=%s sel=%s %s" %
+              (rc, tgt_after_sep[SELECT_OFF:SELECT_OFF + 13] == A14_MARKER,
+               "OK" if inst_ok else "FAIL"))
+        if not inst_ok:
+            show("a14_sep_a5_install", rc, got, err)
+            fails.append("a14_sep_a5_install")
+        # перезагрузка с установленной цели + отдельный диск данных
+        ok, _, _ = run_sep_case(tgt_after_sep, data_path, tmp_root,
+                                "a14_sep_a5_reboot", expect_sep(host))
+        if not ok:
+            fails.append("a14_sep_a5_reboot")
 
         print("\nA14 SD NAME: FAILED=%d" % len(fails))
         if fails:
