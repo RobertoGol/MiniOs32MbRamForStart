@@ -14,7 +14,14 @@
 .set autorun_off, 0x190      /* запасные байты MBR до таблицы разделов */
 .set pm_flags_off, 0x7000    /* внутри 64-секторного слота PM, за бинарником */
 .set data_marker_off, 0x180  /* A7: маркер роли «диск данных» в LBA0 */
+.if A12_COMBINED
+/* A12: диск данных лежит на ТОМ ЖЕ накопителе, с которого BIOS загрузился,
+ * со смещением 2048 секторов. Каталог тогда на LBA 2048+8, а не на LBA 8.
+ * Дефолтная сборка без этого defsym-символа остаётся байт-в-байт прежней. */
+.set data_cat_lba, 2056
+.else
 .set data_cat_lba, 8
+.endif
 .set data_cat_sectors, 64    /* A7-каталог + A8-тела модулей (32 КиБ) */
 .set data_load_seg, 0x5000   /* каталог данных, после возврата установщика */
 
@@ -477,7 +484,14 @@ vp_done:
 .code16
 scan_data_disk:
     push %es
+.if A12_COMBINED
+    /* A12: флэшка убрана, в системе остался один SD-диск. Данные ищем
+     * на нём самом, а не по всем 0x80..0xEF: второго диска больше нет. */
+    mov drive, %al
+    mov %al, data_disk
+.else
     movb $0x80, data_disk
+.endif
 sdd_loop:
     cmpb $0xF0, data_disk
     jae sdd_none
@@ -536,8 +550,12 @@ sdd_bad:
     stc
     jmp sdd_done
 sdd_next:
+.if A12_COMBINED
+    jmp sdd_none        /* один диск: второго кандидата нет */
+.else
     incb data_disk
     jmp sdd_loop
+.endif
 sdd_none:
     clc
 sdd_done:
@@ -655,7 +673,11 @@ dap_data_mbr:
     .word 1
     .word 0x8000
     .word 0x6000
+.if A12_COMBINED
+    .quad 2048          /* A12: LBA0 data-образа внутри общего SD-диска */
+.else
     .quad 0
+.endif
 dap_data_cat:
     .byte 0x10, 0x00
     .word data_cat_sectors

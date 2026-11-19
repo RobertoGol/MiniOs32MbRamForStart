@@ -58,9 +58,12 @@ def tool(name):
     return p
 
 
-def flat_binary(src, ldscript, base, obj, exe, out):
+def flat_binary(src, ldscript, base, obj, exe, out, defines=None):
     as_p, ld_p, cp_p = tool("as"), tool("ld"), tool("objcopy")
-    subprocess.run([as_p, "--32", "-o", obj, src], check=True)
+    as_cmd = [as_p, "--32"]
+    for d in (defines or []):
+        as_cmd += ["--defsym", d]   # GAS: .if NAME, не cpp-макрос
+    subprocess.run(as_cmd + ["-o", obj, src], check=True)
     subprocess.run([ld_p, "-m", "i386pe", "--image-base=0x%X" % base,
                     "-T", ldscript, "-o", exe, obj], check=True)
     subprocess.run([cp_p, "-O", "binary", "--only-section=.text", exe, out],
@@ -117,12 +120,14 @@ def pm_binary(tmp):
     return data
 
 
-def build(out_path, tmp=None):
+def build(out_path, tmp=None, profile="default"):
     # Внешний верификатор передаёт свой TEMP-каталог; по умолчанию — рядом.
     if tmp is None:
         tmp = os.path.join(HERE, "_build_tmp")
+    if profile not in ("default", "combined"):
+        raise SystemExit("A12: неизвестный профиль сборки %r" % profile)
     os.makedirs(tmp, exist_ok=True)
-    base = "a3b"
+    base = "a12" if profile == "combined" else "a3b"
 
     mbr = flat_binary(os.path.join(HERE, "mbr.S"),
                       os.path.join(HERE, "mbr.ld"), 0x7C00,
@@ -131,11 +136,15 @@ def build(out_path, tmp=None):
                       os.path.join(tmp, base + "_mbr.bin"))
     if len(mbr) > SECTOR - 2:
         raise SystemExit("A3b: MBR не помещается: %d Б" % len(mbr))
+    # A12: combined-профиль меняет только stage2 (два DAP-смещения и режим
+    # сканирования). MBR/установщик/CTMD/PM собираются из тех же исходников.
+    s2_defines = ["A12_COMBINED=%d" % (1 if profile == "combined" else 0)]
     stage2 = flat_binary(os.path.join(HERE, "stage2.S"),
                          os.path.join(HERE, "stage2.ld"), 0,
                          os.path.join(tmp, base + "_s2.o"),
                          os.path.join(tmp, base + "_s2.exe"),
-                         os.path.join(tmp, base + "_s2.bin"))
+                         os.path.join(tmp, base + "_s2.bin"),
+                         defines=s2_defines)
     if len(stage2) > STAGE2_SECTORS * SECTOR:
         raise SystemExit("A3b: stage2 не помещается: %d Б" % len(stage2))
     install = flat_binary(os.path.join(HERE, "install.S"),
@@ -192,9 +201,11 @@ if __name__ == "__main__":
     out = sys.argv[1] if len(sys.argv) > 1 else \
         os.path.join(HERE, "ctos_boot.img")
     tmp = sys.argv[2] if len(sys.argv) > 2 else None
-    r = build(out, tmp)
-    print("A5 BOOT OK: %s — %d Б, md5 %s" %
-          (out, len(r["image"]), hashlib.md5(r["image"]).hexdigest()))
+    profile = sys.argv[3] if len(sys.argv) > 3 else "default"
+    r = build(out, tmp, profile)
+    print("A5 BOOT OK [%s]: %s — %d Б, md5 %s" %
+          (profile, out, len(r["image"]),
+           hashlib.md5(r["image"]).hexdigest()))
     print("  MBR=%d Б, stage2=%d Б, install=%d Б, CTMD=%d Б, PM=%d Б; "
           "LBA: 0/1..%d/%d..%d/8..%d/%d..%d" %
           (len(r["mbr"]), len(r["stage2"]), len(r["install"]),
