@@ -390,6 +390,41 @@ def main():
         if not ok:
             fails.append("a14_sep_a5_auto_reboot")
 
+        # ---------- name_sep: stage2 находит диск данных за посторонним диском ----------
+        sep_find = write_sel(sep1, selector(A14_NAME), pin=False)
+        boot_find = os.path.join(tmp_root, "a14_sep_find_boot.img")
+        dummy_find = os.path.join(tmp_root, "a14_sep_find_dummy.img")
+        log_find = os.path.join(tmp_root, "a14_sep_find_data.log")
+        for p in (boot_find, dummy_find, log_find):
+            a4.clean(p)
+        io.open(boot_find, "wb").write(bytes(sep_find))
+        io.open(dummy_find, "wb").write(b"\x00" * SECTOR * 136)
+        cmd = [a4.qemu(), "-machine", "pc",
+               "-drive", "file=%s,format=raw,if=ide,index=0,media=disk" % boot_find,
+               "-drive", "file=%s,format=raw,if=ide,index=1,media=disk" % dummy_find,
+               "-drive", "file=%s,format=raw,if=ide,index=2,media=disk" % data_path,
+               "-boot", "order=c", "-display", "none",
+               "-serial", "file:%s" % log_find, "-monitor", "none",
+               "-no-reboot",
+               "-device", "isa-debug-exit,iobase=0xf4,iosize=0x4",
+               "-net", "none"]
+        try:
+            r = subprocess.run(cmd, capture_output=True, text=True, timeout=90)
+            err = ""
+        except subprocess.TimeoutExpired:
+            r = None
+            err = "QEMU TIMEOUT"
+        raw = io.open(log_find, "rb").read() if os.path.exists(log_find) else b""
+        got = a4.lines_of(raw)
+        want = expect_sep(host)
+        rc = r.returncode if r else None
+        ok = rc == 39 and got == want and not err
+        print("a14_sep_find_data     rc=%s lines=%d/%d %s" %
+              (rc, len(got), len(want), "OK" if ok else "FAIL"))
+        if not ok:
+            show("a14_sep_find_data", rc, got, err)
+            fails.append("a14_sep_find_data")
+
         print("\nA14 SD NAME: FAILED=%d" % len(fails))
         if fails:
             print("  " + ", ".join(fails))

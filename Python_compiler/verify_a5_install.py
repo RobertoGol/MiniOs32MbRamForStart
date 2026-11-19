@@ -230,7 +230,31 @@ def main():
                 print("  ERR:", err)
             fails.append("neg no-target")
 
-        # ---------- 6. A5b: честные отказы при повреждении закрепления ----------
+        # ---------- 6. позитив: A5 находит целевой диск за посторонним диском ----------
+        src_mf = bytearray(a_img)
+        src_mf[MARKER_OFF:MARKER_OFF + 16] = SRC_MARKER
+        unrelated = bytearray(TARGET_SECTORS * SECTOR)
+        tgt_mf = bytearray(TARGET_SECTORS * SECTOR)
+        tgt_mf[MARKER_OFF:MARKER_OFF + 16] = TGT_MARKER
+        rc, raw, err, disks_mf = boot([bytes(src_mf), bytes(unrelated),
+                                       bytes(tgt_mf)], tmp_root, "find_target")
+        got = a4.lines_of(raw)
+        tgt_mf_after = disks_mf[2]
+        mf_ok = (rc == RC_OK and "CTOS A5 INSTALL OK" in got and
+                 "CTOS A5 TARGET 0x82" in got and
+                 tgt_mf_after[ACTIVE_OFF] == 0x80 and
+                 tgt_mf_after[SENTINEL_LBA * SECTOR:
+                              SENTINEL_LBA * SECTOR + 12] == b"CTOS-LOCK-A5" and
+                 disks_mf[1] == bytes(unrelated) and not err)
+        print("find target behind unrelated: rc=%s  %s" %
+              (rc, "OK" if mf_ok else "FAIL"))
+        if not mf_ok:
+            print("  LOG:", " | ".join(got[:20]))
+            if err:
+                print("  ERR:", err)
+            fails.append("find target behind unrelated")
+
+        # ---------- 7. A5b: честные отказы при повреждении закрепления ----------
         # tgt_after — уже закреплённый диск: ACTIVE=0x80 и валидный sentinel.
         # Каждая подмена обязана дать rc=35 и «CTOS A5 PIN FAIL» до PM.
         pin_cases = []
