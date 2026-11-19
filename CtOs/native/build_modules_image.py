@@ -14,7 +14,10 @@
   тела модулей подряд, каждое выровнено по 16 Б нулями.
 
 Запуск:
-  python -X utf8 CtOs/native/build_modules_image.py [out.ctmd]
+  python -X utf8 CtOs/native/build_modules_image.py [out.ctmd] [default|timer]
+
+A10: профиль `timer` подменяет 4-ю запись (stage1) модулем schedT_test.ctos
+с именем `schedT`. Дефолтный профиль остаётся байт-в-байт прежним.
 """
 import hashlib
 import io
@@ -32,6 +35,12 @@ MODULES = [
     ("syscall_test", "Python_compiler/syscall_test.ctos"),
     ("stage1",       "Compiler/stage1_compiler.ctos"),
 ]
+MODULES_TIMER = [
+    ("memmgr",       "CtOs/memmgr.ctos"),
+    ("sched",        "CtOs/kernel_sched.ctos"),
+    ("syscall_test", "Python_compiler/syscall_test.ctos"),
+    ("schedT",       "Python_compiler/schedT_test.ctos"),
+]
 
 MAGIC = b"CTMD"
 VERSION = 1
@@ -39,17 +48,18 @@ ENTSZ = 48
 NAMESZ = 32
 
 
-def build(out_path):
+def build(out_path, profile="default"):
+    modules = MODULES_TIMER if profile == "timer" else MODULES
     entries = []
     body = bytearray()
-    for name, rel in MODULES:
+    for name, rel in modules:
         path = os.path.join(REPO, rel)
         data = io.open(path, "rb").read()
         if len(name) > NAMESZ - 1:
             raise SystemExit("имя модуля слишком длинное: %s" % name)
         while len(body) % 16:
             body.append(0)
-        off = 12 + ENTSZ * len(MODULES) + len(body)
+        off = 12 + ENTSZ * len(modules) + len(body)
         crc = zlib.crc32(data) & 0xFFFFFFFF
         rec = bytearray(ENTSZ)
         rec[:len(name)] = name.encode("ascii")
@@ -57,7 +67,7 @@ def build(out_path):
         entries.append(bytes(rec))
         body.extend(data)
     img = bytearray(MAGIC)
-    img.extend(struct.pack("<II", VERSION, len(MODULES)))
+    img.extend(struct.pack("<II", VERSION, len(modules)))
     for rec in entries:
         img.extend(rec)
     img.extend(body)
@@ -91,7 +101,8 @@ def verify(img):
 
 if __name__ == "__main__":
     out = sys.argv[1] if len(sys.argv) > 1 else DEFAULT_OUT
-    img = build(out)
+    profile = sys.argv[2] if len(sys.argv) > 2 else "default"
+    img = build(out, profile)
     seen = verify(img)
-    print("CTMD OK: %s — %d Б, md5 %s, модулей %d" %
-          (out, len(img), hashlib.md5(img).hexdigest(), len(seen)))
+    print("CTMD OK: %s — %d Б, md5 %s, модулей %d, профиль %s" %
+          (out, len(img), hashlib.md5(img).hexdigest(), len(seen), profile))

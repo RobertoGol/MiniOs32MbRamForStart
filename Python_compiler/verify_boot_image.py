@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""A4a/A6/A7/A8: честная приёмка загрузчика и нативного рантайма CtOS в QEMU.
+"""A4a/A6/A7/A8/A10: честная приёмка загрузчика и нативного рантайма CtOS в QEMU.
 
 Проверяется ровно то, что реально исполняется:
   1. детерминированная сборка образа ДВАЖДЫ в разных TEMP-каталогах
@@ -18,6 +18,10 @@
       один выбранный модуль из CAT-области; шим собирает синтетический CTMD,
       COM1 байт-в-байт сверяется с хост-запуском тех же байт; порча тела даёт
       честный rc=41, сбитый индекс — отказ без MODULE-строки;
+   3d. A10: отдельный таймерный профиль CAT/CTMD (schedT вместо stage1) запускает
+       schedT в PM через тот же A8-путь: 41 событие, TICK, 16434 опкодов,
+       443 ячейки, маркеры B9xx — байт-в-байт против хостового native_rt;
+       дефолтные загрузочный образ и диск данных остаются прежними;
   3. негативы загрузчика: подмена магии CTMD и порча тела модуля дают
      честный отказ rc=35 (AX=0x11) без «PM OK»;
   4. негатив рантайма: порча тела memmgr с пересчётом CRC каталога
@@ -49,6 +53,7 @@ TMP_BASE = (os.environ.get("OPENCODE_TMP") or
              else tempfile.gettempdir()))
 BUILDER = os.path.join(REPO, "CtOs", "native", "boot", "build_boot_image.py")
 BOOT_DIR = os.path.dirname(BUILDER)
+CTMD_BUILDER = os.path.join(REPO, "CtOs", "native", "build_modules_image.py")
 DATA_BUILDER = os.path.join(REPO, "CtOs", "native", "build_data_image.py")
 DATA_DIR = os.path.dirname(DATA_BUILDER)
 if DATA_DIR not in sys.path:
@@ -85,6 +90,18 @@ A8_INDEX_OFF = 0x1AC
 A8_INDEX = 2                 # syscall.CTS — третий модуль CAT-каталога
 A8_MODULES = ("memmgr.CTS", "sched.CTS", "syscall.CTS", "stage1.CTS")
 EXPECT_MODULES = ("memmgr", "sched", "syscall_test", "stage1")
+
+# A10: таймерный профиль (schedT вместо stage1) запускается тем же A8-путем.
+A10_INDEX = 3                # schedT — четвёртая запись CAT-каталога
+A10_NAME = "schedT"
+A10_CTMD_LEN = 10153
+A10_CTMD_MD5 = "43b9dd245c197dfcc10031445ff0c1e6"
+A10_DATA_MD5 = "67c18854b98064dcdaed36c3aef02c0d"
+A10_MODULE_LINE = "MODULE schedT 4589 92BF0F8A"
+A10_COUNTS = "OPS 16434 CELLS 443"
+A10_TICK = "TICK 00000FE5"
+A10_MARKERS = ("B901", "B910", "B911", "B920", "B921", "B930",
+               "B940", "B941", "B94F", "B90F", "B9D0", "B9D1", "B9FF")
 
 # isa-debug-exit: (AX << 1) | 1
 RC_OK = 39       # AX=0x13 — успех A4a
@@ -183,6 +200,26 @@ def build_data_image(tmp_root):
     if r.returncode:
         raise RuntimeError("A7 data build: %s %s" % (r.stdout, r.stderr))
     return io.open(out, "rb").read(), out
+
+
+def build_timer_artifacts(tmp_root):
+    """A10: свежий таймерный CTMD + диск данных; дефолтные образы не трогаем."""
+    d = os.path.join(tmp_root, "a10_timer")
+    os.makedirs(d, exist_ok=True)
+    ctmd_path = os.path.join(d, "timer.ctmd")
+    data_path = os.path.join(d, "timer.img")
+    clean(ctmd_path)
+    clean(data_path)
+    for builder, out, args in ((CTMD_BUILDER, ctmd_path, ("timer",)),
+                               (DATA_BUILDER, data_path, ("timer",))):
+        r = subprocess.run([sys.executable, "-X", "utf8", builder, out] + list(args),
+                           capture_output=True, encoding="utf-8",
+                           errors="replace", timeout=300)
+        if r.returncode:
+            raise RuntimeError("A10 build %s: %s %s" %
+                               (os.path.basename(builder), r.stdout, r.stderr))
+    return (io.open(ctmd_path, "rb").read(),
+            io.open(data_path, "rb").read(), data_path)
 
 
 def a8_ctmd(data_img, index):
@@ -497,6 +534,105 @@ def main():
                 print("  ERR:", err)
             fails.append("neg A8 no disk")
 
+        # ---------- 3d. A10: таймерный профиль — schedT в PM через A8 ----------
+        timer_ctmd, timer_data, timer_path = build_timer_artifacts(tmp_root)
+        checks10 = []
+        checks10.append(("timer CTMD size", len(timer_ctmd) == A10_CTMD_LEN))
+        checks10.append(("timer CTMD md5",
+                         hashlib.md5(timer_ctmd).hexdigest() == A10_CTMD_MD5))
+        checks10.append(("timer data md5",
+                         hashlib.md5(timer_data).hexdigest() == A10_DATA_MD5))
+        names10 = [timer_ctmd[12 + i * 48:12 + i * 48 + 32]
+                   .split(b"\0", 1)[0].decode("ascii") for i in range(4)]
+        checks10.append(("timer CTMD catalog",
+                         names10 == ["memmgr", "sched", "syscall_test", A10_NAME]))
+        # Тело в CAT обязано быть побайтово тем же, что и в таймерном CTMD;
+        # иначе host-эталон проверял бы не те байты, что исполняет PM.
+        off10, len10 = struct.unpack_from("<II", timer_ctmd,
+                                          12 + A10_INDEX * 48 + 32)
+        body10 = timer_ctmd[off10:off10 + len10]
+        cat10 = timer_data[a7data.CAT_LBA * SECTOR:
+                           (a7data.CAT_LBA + a7data.CAT_SECTORS) * SECTOR]
+        ent10 = cat10[24 + 64 * A10_INDEX:24 + 64 * (A10_INDEX + 1)]
+        size10, crc10, body_off10 = struct.unpack_from("<III", ent10, 24)
+        cat_body10 = cat10[body_off10:body_off10 + size10]
+        got_name10 = ent10[1:16].split(b"\0", 1)[0].decode("ascii")
+        checks10.append(("CAT name schedT", got_name10 == A10_NAME))
+        checks10.append(("CAT body == CTMD body",
+                         body10 == cat_body10 and
+                         (zlib.crc32(cat_body10) & 0xFFFFFFFF) == crc10))
+
+        ctmd_a10, _ = a8_ctmd(timer_data, A10_INDEX)
+        host_a10 = host_event_lines(ctmd_a10, tmp_root, "a10_" + A10_NAME,
+                                    A10_NAME)
+        checks10.append(("host MODULE line",
+                         bool(host_a10) and host_a10[0] == A10_MODULE_LINE))
+        checks10.append(("host 41 events + OPS", len(host_a10) == 43))
+        checks10.append(("host counts", A10_COUNTS in host_a10))
+        checks10.append(("host tick", A10_TICK in host_a10))
+        checks10.append(("host B9 markers",
+                         all(any(m in s for s in host_a10) for m in A10_MARKERS)))
+
+        a10_img = bytearray(a)
+        sel10 = A8_MARKER + bytes([A10_INDEX])
+        a10_img[A8_SELECT_OFF:A8_SELECT_OFF + len(sel10)] = sel10
+        rc, raw, err = boot_log(bytes(a10_img), tmp_root, "a10", timer_path)
+        got = lines_of(raw)
+        want = (list(POS_PREAMBLE[:7]) + [A7_LINE] +
+                list(POS_PREAMBLE[7:]) + host_a10)
+        a10_ok = (rc == RC_OK and got == want and not err)
+        checks10.append(("PM COM1 == host byte-exact", a10_ok))
+        ok10 = a10_ok and all(ok for _label, ok in checks10)
+        seen10 = sum(1 for m in A10_MARKERS if any(m in s for s in got))
+        print("A10 schedT via A8: rc=%s lines=%d (ожидалось %d), %s, %s, "
+              "B9xx=%d/%d  %s" %
+              (rc, len(got), len(want), A10_COUNTS, A10_TICK,
+               seen10, len(A10_MARKERS), "OK" if ok10 else "FAIL"))
+        for label, ok in checks10:
+            if not ok:
+                print("  A10 CHECK %s: FAIL" % label)
+        if not ok10:
+            print("  LOG:", show_lines(raw))
+            if err:
+                print("  ERR:", err)
+            fails.append("A10 timer profile")
+
+        # A10 негатив: порча тела schedT в CAT — честный runtime-fatal.
+        bad10 = bytearray(timer_data)
+        bad10[a7data.CAT_LBA * SECTOR + body_off10 + 3] ^= 0x01
+        bad10_path = os.path.join(os.path.dirname(timer_path), "timer_bad.img")
+        clean(bad10_path)
+        io.open(bad10_path, "wb").write(bytes(bad10))
+        rc, raw, err = boot_log(bytes(a10_img), tmp_root, "a10_body", bad10_path)
+        got = lines_of(raw)
+        body10_ok = (rc == RC_FATAL and
+                     any(s.startswith("FATAL: CTMD:") for s in got) and
+                     not any(s.startswith("OPS ") for s in got))
+        print("neg A10 body: rc=%s diag=%s  %s" %
+              (rc, body10_ok, "OK" if body10_ok else "FAIL"))
+        if not body10_ok:
+            print("  LOG:", show_lines(raw))
+            if err:
+                print("  ERR:", err)
+            fails.append("neg A10 body")
+
+        # A10 негатив: неверный индекс — честный возврат к A4a, без тика.
+        bad_idx10 = bytearray(a10_img)
+        bad_idx10[A8_INDEX_OFF] = 9
+        rc, raw, err = boot_log(bytes(bad_idx10), tmp_root, "a10_index",
+                                timer_path)
+        got = lines_of(raw)
+        want_idx10 = (want[:len(want) - len(host_a10)] + EXPECT_HOST_EVENTS)
+        idx10_ok = (rc == RC_OK and got == want_idx10 and not err and
+                    A10_TICK not in got)
+        print("neg A10 index: rc=%s fallback=%s  %s" %
+              (rc, idx10_ok, "OK" if idx10_ok else "FAIL"))
+        if not idx10_ok:
+            print("  LOG:", show_lines(raw))
+            if err:
+                print("  ERR:", err)
+            fails.append("neg A10 index")
+
         # ---------- 4. negative: подмена магии CTMD -> rc=35 ----------
         bad_magic = bytearray(a)
         bad_magic[CTMD_OFF:CTMD_OFF + 4] = b"XXXX"
@@ -561,9 +697,10 @@ def main():
         print("BOOT IMAGE FAIL:", ", ".join(fails))
         print("Эмуляционная контрольная точка НЕ пройдена; на железе не заявляется.")
         return 1
-    print("BOOT IMAGE OK A4a/A6/A7/A8 (+A9-установщик): детерминированный образ, QEMU rc=39, "
-          "COM1 байт-в-байт совпадает с host native_rt (A4a: memmgr, A6: все 4 "
-          "модуля CTMD, A7: диск данных с папками, A8: выбранный модуль с диска), "
+    print("BOOT IMAGE OK A4a/A6/A7/A8/A10 (+A9-установщик): детерминированный "
+          "образ, QEMU rc=39, COM1 байт-в-байт совпадает с host native_rt "
+          "(A4a: memmgr, A6: все 4 модуля CTMD, A7: диск данных с папками, "
+          "A8: выбранный модуль с диска, A10: таймерный профиль schedT с тиком), "
           "отказы rc=35 и runtime-fatal rc=41. QEMU — контрольная точка, "
           "на R3700 НЕ принято.")
     return 0

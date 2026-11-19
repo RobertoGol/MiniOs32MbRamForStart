@@ -1,6 +1,6 @@
 # A1/A2/A3 — нативный интерпретатор (bring-up Ф2)
 
-Статус: ✅ A1, A2, A3а приняты; A3b, A4a, A5, A5b, A6, A7, A8 и A9 приняты **в QEMU как эмуляционная контрольная точка**, 2026-11-18/19. Связано: `CtOs/BRINGUP_SPEC.md` (Ф2/Ф3, вариант A), `CtOs/native/boot/BOOT_SPEC.md`, TKT-056 / TKT-055 / TKT-052.
+Статус: ✅ A1, A2, A3а приняты; A3b, A4a, A5, A5b, A6, A7, A8, A9 и A10 приняты **в QEMU как эмуляционная контрольная точка**, 2026-11-18/19. Связано: `CtOs/BRINGUP_SPEC.md` (Ф2/Ф3, вариант A), `CtOs/native/boot/BOOT_SPEC.md`, TKT-056 / TKT-055 / TKT-052.
 
 ## A1 — подмножество ядра (принято ранее)
 
@@ -100,7 +100,7 @@ A5 писал sentinel, но сам загрузчик его не читал. �
 
 `python -X utf8 Python_compiler/verify_native_rt.py` — автобилд в TEMP, дерево не засоряется.
 
-Дополнительные гейты: `python -X utf8 Python_compiler/verify_boot_image.py` (A3b/A4a/A6/A7/A8 + A9-образ в QEMU), `python -X utf8 Python_compiler/verify_a5_install.py` (A5/A5b/A9, самоустановка с двумя дисками и 8 подмен закрепления), `python -X utf8 Python_compiler/verify_data_image.py` (A7/A8, FAT16 + каталог + тела, без QEMU). Все проходят на финальном коде; `python -X utf8 Python_compiler/regr120.py` зелёный.
+Дополнительные гейты: `python -X utf8 Python_compiler/verify_boot_image.py` (A3b/A4a/A6/A7/A8/A10 + A9-образ в QEMU), `python -X utf8 Python_compiler/verify_a5_install.py` (A5/A5b/A9, самоустановка с двумя дисками и 8 подмен закрепления), `python -X utf8 Python_compiler/verify_data_image.py` (A7/A8, FAT16 + каталог + тела, без QEMU). Все проходят на финальном коде; `python -X utf8 Python_compiler/regr120.py` зелёный.
 
 | Случай | EVENT'ы VM/NAT | Опкоды/ячейки | Артефакт |
 |---|---:|---:|---|
@@ -139,6 +139,18 @@ Stage2 находит диск сканированием `0x80..0xEF`, чита
 До A9 самоустановка оставляла целевую систему с поведением A4a: после перезагрузки работал один `memmgr` (24 строки COM1), хотя цель владельца — «запускает все написанные модули». В A9 `install.S` в `pin_target` пишет маркер `CTOS-AUTORUN-A6\x00` в MBR+`0x190` целевого диска **до** подсчёта 32-битной суммы dword LBA0..135, поэтому A5b покрывает его тем же sentinel. Подмена маркера на цели — честный `CTOS A5 PIN FAIL` (`rc=35`), восьмой негатив гейта.
 
 `stage2.S` печатает при установке `CTOS A5 AUTORUN ALL` вместо прежнего `... memmgr`. Перезагрузка с цели теперь даёт `rc=39`, 90 строк COM1 — те же четыре последовательности, что и A6-автозапуск (15 + 14 + 12 + 40), байт-в-байт совпадают с четырьмя хост-запусками. Установочный диск остаётся чистым (без маркера), поэтому его A4a-регресс не тронут. `native_rt.c` не меняется. Контрольные числа: install 1223 из 1224 Б, образ 69632 Б md5 `59285f03e4c60c512cbb9c7963f1748f`. На R3700 не принято.
+
+## A10 — таймерный профиль: schedT с тиком в PM (принят в QEMU)
+
+Прямо добавить `schedT_test.ctos` пятым модулем нельзя: CTMD вырос бы до 33065 Б (на 297 Б больше 64-секторного слота LBA8..71), а CAT-тела с базой `0x1000` переполнились бы на 4141 Б. Поэтому A10 — **отдельный профиль сборки с подстановкой вместо `stage1`**, а не изменение дефолтного образа:
+
+- `python -X utf8 CtOs/native/build_modules_image.py <out.ctmd> timer` — 4 записи, четвёртая `schedT` с телом `Python_compiler/schedT_test.ctos`; CTMD 10153 Б, md5 `43b9dd245c197dfcc10031445ff0c1e6`.
+- `python -X utf8 CtOs/native/build_data_image.py <out.img> timer` — тот же диск с CAT LBA8..71, но 4-я APPS-запись называется ровно `schedT` (это имя A8-шим подаёт как argv[2]) и содержит то же тело; md5 `67c18854b98064dcdaed36c3aef02c0d`.
+- Дефолтные сборки не изменились: загрузочный образ 69632 Б md5 `59285f03e4c60c512cbb9c7963f1748f`, диск данных md5 `5f54256087028a0cc71dfcfde77b9073`.
+
+В QEMU гейт использует **уже существующий** A8-путь (маркер `CTOS-DISK-A8` + индекс 3): `pm_start.S` берёт имя `schedT` из CAT, `shim.c` собирает синтетический CTMD, неизменный `native_rt.c` исполняет его. Результат `rc=39`, 53 строки COM1 = 10 строк preamble + 43 строки хостового `native_rt --module schedT`: `MODULE schedT 4589 92BF0F8A`, 41 событие, `TICK 00000FE5`, `OPS 16434 CELLS 443`, маркеры `B901/B910/B911/B920/B921/B930/B940/B941/B94F/B90F/B9D0/B9D1/B9FF` (13/13). COM1 байт-в-байт совпадает с хостом. Негативы: порча тела в CAT ⇒ `rc=41` + `FATAL: CTMD:`; сбитый индекс ⇒ fallback на memmgr без тика. `native_rt.c`, `pm_start.S`, `shim.c` не меняются.
+
+Честная граница: это **opcode-driven тик**, а не PIT/APIC и не полный No-HZ. Тик считается между инструкциями до `ops++`, условие — `tick_armed && have_kernel_ctx && ops >= tick_next && !tick_pending`; подавление есть только вне эпохи задачи. Нет ready-queue empty check, sleep/wakeup, idle/deep sleep, метрик пустых тиков и wall-clock 10 мс; `TIMER_RET` позитивно не покрыт (в `schedT` ре-диспетч идёт через YIELD). На R3700 не принято.
 
 ## Сборка/запуск
 

@@ -36,7 +36,12 @@
   остаток 8 секторов — нули.
 
 Запуск:
-  python -X utf8 CtOs/native/build_data_image.py [out.img]
+  python -X utf8 CtOs/native/build_data_image.py [out.img] [default|timer]
+
+A10: профиль `timer` подменяет 4-ю APPS-запись CAT (и файл в FAT16) модулем
+schedT_test.ctos. Имя CAT-записи — ровно `schedT`: A8-шим берёт его как argv[2]
+для хостового эталона `native_rt --module schedT`. Дефолтный профиль остаётся
+байт-в-байт прежним.
 """
 import hashlib
 import io
@@ -79,6 +84,12 @@ MODULES = [
     ("sched.CTS",    "CtOs/kernel_sched.ctos",             "SCHED   CTS"),
     ("syscall.CTS",  "Python_compiler/syscall_test.ctos",  "SYSCALL CTS"),
     ("stage1.CTS",   "Compiler/stage1_compiler.ctos",      "STAGE1  CTS"),
+]
+MODULES_TIMER = [
+    ("memmgr.CTS",   "CtOs/memmgr.ctos",                   "MEMMGR  CTS"),
+    ("sched.CTS",    "CtOs/kernel_sched.ctos",             "SCHED   CTS"),
+    ("syscall.CTS",  "Python_compiler/syscall_test.ctos",  "SYSCALL CTS"),
+    ("schedT",       "Python_compiler/schedT_test.ctos",   "SCHEDT  CTS"),
 ]
 FOLDERS = ("APPS", "GAMES", "MUSIC", "VIDEO")
 README = {
@@ -185,12 +196,13 @@ def catalog_entry(kind, name, lba, data, body_off=0):
     return bytes(e)
 
 
-def build(out_path):
+def build(out_path, profile="default"):
+    modules = MODULES_TIMER if profile == "timer" else MODULES
     fs = Fat16()
 
     # 1. Файлы: сначала резервируем все кластеры, потом пишем данные.
     files = []          # (kind, имя в каталоге, 8.3, данные, cluster, LBA)
-    for name, rel, fatname in MODULES:
+    for name, rel, fatname in modules:
         data = io.open(os.path.join(REPO, rel), "rb").read()
         cl = fs.reserve(len(data))
         files.append((1, name, fatname, data, cl))
@@ -307,8 +319,9 @@ def build(out_path):
 
 if __name__ == "__main__":
     out = sys.argv[1] if len(sys.argv) > 1 else DEFAULT_OUT
-    img = build(out)
+    profile = sys.argv[2] if len(sys.argv) > 2 else "default"
+    img = build(out, profile)
     print("CTOS DATA OK: %s — %d Б, md5 %s, папки CTOS/{APPS,GAMES,MUSIC,VIDEO}, "
-          "каталог LBA8..%d" %
+          "каталог LBA8..%d, профиль %s" %
           (out, len(img), hashlib.md5(img).hexdigest(),
-           CAT_LBA + CAT_SECTORS - 1))
+           CAT_LBA + CAT_SECTORS - 1, profile))
