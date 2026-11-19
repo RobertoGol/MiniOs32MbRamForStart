@@ -67,12 +67,12 @@ IMAGE_LEN = 136 * SECTOR
 
 EXPECT_MBR_LEN = 188
 EXPECT_S2_LEN = 2040
-EXPECT_INSTALL_LEN = 1188   # длина installer-секции без хвостовых нулей
+EXPECT_INSTALL_LEN = 1223   # installer без хвостовых нулей (A9; файл .bin — 1224 Б)
 EXPECT_CTMD_LEN = 28425
 EXPECT_PM_LEN = 22292        # слот бинарника в образе
 EXPECT_PM_TAIL_LEN = 22289   # последний ненулевой байт + 1
 EXPECT_CTMD_MD5 = "110b54e786544c561b64132e7557812d"
-EXPECT_IMAGE_MD5 = "a7eb6752965696dfba48b3938556cba9"
+EXPECT_IMAGE_MD5 = "59285f03e4c60c512cbb9c7963f1748f"
 AUTORUN_MARKER_OFF = 0x190
 AUTORUN_MARKER = b"CTOS-AUTORUN-A6\x00"
 A7_MARKER_OFF = 0x180
@@ -561,7 +561,7 @@ def main():
         print("BOOT IMAGE FAIL:", ", ".join(fails))
         print("Эмуляционная контрольная точка НЕ пройдена; на железе не заявляется.")
         return 1
-    print("BOOT IMAGE OK A4a/A6/A7/A8: детерминированный образ, QEMU rc=39, "
+    print("BOOT IMAGE OK A4a/A6/A7/A8 (+A9-установщик): детерминированный образ, QEMU rc=39, "
           "COM1 байт-в-байт совпадает с host native_rt (A4a: memmgr, A6: все 4 "
           "модуля CTMD, A7: диск данных с папками, A8: выбранный модуль с диска), "
           "отказы rc=35 и runtime-fatal rc=41. QEMU — контрольная точка, "

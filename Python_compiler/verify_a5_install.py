@@ -6,8 +6,10 @@
   2. источник с CTOS-INST-A5 находит диск с CTOS-TGT-A5, копирует 136 секторов
      с перечиткой, ставит ACTIVE, снимает оба маркера, затирает LBA5..7 и
      пишет sentinel (магия/версия/размер/CRC32-сумма/флаги) в LBA136;
-  3. перезагрузка с цели: rc=39, COM1 байт-в-байт = host native_rt и НИ ОДНОЙ
-     строки A5 — установщик самоудалился и больше не вызывается;
+     A9: дополнительно пишет в MBR цели маркер CTOS-AUTORUN-A6, чтобы сразу
+     после установки запускались ВСЕ написанные модули, а не только memmgr;
+  3. перезагрузка с цели: rc=39, COM1 байт-в-байт = четырём host-запускам
+     (A6-автозапуск) и НИ ОДНОЙ строки A5 — установщик самоудалился;
   4. негатив: маркер источника есть, цели нет -> AL=2 -> rc=37, «REFUSED»,
      без «CTMD ALL OK» и без «PM OK»;
   5. A5b: перезагрузка с закреплённой цели сама проверяет sentinel. Подмена
@@ -35,7 +37,9 @@ import verify_boot_image as a4  # noqa: E402
 
 SECTOR = 512
 MARKER_OFF = 0x180
+AUTORUN_OFF = 0x190
 ACTIVE_OFF = 0x1BE
+AUTORUN_MARKER = b"CTOS-AUTORUN-A6\x00"
 SRC_MARKER = b"CTOS-INST-A5\x00\x00\x00\x00"
 TGT_MARKER = b"CTOS-TGT-A5!\x00\x00\x00\x00"
 LOCK_MARKER = b"CTOS-LOCK-A5\x00\x00\x00\x00"
@@ -56,7 +60,7 @@ A5_LINES = [
     "CTOS A5 SELF-DELETE OK",
     "CTOS A5 PIN OK",
     "CTOS A5 INSTALL OK",
-    "CTOS A5 AUTORUN memmgr",
+    "CTOS A5 AUTORUN ALL",
 ]
 
 
@@ -161,6 +165,8 @@ def main():
         print("post-install disk state:")
         check("target marker cleared",
               tgt_after[MARKER_OFF:MARKER_OFF + 16] == b"\x00" * 16, fails)
+        check("target autorun marker",
+              tgt_after[AUTORUN_OFF:AUTORUN_OFF + 16] == AUTORUN_MARKER, fails)
         check("target ACTIVE=80",
               tgt_after[ACTIVE_OFF] == 0x80, fails)
         check("target LBA5..7 zeroed",
@@ -188,14 +194,16 @@ def main():
                         (INSTALL_LBA + INSTALL_SECTORS) * SECTOR] ==
               b"\x00" * (INSTALL_SECTORS * SECTOR), fails)
 
-        # ---------- 4. перезагрузка с цели: установщика нет ----------
+        # ---------- 4. перезагрузка с цели: A9-автозапуск, установщика нет ----------
         rc, raw, err, _ = boot([tgt_after], tmp_root, "reboot_target")
         got = a4.lines_of(raw)
-        plain = a4.POS_PREAMBLE + host
+        plain = list(a4.POS_PREAMBLE)
+        for name in a4.EXPECT_MODULES:
+            plain += a4.host_event_lines(ctmd, tmp_root, "a9_" + name, name)
         reboot_ok = (rc == RC_OK and got == plain and not err and
                      not any("A5" in s for s in got))
-        print("reboot from target: rc=%s lines=%d  %s" %
-              (rc, len(got), "OK" if reboot_ok else "FAIL"))
+        print("reboot from target: rc=%s lines=%d (ожидалось %d)  %s" %
+              (rc, len(got), len(plain), "OK" if reboot_ok else "FAIL"))
         if not reboot_ok:
             print("  LOG:", " | ".join(got))
             if err:
@@ -230,6 +238,10 @@ def main():
         d = bytearray(tgt_after)
         d[72 * SECTOR + 100] ^= 0x5A          # сектор PM внутри LBA0..135
         pin_cases.append(("image sector", bytes(d)))
+
+        d = bytearray(tgt_after)
+        d[AUTORUN_OFF + 3] ^= 0x01            # A9: маркер автозапуска в MBR
+        pin_cases.append(("autorun marker", bytes(d)))
 
         d = bytearray(tgt_after)
         d[sbase + 0x18] ^= 0x01               # контрольная сумма
@@ -268,7 +280,8 @@ def main():
         return 1
     print("A5 INSTALL OK: двухдисковая самоустановка, ACTIVE+sentinel, "
           "самоудаление, перезагрузка с цели rc=39 без A5-строк, честный "
-          "отказ rc=37; A5b: 7 подмен дали rc=35 с PIN FAIL. "
+          "отказ rc=37; A9: автозапуск всех модулей на цели (90 строк); "
+          "A5b: 8 подмен дали rc=35 с PIN FAIL. "
           "QEMU — контрольная точка, R3700 не тронут.")
     return 0
 

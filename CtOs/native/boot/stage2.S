@@ -714,7 +714,7 @@ hexdigits:  .ascii "0123456789ABCDEF"
 
 msg_stage2:    .asciz "CTOS A3b STAGE2\r\n"
 msg_a5_install:   .asciz "CTOS A5 INSTALL OK\r\n"
-msg_a5_autorun:   .asciz "CTOS A5 AUTORUN memmgr\r\n"
+msg_a5_autorun:   .asciz "CTOS A5 AUTORUN ALL\r\n"
 msg_a5_read_fail: .asciz "CTOS A5 INSTALL READ FAIL\r\n"
 msg_a5_fail:      .asciz "CTOS A5 REFUSED\r\n"
 a5_install_marker:.ascii "CTOS-INST-A5"

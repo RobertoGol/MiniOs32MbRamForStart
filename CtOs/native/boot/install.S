@@ -12,6 +12,7 @@
 .set chunk_off,      0x0000
 .set scratch_off,    0x8000
 .set marker_off,     0x0180      /* свободные байты MBR до таблицы разделов */
+.set autorun_off,    0x0190      /* A9: маркер автозапуска всех модулей на цели */
 .set active_off,     0x01BE
 .set image_sectors,  136
 .set install_lba,    5
@@ -186,6 +187,10 @@ pin_target:
     jc pin_fail
     call clear_scratch_marker
     call set_scratch_active
+    /* A9: целевая система обязана сразу запускать все написанные модули.
+     * Маркер пишется ДО compute_checksum, поэтому A5b покрывает его
+     * той же суммой dword. */
+    call set_scratch_autorun
     mov tgt_drive, %dl
     mov $0, %ax
     call write_scratch_lba
@@ -371,6 +376,15 @@ set_scratch_active:
     mov $0x80, %al
     mov %al, %es:(%di)
     ret
+set_scratch_autorun:                  /* DS=0x5000, ES=0x6000 */
+    mov $buf_seg, %ax
+    mov %ax, %es
+    mov $(scratch_off + autorun_off), %di
+    mov $autorun_marker, %si
+    mov $16, %cx
+    cld
+    rep movsb
+    ret
 zero_scratch:
     mov $buf_seg, %ax
     mov %ax, %es
@@ -498,6 +512,8 @@ checksum:    .long 0
 src_marker:  .ascii "CTOS-INST-A5\0\0\0\0"
 tgt_marker:  .ascii "CTOS-TGT-A5!\0\0\0\0"
 lock_marker: .ascii "CTOS-LOCK-A5\0\0\0\0"
+autorun_marker: .ascii "CTOS-AUTORUN-A6"
+                .byte 0
 hexdigits:   .ascii "0123456789ABCDEF"
 
 msg_start:      .asciz "CTOS A5 INSTALL: START\r\n"

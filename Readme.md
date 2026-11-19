@@ -4540,7 +4540,8 @@ t5gpr 1/1, T4-shelf 90/90) + T4 multi-statement кросс-молчания (8×
   был перепутан порядок dword (`0x31544143`). Контрольные числа загрузочного
   образа: stage2 2040 Б из 2048, образ 69632 Б md5
   `5496ffc520ee0b9f7bd3c3031053f3ae`; после A8 — md5
-  `a7eb6752965696dfba48b3938556cba9`, PM 22289/22292 Б. Пять гейтов зелёные:
+  `a7eb6752965696dfba48b3938556cba9`, после A9 — md5
+  `59285f03e4c60c512cbb9c7963f1748f`, PM 22289/22292 Б. Пять гейтов зелёные:
   `verify_native_rt.py`, `regr120.py`, `verify_boot_image.py`,
   `verify_a5_install.py`, `verify_data_image.py`. Границы: аудио/видео пока только
   хранятся без декодирования; native x86/PE не поддерживается; PM не читает диск
@@ -4568,7 +4569,9 @@ t5gpr 1/1, T4-shelf 90/90) + T4 multi-statement кросс-молчания (8×
   `FATAL: CTMD:`, сбитый индекс ⇒ честный fallback на A4a/A6 (`rc=39`), маркер без
   диска ⇒ `rc=41` + `CTOS A8 NO DATA`. `verify_data_image.py` проверяет A8-тела
   побайтово (5-й негатив). Контрольные числа: загрузочный образ 69632 Б md5
-  `a7eb6752965696dfba48b3938556cba9` (stage2 2040 Б, PM 22289 из 22292 Б),
+  `a7eb6752965696dfba48b3938556cba9` на момент A8; после A9 — md5
+  `59285f03e4c60c512cbb9c7963f1748f` (stage2 2040 Б, install 1223 из 1224 Б,
+  PM 22289 из 22292 Б),
   диск данных 32 МиБ md5 `5f54256087028a0cc71dfcfde77b9073`. Все пять гейтов
   зелёные: `verify_native_rt.py`, `regr120.py`, `verify_boot_image.py`,
   `verify_a5_install.py`, `verify_data_image.py`. Границы: **на R3700 не принято**,
@@ -4577,4 +4580,24 @@ t5gpr 1/1, T4-shelf 90/90) + T4 multi-statement кросс-молчания (8×
   `CtOs/native/boot/pm/pm_start.S`, `CtOs/native/boot/stage2.S`,
   `CtOs/native/build_data_image.py`, `Python_compiler/verify_boot_image.py`,
   `Python_compiler/verify_data_image.py`, `CtOs/native/boot/BOOT_SPEC.md`,
+  `CtOs/native/NATIVE_RT_SPEC.md`, `CtOs/BRINGUP_SPEC.md`, `Readme.md`.
+- **Спринт 113 (TKT-056, bring-up Ф2 шаг A9) — установщик закрепляет не только
+  загрузку, но и автозапуск всех написанных модулей, принято в QEMU как
+  эмуляционная контрольная точка.** Найден разрыв с исходной целью владельца:
+  после самоустановки целевая система грузилась как чистый A4a — один `memmgr`,
+  24 строки COM1, хотя маркер A6 включался только вручную в тесте. В `install.S`
+  (`pin_target`) установщик теперь пишет `CTOS-AUTORUN-A6\x00` в MBR+`0x190`
+  целевого диска **до** подсчёта 32-битной суммы dword LBA0..135, поэтому A5b
+  покрывает маркер тем же sentinel: его подмена — честный `rc=35` с
+  `CTOS A5 PIN FAIL` (8-й негатив). `stage2.S` печатает `CTOS A5 AUTORUN ALL`
+  вместо прежнего `CTOS A5 AUTORUN memmgr`. Перезагрузка с цели: `rc=39`,
+  90 строк COM1 — все четыре модуля по 15/14/12/40 event'ов, байт-в-байт как в
+  A6. Установочный диск остаётся чистым, A4a-регресс (24 строки) не тронут;
+  `native_rt.c` не меняется. Контрольные числа: install 1223 из 1224 Б,
+  загрузочный образ 69632 Б md5 `59285f03e4c60c512cbb9c7963f1748f`. Пять
+  гейтов зелёные: `verify_native_rt.py`, `regr120.py`, `verify_boot_image.py`,
+  `verify_a5_install.py`, `verify_data_image.py`. Границы: **на R3700 не принято**,
+  моноблок пока не трогаем. tracked: `CtOs/native/boot/install.S`,
+  `CtOs/native/boot/stage2.S`, `Python_compiler/verify_boot_image.py`,
+  `Python_compiler/verify_a5_install.py`, `CtOs/native/boot/BOOT_SPEC.md`,
   `CtOs/native/NATIVE_RT_SPEC.md`, `CtOs/BRINGUP_SPEC.md`, `Readme.md`.
