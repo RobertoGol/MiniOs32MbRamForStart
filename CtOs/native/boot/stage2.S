@@ -11,6 +11,12 @@
 .set pm_load_seg, 0x4000
 .set image_sectors, 136
 .set sentinel_lba, 136
+.set autorun_off, 0x190      /* запасные байты MBR до таблицы разделов */
+.set pm_flags_off, 0x7000    /* внутри 64-секторного слота PM, за бинарником */
+.set data_marker_off, 0x180  /* A7: маркер роли «диск данных» в LBA0 */
+.set data_cat_lba, 8
+.set data_cat_sectors, 8
+.set data_load_seg, 0x5000   /* каталог данных, после возврата установщика */
 
 .code16
 .section .text
@@ -45,6 +51,19 @@ _start:
     mov %ax, %ds
     mov $0x1000, %ax
     mov %ax, %es
+    /* A6: маркер CTOS-AUTORUN-A6 в MBR+0x190 включает запуск всех модулей
+     * CTMD в PM. Проверяем в том же прочитанном LBA0, отдельного чтения нет. */
+    mov $(0x8000 + autorun_off), %si
+    xor %bx, %bx
+a6_mk_cmp:
+    lodsb
+    cmp %es:autorun_marker(%bx), %al
+    jne a6_no_marker
+    inc %bx
+    cmp $12, %bx
+    jb a6_mk_cmp
+    movb $1, %es:autorun_all    /* DS здесь = 0x6000, метка stage2 в ES */
+a6_no_marker:
     mov $0x8180, %si             /* 0x6000:0x8000 + 0x180 */
     xor %bx, %bx
 a5_mk_cmp:
@@ -188,13 +207,32 @@ next_entry:
     mov $msg_all_ok, %si
     call puts
 
+    /* A7: если диск данных найден — проверить его машинный каталог.
+     * Отсутствие диска молча игнорируется (лог A4a остаётся прежним),
+     * а найденный, но повреждённый каталог — честный отказ rc=35. */
+    call scan_data_disk
+    jc a7_fail
+
     /* A4a: плоский PM-рантайм: LBA 72..135 -> 0x4000:0000. */
     mov $dap_pm, %si
     mov $0x42, %ah
     mov drive, %dl
     int $0x13
     jc pm_read_fail
+    /* A6: передать флаг автозапуска в PM через запасные байты слота PM.
+     * 0x4000:0x7000 внутри прочитанных 64 секторов и за концом бинарника. */
+    push %es
+    mov $0x4000, %ax
+    mov %ax, %es
+    mov autorun_all, %al
+    mov %al, %es:pm_flags_off
+    pop %es
     jmp pm_switch
+
+a7_fail:
+    /* scan_data_disk уже напечатал конкретную причину. */
+    mov $0x0011, %ax         /* rc=35: честный отказ повреждённого каталога */
+    jmp fail_exit
 
 all_bad:
     mov $msg_all_bad, %si
@@ -430,6 +468,82 @@ vp_done:
     pop %ds
     ret
 
+/* ---- A7: диск данных с папками (FAT) и машинным каталогом ----
+ * Сканируем 0x80..0xEF через EDD. Маркер CTOS-DATA-A7! в LBA0+0x180
+ * означает «это диск данных». Тогда читаем 8 секторов каталога с LBA8
+ * в 0x5000:0000 и проверяем magic/version/count/CRC-32. Диск не найден —
+ * тихо продолжаем загрузку; найден, но бит — честный отказ с печатью.
+ */
+.code16
+scan_data_disk:
+    push %es
+    movb $0x80, data_disk
+sdd_loop:
+    cmpb $0xF0, data_disk
+    jae sdd_none
+    /* EDD здесь не спрашиваем: AH=42h на несуществующем диске просто
+     * вернёт CF, и мы перейдём к следующему номеру. */
+    mov data_disk, %dl
+    mov $dap_data_mbr, %si
+    mov $0x42, %ah
+    int $0x13
+    jc sdd_next
+
+    mov $0x6000, %ax
+    mov %ax, %es
+    mov $data_marker, %si       /* DS:SI = эталон в stage2 */
+    mov $(0x8000 + data_marker_off), %di
+    mov $13, %cx
+    repe cmpsb             /* DF сброшен в начале stage2 */
+    jne sdd_next
+
+    mov data_disk, %dl
+    mov $dap_data_cat, %si
+    mov $0x42, %ah
+    int $0x13
+    jc sdd_bad
+
+    mov $data_load_seg, %ax
+    mov %ax, %es
+    cmpl $0x534F5443, %es:0     /* 'CTOS' */
+    jne sdd_bad
+    cmpl $0x31544143, %es:4     /* 'CAT1' */
+    jne sdd_bad
+    cmpl $1, %es:8
+    jne sdd_bad
+    mov %es:12, %cx             /* count */
+    jcxz sdd_bad
+    cmp $63, %cx                /* 24+64*63 < 8*512 */
+    ja sdd_bad
+    mov %cx, %ax
+    shl $6, %ax
+    add $24, %ax
+    mov %ax, %cx                /* длина CRC, 16 бит достаточно */
+    mov %es:20, %ebp            /* EBP не трогает crc32_body */
+    movl $0, %es:20             /* поле CRC обнулено на время счёта */
+    xor %si, %si
+    call crc32_body
+    cmp crc_result, %ebp
+    jne sdd_bad
+
+    mov $msg_a7_ok, %si
+    call puts
+    clc
+    jmp sdd_done
+sdd_bad:
+    mov $msg_a7_bad, %si
+    call puts
+    stc
+    jmp sdd_done
+sdd_next:
+    incb data_disk
+    jmp sdd_loop
+sdd_none:
+    clc
+sdd_done:
+    pop %es
+    ret
+
 /* ---- 16-битные помощники ---- */
 .code16
 puts:
@@ -534,6 +648,20 @@ crc_skip:
 
 /* ---- данные ---- */
 drive:      .byte 0
+autorun_all:.byte 0
+data_disk:  .byte 0
+dap_data_mbr:
+    .byte 0x10, 0x00
+    .word 1
+    .word 0x8000
+    .word 0x6000
+    .quad 0
+dap_data_cat:
+    .byte 0x10, 0x00
+    .word data_cat_sectors
+    .word 0x0000
+    .word data_load_seg
+    .quad data_cat_lba
 dap_ctmd:
     .byte 0x10, 0x00
     .word 64
@@ -590,10 +718,14 @@ msg_a5_autorun:   .asciz "CTOS A5 AUTORUN memmgr\r\n"
 msg_a5_read_fail: .asciz "CTOS A5 INSTALL READ FAIL\r\n"
 msg_a5_fail:      .asciz "CTOS A5 REFUSED\r\n"
 a5_install_marker:.ascii "CTOS-INST-A5"
+autorun_marker:.ascii "CTOS-AUTORUN-A6"
+data_marker:   .ascii "CTOS-DATA-A7!"
 lock_marker:   .ascii "CTOS-LOCK-A5"
                .byte 0, 0, 0, 0
 msg_pin_fail:  .asciz "CTOS A5 PIN FAIL\r\n"
 msg_pin_read:  .asciz "CTOS A5 PIN READ FAIL\r\n"
+msg_a7_ok:     .asciz "CTOS A7 DATA OK\r\n"
+msg_a7_bad:    .asciz "CTOS A7 DATA BAD\r\n"
 msg_count:     .asciz "CTMD count="
 msg_crc_ok:    .asciz "CRC OK\r\n"
 msg_crc_bad:   .asciz "CRC FAIL\r\n"

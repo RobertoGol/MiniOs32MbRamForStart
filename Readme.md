@@ -4501,3 +4501,49 @@ t5gpr 1/1, T4-shelf 90/90) + T4 multi-statement кросс-молчания (8×
   tracked: `CtOs/native/boot/stage2.S`, `Python_compiler/verify_a5_install.py`,
   `Python_compiler/verify_boot_image.py`, `CtOs/native/boot/BOOT_SPEC.md`,
   `CtOs/native/NATIVE_RT_SPEC.md`, `CtOs/BRINGUP_SPEC.md`, `Readme.md`.
+- **Спринт 110 (TKT-056, bring-up Ф2 шаг A6) — финальный автозапуск всех написанных
+  модулей, принято в QEMU как эмуляционная контрольная точка.** Владелец попросил
+  «в конце прогу автозапуска, которая запустит всё написанное ранее». Сделано в
+  `pm_start.S` **без правки семантики `native_rt.c`**: BSS уже обнуляется при старте,
+  поэтому тот же `main()` вызывается четырежды с разными `argv[2]` — `memmgr`,
+  `sched`, `syscall_test`, `stage1` — и чистым состоянием между вызовами. По
+  умолчанию включён только `memmgr` (A4a-лог байт-в-байт прежний, 24 строки);
+  полный запуск включает маркер `CTOS-AUTORUN-A6\x00` в MBR+`0x190`, который
+  stage2 передаёт в PM флагом по физическому `0x47000`. Результат — `rc=39`, 90
+  строк COM1: `memmgr=15`, `sched=14`, `syscall_test=12`, `stage1=40`, каждая
+  последовательность байт-в-байт совпадает с хост-запуском. Найденный и исправленный
+  баг теста: срез `b[0x190:0x19f] = marker` сжимал образ на 2 байта и давал QEMU
+  TIMEOUT; правильно `b[0x190:0x190+len(marker)]`. Контрольные числа на момент A6:
+  stage2 1768 Б, PM 21300 Б (хвост 21297), образ 69632 Б md5
+  `643eeab29529f17cd63329bf4b0050c9`; после A7 они пересмотрены — см. спринт 111.
+  Границы: **на R3700 не принято**, моноблок пока не трогаем.
+- **Спринт 111 (TKT-056, bring-up Ф2 шаг A7) — ОС на SD, HDD/SSD под папки данных,
+  принято в QEMU как эмуляционная контрольная точка.** Выбрана «смесь 1 и 2»:
+  human-readable FAT16 с папками `CTOS/APPS`, `CTOS/GAMES`, `CTOS/MUSIC`,
+  `CTOS/VIDEO` (в каждой `README.TXT`, куда что класть; в APPS уже лежат четыре
+  готовых `.ctos`-модуля) + машинный каталог в зарезервированных секторах LBA8..15
+  с magic `CTOSCAT1`, version=1, CRC-32 и 8 записями (kind/имя/LBA/размер/CRC).
+  Загрузчику FAT-драйвер не нужен: он сканирует диски `0x80..0xEF` по маркеру
+  `CTOS-DATA-A7!` в LBA0+`0x180`, читает каталог в `0x5000:0000` и проверяет его
+  через уже существующий `crc32_body`. Успех — `CTOS A7 DATA OK`, порча — честный
+  `rc=35` с `CTOS A7 DATA BAD`, отсутствие диска — тихий старт без A7-строки.
+  Диск данных собирается отдельно: `python -X utf8 CtOs/native/build_data_image.py
+  ctos_data.img` (32 МиБ, md5 `714e0e39a7c55137f9c5db80e6be25fd`), проверяется
+  `python -X utf8 Python_compiler/verify_data_image.py` (обход FAT-дерева, сверка
+  всех 8 файлов с исходниками и 4 негатива). В `verify_boot_image.py` добавлен
+  двухдисковый QEMU-гейт: `rc=39`, 25 строк, A7-строка между `CTMD ALL OK` и
+  `PM OK`. Найденные и исправленные баги сборщика: таблица разделов была записана
+  в LBA2048 вместо LBA0; корневой каталог из 64 Б сжимал `bytearray` на 16320 Б
+  и съезжали все LBA; имена 8.3 не были длинной 11 Б; в сравнении магии `CAT1`
+  был перепутан порядок dword (`0x31544143`). Контрольные числа загрузочного
+  образа: stage2 2040 Б из 2048, образ 69632 Б md5
+  `5496ffc520ee0b9f7bd3c3031053f3ae`. Пять гейтов зелёные:
+  `verify_native_rt.py`, `regr120.py`, `verify_boot_image.py`,
+  `verify_a5_install.py`, `verify_data_image.py`. Границы: аудио/видео пока только
+  хранятся без декодирования; native x86/PE не поддерживается; PM не читает диск
+  (ни одного `INT 13h`), запуск `.ctos` с HDD — следующий шаг (A8); загрузка с SD
+  на R3700 BIOS не проверялась, моноблок пока не трогаем. tracked:
+  `CtOs/native/boot/stage2.S`, `CtOs/native/build_data_image.py`,
+  `Python_compiler/verify_boot_image.py`, `Python_compiler/verify_data_image.py`,
+  `CtOs/native/boot/BOOT_SPEC.md`, `CtOs/native/NATIVE_RT_SPEC.md`,
+  `CtOs/BRINGUP_SPEC.md`, `Readme.md`.

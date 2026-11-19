@@ -1,12 +1,20 @@
-/* A4a: точка входа плоского 32-битного рантайма.
+/* A4a/A6: точка входа плоского 32-битного рантайма.
  * Вызываем тот же main() из native_rt.c с argv:
- *   native_rt --module memmgr CTMD:image events:com1
+ *   native_rt --module <module> CTMD:image events:com1
+ * A4a (по умолчанию): один модуль memmgr — лог байт-в-байт прежний.
+ * A6: по маркеру CTOS-AUTORUN-A6 в MBR stage2 пишет флаг по физическому
+ * 0x47000; тогда main() вызывается четырежды, по одному разу на каждый
+ * модуль CTMD, с полным сбросом BSS между вызовами. native_rt.c не меняется:
+ * все его статики и bump-allocator shim'а лежат в BSS, а argv и таблица
+ * имён — в .data и при перезапуске сохраняются.
  * Успех: isa-debug-exit AX=0x13 (rc=39), отказ main/AX: 0x14 (rc=41). */
 .code32
 .section .text
 .global _start
 
 .set PM_STACK, 0x00090000
+.set AUTORUN_FLAG, 0x00047000
+.set AUTORUN_MODULES, 4
 
 _start:
     mov $0x10, %ax
@@ -16,7 +24,18 @@ _start:
     mov $PM_STACK, %esp
     cld
 
-    /* BSS не грузится BIOS: обнуляем явно, до первого обращения к main. */
+    /* A6: флаг передаётся из stage2 в запасных байтах слота PM. */
+    cmpb $0, AUTORUN_FLAG
+    jne a6_all
+    mov $1, %ebp
+    jmp a6_set
+a6_all:
+    mov $AUTORUN_MODULES, %ebp
+a6_set:
+    mov $module_names, %ebx
+
+a6_loop:
+    /* BSS не грузится BIOS и не должен наследоваться от предыдущего модуля. */
     mov $_bss_start, %edi
     mov $_bss_end, %ecx
     sub %edi, %ecx
@@ -24,6 +43,8 @@ _start:
     rep stosb
 
     /* cdecl: argc, argv[0..4], NULL — caller cleans the stack. */
+    mov (%ebx), %eax
+    mov %eax, argv + 8          /* argv[2] = имя очередного модуля */
     pushl $0
     pushl $(argv + 16)
     pushl $(argv + 12)
@@ -34,15 +55,11 @@ _start:
     call _main
     addl $24, %esp
     test %eax, %eax
-    jz pm_ok
+    jnz pm_fail
 
-pm_fail:
-    mov $0xF4, %dx
-    mov $0x0014, %ax
-    out %ax, %dx
-1:
-    hlt
-    jmp 1b
+    add $4, %ebx
+    dec %ebp
+    jnz a6_loop
 
 pm_ok:
     mov $0xF4, %dx
@@ -52,6 +69,14 @@ pm_ok:
     hlt
     jmp 2b
 
+pm_fail:
+    mov $0xF4, %dx
+    mov $0x0014, %ax
+    out %ax, %dx
+1:
+    hlt
+    jmp 1b
+
 .section .data
 argv:
     .long arg0, arg1, arg2, arg3, arg4, 0
@@ -60,3 +85,11 @@ arg1: .asciz "--module"
 arg2: .asciz "memmgr"
 arg3: .asciz "CTMD:image"
 arg4: .asciz "events:com1"
+
+/* Порядок совпадает с каталогом CTMD из build_modules_image.py. */
+module_names:
+    .long name_memmgr, name_sched, name_syscall_test, name_stage1
+name_memmgr:      .asciz "memmgr"
+name_sched:       .asciz "sched"
+name_syscall_test:.asciz "syscall_test"
+name_stage1:      .asciz "stage1"

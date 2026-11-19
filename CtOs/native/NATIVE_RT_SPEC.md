@@ -1,6 +1,6 @@
 # A1/A2/A3 — нативный интерпретатор (bring-up Ф2)
 
-Статус: ✅ A1, A2, A3а приняты; A3b, A4a, A5 и A5b приняты **в QEMU как эмуляционная контрольная точка**, 2026-11-18/19. Связано: `CtOs/BRINGUP_SPEC.md` (Ф2/Ф3, вариант A), `CtOs/native/boot/BOOT_SPEC.md`, TKT-056 / TKT-055 / TKT-052.
+Статус: ✅ A1, A2, A3а приняты; A3b, A4a, A5, A5b, A6 и A7 приняты **в QEMU как эмуляционная контрольная точка**, 2026-11-18/19. Связано: `CtOs/BRINGUP_SPEC.md` (Ф2/Ф3, вариант A), `CtOs/native/boot/BOOT_SPEC.md`, TKT-056 / TKT-055 / TKT-052.
 
 ## A1 — подмножество ядра (принято ранее)
 
@@ -113,6 +113,19 @@ A5 писал sentinel, но сам загрузчик его не читал. �
 
 Побайтовая сверка последовательностей `PORT` / `SYSCALL` / `TICK` / `NET` против трассы `ctos_vm.py --trace`, плюс счётчики, плюс байты артефакта. Честные негативы: `probe_seek` (FILE_SEEK до BEGIN), `neg_ctx1` (YIELD без аргумента), `syscall_test_endfail` (нет FILE_END), `syscall_test_orderfail` (FILE_PUT до BEGIN) — оба исполнителя отказываются с `rc=1` и одной диагностикой. CRC-негатив: порча байта тела ⇒ оба с `[TKT-040]` (`rc=1`).
 
+## A6 — автозапуск всех модулей CTMD без правки native_rt.c
+
+Маркер `CTOS-AUTORUN-A6\x00` в MBR+`0x190` — переключатель полного запуска. Без него `pm_start.S` вызывает `_main()` один раз с `memmgr` (A4a-лог байт-в-байт прежний, 24 строки). С маркером stage2 пишет флаг 1 по физическому адресу `0x47000`, и `_start` вызывает `_main()` четырежды с argv `native_rt --module <name> CTMD:image events:com1`, где `<name>` пробегает `memmgr`, `sched`, `syscall_test`, `stage1`. Перед каждым вызовом BSS обнуляется заново — все статики `native_rt.c` и bump-allocator `shim.c` находятся в BSS, поэтому повторный `main()` получает чистое состояние. Итоговый COM1-лог — 90 строк и байт-в-байт совпадает с четырьмя хост-запусками (15 + 14 + 12 + 40). `CtOs/native/native_rt.c` не изменялся.
+
+## A7 — диск данных: FAT16-папки + машинный каталог
+
+`CtOs/native/build_data_image.py` собирает отдельный 32-МиБ raw-образ с маркером `CTOS-DATA-A7!` в LBA0+`0x180`, разделом FAT16 (`type=0x06`, LBA 2048) и каталогом в LBA 8..15. Это выбранная владельцем «смесь 1 и 2»:
+
+- **Для человека:** `CTOS/APPS`, `CTOS/GAMES`, `CTOS/MUSIC`, `CTOS/VIDEO` с `README.TXT` в каждой папке. Сюда кладутся `.ctos`-модули и сырые ассеты; аудио/видео пока только хранятся, декодера нет. Native x86/PE не поддерживается.
+- **Для машины:** фиксированный каталог `CTOSCAT1` с version=1, count, CRC-32 и 8 записями по 64 Б (`kind`, имя, LBA, число секторов, размер, CRC файла). Для его чтения FAT-драйвер не нужен.
+
+Stage2 находит диск сканированием `0x80..0xEF`, читает каталог в `0x5000:0000` и проверяет magic/version/count/CRC уже существующим `crc32_body`. Успех печатает `CTOS A7 DATA OK`, повреждение — `CTOS A7 DATA BAD` и `rc=35`; отсутствие диска молча игнорируется. В PM нет ни одного `INT 13h`, поэтому диск данных читается только в real mode. Отдельный гейт `verify_data_image.py` независимо обходит FAT-дерево и сверяет все 8 файлов по байтам и CRC; хост-запуск не требуется.
+
 ## Сборка/запуск
 
 ```
@@ -125,4 +138,6 @@ python -X utf8 Python_compiler/verify_native_rt.py   # автобилд в TEMP,
 python -X utf8 CtOs/native/boot/build_boot_image.py ctos_boot.img <TEMP>
 python -X utf8 Python_compiler/verify_boot_image.py  # A3b + A4a в QEMU
 python -X utf8 Python_compiler/verify_a5_install.py # A5/A5b: два диска в QEMU
+python -X utf8 CtOs/native/build_data_image.py ctos_data.img
+python -X utf8 Python_compiler/verify_data_image.py # A7: FAT16 + каталог
 ```

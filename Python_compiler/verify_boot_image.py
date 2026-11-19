@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""A4a: честная приёмка загрузчика и нативного рантайма CtOS в QEMU.
+"""A4a/A6: честная приёмка загрузчика и нативного рантайма CtOS в QEMU.
 
 Проверяется ровно то, что реально исполняется:
   1. детерминированная сборка образа ДВАЖДЫ в разных TEMP-каталогах
@@ -8,6 +8,12 @@
      тот же native_rt.c что и на хосте, Event-линии COM1 байт-в-байт
      сверяются с хост-запуском `native_rt.exe --module memmgr`;
      isa-debug-exit даёт rc=39 (AX=0x13);
+  3a. A6: маркер CTOS-AUTORUN-A6 в MBR+0x190 заставляет PM вызвать main()
+      четырежды — по разу на каждый модуль CTMD; каждая event-последовательность
+      байт-в-байт сверяется с хост-запуском;
+  3b. A7: второй диск с маркером CTOS-DATA-A7! и каталогом в LBA8: stage2
+      проверяет magic/version/count/CRC и печатает CTOS A7 DATA OK; порча
+      каталога даёт честный rc=35, сбитый маркер — тихий старт без строки;
   3. негативы загрузчика: подмена магии CTMD и порча тела модуля дают
      честный отказ rc=35 (AX=0x11) без «PM OK»;
   4. негатив рантайма: порча тела memmgr с пересчётом CRC каталога
@@ -39,6 +45,7 @@ TMP_BASE = (os.environ.get("OPENCODE_TMP") or
              else tempfile.gettempdir()))
 BUILDER = os.path.join(REPO, "CtOs", "native", "boot", "build_boot_image.py")
 BOOT_DIR = os.path.dirname(BUILDER)
+DATA_BUILDER = os.path.join(REPO, "CtOs", "native", "build_data_image.py")
 HOST_SRC = os.path.join(REPO, "CtOs", "native", "native_rt.c")
 HOST_EXE = os.path.join(tempfile.gettempdir(), "ctos_native_rt",
                         "native_rt.exe")
@@ -51,13 +58,19 @@ PM_OFF = PM_LBA * SECTOR
 IMAGE_LEN = 136 * SECTOR
 
 EXPECT_MBR_LEN = 188
-EXPECT_S2_LEN = 1720
+EXPECT_S2_LEN = 2040
 EXPECT_INSTALL_LEN = 1188   # длина installer-секции без хвостовых нулей
 EXPECT_CTMD_LEN = 28425
-EXPECT_PM_LEN = 21220        # слот бинарника в образе
-EXPECT_PM_TAIL_LEN = 21217   # последний ненулевой байт + 1 (3 нуля в .data)
+EXPECT_PM_LEN = 21300        # слот бинарника в образе
+EXPECT_PM_TAIL_LEN = 21297   # последний ненулевой байт + 1 (3 нуля в .data)
 EXPECT_CTMD_MD5 = "110b54e786544c561b64132e7557812d"
-EXPECT_IMAGE_MD5 = "dc90a080710efb03b3ccbfe640cebb9e"
+EXPECT_IMAGE_MD5 = "5496ffc520ee0b9f7bd3c3031053f3ae"
+AUTORUN_MARKER_OFF = 0x190
+AUTORUN_MARKER = b"CTOS-AUTORUN-A6\x00"
+A7_MARKER_OFF = 0x180
+A7_MARKER = b"CTOS-DATA-A7!"
+A7_CAT_OFF = 8 * SECTOR
+A7_LINE = "CTOS A7 DATA OK"
 EXPECT_MODULES = ("memmgr", "sched", "syscall_test", "stage1")
 
 # isa-debug-exit: (AX << 1) | 1
@@ -145,7 +158,21 @@ def cold_build(tag, tmp_root):
     return data, r.stdout, d
 
 
-def boot_log(data, tmp_root, tag):
+def build_data_image(tmp_root):
+    """Свежий диск данных A7 (32 МиБ) для двухдискового QEMU-гейта."""
+    d = os.path.join(tmp_root, "data_disk")
+    os.makedirs(d, exist_ok=True)
+    out = os.path.join(d, "data.img")
+    clean(out)
+    r = subprocess.run([sys.executable, "-X", "utf8", DATA_BUILDER, out],
+                       capture_output=True, encoding="utf-8",
+                       errors="replace", timeout=180)
+    if r.returncode:
+        raise RuntimeError("A7 data build: %s %s" % (r.stdout, r.stderr))
+    return io.open(out, "rb").read(), out
+
+
+def boot_log(data, tmp_root, tag, data_disk=None):
     """Один прогон QEMU; лог удаляется перед каждым запуском (cold)."""
     d = os.path.join(tmp_root, "run_" + tag)
     os.makedirs(d, exist_ok=True)
@@ -157,8 +184,11 @@ def boot_log(data, tmp_root, tag):
     io.open(img, "wb").write(data)
     cmd = [qemu(),
            "-machine", "pc",
-           "-drive", "file=" + img + ",format=raw,if=ide,index=0,media=disk",
-           "-boot", "order=c",
+           "-drive", "file=" + img + ",format=raw,if=ide,index=0,media=disk"]
+    if data_disk:
+        cmd += ["-drive", "file=" + data_disk +
+                ",format=raw,if=ide,index=1,media=disk"]
+    cmd += ["-boot", "order=c",
            "-display", "none",
            "-serial", "file:" + log,
            "-monitor", "none",
@@ -173,7 +203,7 @@ def boot_log(data, tmp_root, tag):
     return r.returncode, raw, ""
 
 
-def host_event_lines(ctmd, tmp_root, tag):
+def host_event_lines(ctmd, tmp_root, tag, module="memmgr"):
     """Event-лог хоста для того же CTMD; артефакт *.out чистим перед запуском."""
     d = os.path.join(tmp_root, "host_" + tag)
     os.makedirs(d, exist_ok=True)
@@ -185,12 +215,12 @@ def host_event_lines(ctmd, tmp_root, tag):
         if name.endswith(".out"):
             clean(os.path.join(d, name))
     io.open(ctmd_path, "wb").write(ctmd)
-    r = subprocess.run([host_exe(), "--module", "memmgr", ctmd_path, ev],
+    r = subprocess.run([host_exe(), "--module", module, ctmd_path, ev],
                        capture_output=True, encoding="utf-8",
                        errors="replace", timeout=60)
     if r.returncode:
-        raise RuntimeError("host --module memmgr: %s %s" %
-                           (r.stdout, r.stderr))
+        raise RuntimeError("host --module %s: %s %s" %
+                           (module, r.stdout, r.stderr))
     text = io.open(ev, encoding="ascii").read()
     return [s.strip() for s in text.splitlines() if s.strip()]
 
@@ -287,6 +317,82 @@ def main():
                 print("  ERR:", err)
             fails.append("positive")
 
+        # ---------- 3a. A6: маркер автозапуска -> все модули CTMD в PM ----------
+        autorun = bytearray(a)
+        autorun[AUTORUN_MARKER_OFF:
+                AUTORUN_MARKER_OFF + len(AUTORUN_MARKER)] = AUTORUN_MARKER
+        rc, raw, err = boot_log(bytes(autorun), tmp_root, "autorun")
+        got = lines_of(raw)
+        want = list(POS_PREAMBLE)
+        counts = []
+        for name in EXPECT_MODULES:
+            lines = host_event_lines(ctmd, tmp_root, "a6_" + name, name)
+            counts.append("%s=%d" % (name, len(lines)))
+            want += lines
+        auto_ok = (rc == RC_OK and got == want and not err)
+        print("A6 autorun: rc=%s lines=%d (ожидалось %d), "
+              "COM1==host(x%d): %s  %s" %
+              (rc, len(got), len(want), len(EXPECT_MODULES),
+               ",".join(counts), "OK" if auto_ok else "FAIL"))
+        if not auto_ok:
+            print("  LOG:", show_lines(raw))
+            if err:
+                print("  ERR:", err)
+            fails.append("A6 autorun")
+
+        # ---------- 3b. A7: диск данных с папками и машинным каталогом ----------
+        data_img, data_path = build_data_image(tmp_root)
+        rc, raw, err = boot_log(a, tmp_root, "a7", data_path)
+        got = lines_of(raw)
+        # A7 печатается после CTMD ALL OK, но до перехода в PM.
+        want = (list(POS_PREAMBLE[:7]) + [A7_LINE] +
+                list(POS_PREAMBLE[7:]) + EXPECT_HOST_EVENTS)
+        a7_ok = (rc == RC_OK and got == want and not err)
+        print("A7 data disk: rc=%s lines=%d (ожидалось %d), CAT+events: %s  %s" %
+              (rc, len(got), len(want), A7_LINE in got,
+               "OK" if a7_ok else "FAIL"))
+        if not a7_ok:
+            print("  LOG:", show_lines(raw))
+            if err:
+                print("  ERR:", err)
+            fails.append("A7 data disk")
+
+        # A7 негатив: порча записи каталога -> честный отказ до PM.
+        bad_data = bytearray(data_img)
+        bad_data[A7_CAT_OFF + 24 + 1] ^= 0x01
+        bad_path = os.path.join(os.path.dirname(data_path), "data_bad.img")
+        clean(bad_path)
+        io.open(bad_path, "wb").write(bytes(bad_data))
+        rc, raw, err = boot_log(a, tmp_root, "a7_bad", bad_path)
+        got = lines_of(raw)
+        a7_bad_ok = (rc == RC_REFUSE and "CTOS A7 DATA BAD" in got and
+                     "PM OK" not in got and "CTOS A4a EXEC" not in got)
+        print("neg A7 catalog: rc=%s diag=%s  %s" %
+              (rc, "CTOS A7 DATA BAD" in got,
+               "OK" if a7_bad_ok else "FAIL"))
+        if not a7_bad_ok:
+            print("  LOG:", show_lines(raw))
+            if err:
+                print("  ERR:", err)
+            fails.append("neg A7 catalog")
+
+        # A7 негатив: сбитый маркер роли -> диск не считается диском данных.
+        bad_role = bytearray(data_img)
+        bad_role[A7_MARKER_OFF] ^= 0x20
+        role_path = os.path.join(os.path.dirname(data_path), "data_role.img")
+        clean(role_path)
+        io.open(role_path, "wb").write(bytes(bad_role))
+        rc, raw, err = boot_log(a, tmp_root, "a7_role", role_path)
+        got = lines_of(raw)
+        role_ok = (rc == RC_OK and got == POS_LINES and A7_LINE not in got)
+        print("neg A7 role: rc=%s без A7-строки=%s  %s" %
+              (rc, A7_LINE not in got, "OK" if role_ok else "FAIL"))
+        if not role_ok:
+            print("  LOG:", show_lines(raw))
+            if err:
+                print("  ERR:", err)
+            fails.append("neg A7 role")
+
         # ---------- 4. negative: подмена магии CTMD -> rc=35 ----------
         bad_magic = bytearray(a)
         bad_magic[CTMD_OFF:CTMD_OFF + 4] = b"XXXX"
@@ -351,8 +457,9 @@ def main():
         print("BOOT IMAGE FAIL:", ", ".join(fails))
         print("Эмуляционная контрольная точка НЕ пройдена; на железе не заявляется.")
         return 1
-    print("BOOT IMAGE OK A4a: детерминированный образ, QEMU rc=39, COM1 "
-          "байт-в-байт совпадает с host native_rt, два отказа rc=35 и "
+    print("BOOT IMAGE OK A4a/A6/A7: детерминированный образ, QEMU rc=39, COM1 "
+          "байт-в-байт совпадает с host native_rt (A4a: memmgr, A6: все 4 "
+          "модуля CTMD, A7: диск данных с папками), отказы rc=35 и "
           "runtime-fatal rc=41. QEMU — контрольная точка, на R3700 НЕ принято.")
     return 0
 
