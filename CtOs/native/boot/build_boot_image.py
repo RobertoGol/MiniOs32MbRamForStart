@@ -134,11 +134,12 @@ def build(out_path, tmp=None, profile="default"):
     # Внешний верификатор передаёт свой TEMP-каталог; по умолчанию — рядом.
     if tmp is None:
         tmp = os.path.join(HERE, "_build_tmp")
-    if profile not in ("default", "combined", "name"):
+    if profile not in ("default", "combined", "name", "name_sep"):
         raise SystemExit("A14: неизвестный профиль сборки %r" % profile)
     os.makedirs(tmp, exist_ok=True)
-    base = "a14" if profile == "name" else \
-           ("a12" if profile == "combined" else "a3b")
+    base = "a14sep" if profile == "name_sep" else \
+           ("a14" if profile == "name" else \
+            ("a12" if profile == "combined" else "a3b"))
 
     mbr = flat_binary(os.path.join(HERE, "mbr.S"),
                       os.path.join(HERE, "mbr.ld"), 0x7C00,
@@ -148,8 +149,10 @@ def build(out_path, tmp=None, profile="default"):
     if len(mbr) > SECTOR - 2:
         raise SystemExit("A3b: MBR не помещается: %d Б" % len(mbr))
     # A12: combined-профиль меняет только stage2 (два DAP-смещения и режим
-    # сканирования). A14 использует тот же single-SD stage2 и дополнительно
-    # включает name-ветку в PM. MBR/установщик/CTMD собираются из тех же исходников.
+    # сканирования). A14 `name` использует тот же single-SD stage2 и дополнительно
+    # включает name-ветку в PM; `name_sep` — name-ветка PM, но дефолтное
+    # сканирование отдельного диска данных (как A7/A8). MBR/установщик/CTMD
+    # собираются из тех же исходников.
     s2_defines = ["A12_COMBINED=%d" %
                   (1 if profile in ("combined", "name") else 0)]
     stage2 = flat_binary(os.path.join(HERE, "stage2.S"),
@@ -176,7 +179,7 @@ def build(out_path, tmp=None, profile="default"):
     if PM_CTMD_PHYS != CTMD_PHYS:
         raise SystemExit("A4a: PM_CTMD_PHYS не совпадает с загрузкой CTMD")
 
-    pm = pm_binary(tmp, name_mode=(profile == "name"),
+    pm = pm_binary(tmp, name_mode=(profile in ("name", "name_sep")),
                    tag=base + "_pm")
 
     img = bytearray(TOTAL_SECTORS * SECTOR)
