@@ -23,6 +23,10 @@
 .set A8_SELECT_PHYS, 0x00007DA0
 .set A8_NAME_PHYS, 0x00050019    /* CAT-база + 24 + 1 (имя записи) */
 .set A8_MAX_INDEX, 8
+/* A14: тот же слот MBR, но 13-байтовый маркер; байт +0x1B0 зарезервирован
+ * под номер диска (mbr.S: mov %dl, 0x7DB0), имя начинается с +0x1B1. */
+.set A14_SELECT_PHYS, 0x00007DA0
+.set A14_NAME_OFF, 17
 
 _start:
     mov $0x10, %ax
@@ -31,6 +35,24 @@ _start:
     mov %ax, %ss
     mov $PM_STACK, %esp
     cld
+
+    /* ---- A14: выбор одного модуля по имени из MBR+0x1A0. ----
+     * Маркер "CTOS-NAME-A14" (13 Б) занимает тот же слот, что A8; shim
+     * ищет имя в уже прочитанной CAT-области и сам подставляет запись.
+     * argv[2] указывает на имя в MBR+0x1B1 — native_rt.c не меняется. */
+    .if A14_NAME
+    mov $A14_SELECT_PHYS, %esi
+    mov $a14_marker, %edi
+    mov $13, %ecx
+    repe cmpsb
+    jne a8_check
+    movl $(A14_SELECT_PHYS + A14_NAME_OFF), a8_name_ptr
+    mov $a8_name_ptr, %ebx
+    mov $1, %ebp
+    movl $(disk_image), argv + 12
+    jmp a6_loop
+a8_check:
+    .endif
 
     /* ---- A8: выбор одного модуля с диска данных. ----
      * MBR+0x1A0: 12 байт "CTOS-DISK-A8", затем индекс записи каталога.
@@ -119,6 +141,10 @@ arg4: .asciz "events:com1"
 a8_marker:   .ascii "CTOS-DISK-A8"
 a8_name_ptr: .long name_memmgr
 disk_image:  .asciz "DISK:image"
+
+    .if A14_NAME
+a14_marker:  .ascii "CTOS-NAME-A14"
+    .endif
 
 /* Порядок совпадает с каталогом CTMD из build_modules_image.py. */
 module_names:

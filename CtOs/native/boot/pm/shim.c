@@ -10,6 +10,10 @@
 #ifndef PM_CTMD_PHYS
 #define PM_CTMD_PHYS 0x00020000u
 #endif
+/* A14: аддитивный профиль выбора модуля по имени. При 0 байт кода не меняется. */
+#ifndef A14_NAME
+#define A14_NAME 0
+#endif
 /* A8: CAT-область диска данных уже прочитана stage2 по 0x50000;
  * селектор лежит в MBR+0x1A0 (0x7DA0). INT 13h в PM не используется. */
 #define PM_A8_CAT_PHYS      0x00050000u
@@ -18,6 +22,8 @@
 #define PM_A8_CAT_BYTES     (PM_A8_CAT_SECTORS * 512u)
 #define PM_A8_BODY_BASE     0x1000u
 #define PM_A8_MAX_INDEX     8u
+/* A14: MBR+0x1B0 хранит номер диска (mbr.S), имя начинается с +0x1B1. */
+#define PM_A14_NAME_OFF     17u
 
 #define PMF_COM1      0
 #define PMF_MEM_READ  1
@@ -491,10 +497,29 @@ static FILE *a8_open(void) {
     static const char sel_marker[12] = {
         'C', 'T', 'O', 'S', '-', 'D', 'I', 'S', 'K', '-', 'A', '8'
     };
+#if A14_NAME
+    static const char sel_a14[13] = {
+        'C', 'T', 'O', 'S', '-', 'N', 'A', 'M', 'E', '-', 'A', '1', '4'
+    };
+#endif
     const unsigned char *sel = (const unsigned char *)PM_A8_SELECT_PHYS;
     const unsigned char *cat = (const unsigned char *)PM_A8_CAT_PHYS;
     unsigned long i, idx, count, ent, body_off, size, crc;
     unsigned char *out = disk_ctmd;
+#if A14_NAME
+    int by_name = (memcmp(sel, sel_a14, 13u) == 0);
+    if (by_name) {
+        idx = 0;
+    } else {
+        for (i = 0; i < 12u; i++) {
+            if (sel[i] != (unsigned char)sel_marker[i])
+                a8_die("CTOS A8 NO SELECT");
+        }
+        idx = sel[12];
+        if (idx >= PM_A8_MAX_INDEX)
+            a8_die("CTOS A8 BAD INDEX");
+    }
+#else
     for (i = 0; i < 12u; i++) {
         if (sel[i] != (unsigned char)sel_marker[i])
             a8_die("CTOS A8 NO SELECT");
@@ -502,13 +527,40 @@ static FILE *a8_open(void) {
     idx = sel[12];
     if (idx >= PM_A8_MAX_INDEX)
         a8_die("CTOS A8 BAD INDEX");
+#endif
     if (memcmp(cat, "CTOSCAT1", 8) != 0 || pm_le32(cat + 8u) != 1u)
         a8_die("CTOS A8 NO DATA");
     count = pm_le32(cat + 12u);
+#if A14_NAME
+    if (by_name) {
+        if (!count || count > 63u)
+            a8_die("CTOS A8 BAD COUNT");
+        const char *want = (const char *)(sel + PM_A14_NAME_OFF);
+        for (idx = 0; idx < count; idx++) {
+            ent = 24u + 64u * idx;
+            if (cat[ent] != 1u)
+                continue;
+            for (i = 0; i < 15u; i++) {
+                a8_name[i] = (char)cat[ent + 1u + i];
+                if (!a8_name[i])
+                    break;
+            }
+            a8_name[15] = '\0';
+            if (strcmp(a8_name, want) == 0)
+                break;
+        }
+        if (idx == count)
+            a8_die("CTOS A14 NO NAME");
+    } else {
+        if (count <= idx || count > 63u)
+            a8_die("CTOS A8 BAD COUNT");
+        ent = 24u + 64u * idx;
+    }
+#else
     if (count <= idx || count > 63u)
         a8_die("CTOS A8 BAD COUNT");
-
     ent = 24u + 64u * idx;
+#endif
     if (cat[ent] != 1u)
         a8_die("CTOS A8 BAD KIND");
     size = pm_le32(cat + ent + 24u);

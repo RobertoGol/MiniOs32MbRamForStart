@@ -78,8 +78,13 @@ def pm_flags(include_dir):
             "-DPM_CTMD_PHYS=0x%08Xu" % PM_CTMD_PHYS]
 
 
-def pm_binary(tmp):
-    """Тот же native_rt.c без правок семантики + freestanding-shim."""
+def pm_binary(tmp, name_mode=False, tag="a4a"):
+    """Тот же native_rt.c без правок семантики + freestanding-shim.
+
+    A14: name_mode=True включает аддитивный выбор модуля по имени через
+    GAS --defsym / -D только в pm_start.S и shim.c. При False собирается
+    байт-в-байт прежний PM (gate A4a/A12/A13 не должен измениться).
+    """
     gcc_p, as_p, ld_p, cp_p = (tool("gcc"), tool("as"), tool("ld"),
                                tool("objcopy"))
     pm_dir = os.path.join(HERE, "pm")
@@ -90,15 +95,20 @@ def pm_binary(tmp):
     lds = os.path.join(pm_dir, "pm.ld")
     flags = pm_flags(inc)
 
-    obj_rt = os.path.join(tmp, "a4a_native_rt.o")
-    obj_shim = os.path.join(tmp, "a4a_shim.o")
-    obj_start = os.path.join(tmp, "a4a_start.o")
-    exe = os.path.join(tmp, "a4a_pm.exe")
-    out = os.path.join(tmp, "a4a_pm.bin")
+    obj_rt = os.path.join(tmp, tag + "_native_rt.o")
+    obj_shim = os.path.join(tmp, tag + "_shim.o")
+    obj_start = os.path.join(tmp, tag + "_start.o")
+    exe = os.path.join(tmp, tag + "_pm.exe")
+    out = os.path.join(tmp, tag + "_pm.bin")
 
+    shim_flags = flags + ["-DA14_NAME=%d" % (1 if name_mode else 0)]
+    start_defs = ["A14_NAME=%d" % (1 if name_mode else 0)]
     subprocess.run([gcc_p] + flags + ["-c", "-o", obj_rt, src], check=True)
-    subprocess.run([gcc_p] + flags + ["-c", "-o", obj_shim, shim], check=True)
-    subprocess.run([as_p, "--32", "-o", obj_start, start], check=True)
+    subprocess.run([gcc_p] + shim_flags + ["-c", "-o", obj_shim, shim],
+                   check=True)
+    subprocess.run([as_p, "--32"] +
+                   sum([["--defsym", d] for d in start_defs], []) +
+                   ["-o", obj_start, start], check=True)
     subprocess.run([ld_p, "-m", "i386pe", "--image-base=0",
                     "-e", "_start", "-T", lds, "-o", exe,
                     obj_start, obj_rt, obj_shim], check=True)
@@ -124,10 +134,11 @@ def build(out_path, tmp=None, profile="default"):
     # Внешний верификатор передаёт свой TEMP-каталог; по умолчанию — рядом.
     if tmp is None:
         tmp = os.path.join(HERE, "_build_tmp")
-    if profile not in ("default", "combined"):
-        raise SystemExit("A12: неизвестный профиль сборки %r" % profile)
+    if profile not in ("default", "combined", "name"):
+        raise SystemExit("A14: неизвестный профиль сборки %r" % profile)
     os.makedirs(tmp, exist_ok=True)
-    base = "a12" if profile == "combined" else "a3b"
+    base = "a14" if profile == "name" else \
+           ("a12" if profile == "combined" else "a3b")
 
     mbr = flat_binary(os.path.join(HERE, "mbr.S"),
                       os.path.join(HERE, "mbr.ld"), 0x7C00,
@@ -137,8 +148,10 @@ def build(out_path, tmp=None, profile="default"):
     if len(mbr) > SECTOR - 2:
         raise SystemExit("A3b: MBR не помещается: %d Б" % len(mbr))
     # A12: combined-профиль меняет только stage2 (два DAP-смещения и режим
-    # сканирования). MBR/установщик/CTMD/PM собираются из тех же исходников.
-    s2_defines = ["A12_COMBINED=%d" % (1 if profile == "combined" else 0)]
+    # сканирования). A14 использует тот же single-SD stage2 и дополнительно
+    # включает name-ветку в PM. MBR/установщик/CTMD собираются из тех же исходников.
+    s2_defines = ["A12_COMBINED=%d" %
+                  (1 if profile in ("combined", "name") else 0)]
     stage2 = flat_binary(os.path.join(HERE, "stage2.S"),
                          os.path.join(HERE, "stage2.ld"), 0,
                          os.path.join(tmp, base + "_s2.o"),
@@ -163,7 +176,8 @@ def build(out_path, tmp=None, profile="default"):
     if PM_CTMD_PHYS != CTMD_PHYS:
         raise SystemExit("A4a: PM_CTMD_PHYS не совпадает с загрузкой CTMD")
 
-    pm = pm_binary(tmp)
+    pm = pm_binary(tmp, name_mode=(profile == "name"),
+                   tag=base + "_pm")
 
     img = bytearray(TOTAL_SECTORS * SECTOR)
     img[:len(mbr)] = mbr
