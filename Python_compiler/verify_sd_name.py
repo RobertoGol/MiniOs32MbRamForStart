@@ -266,6 +266,32 @@ def main():
         if not ok:
             fails.append("a14_reordered_index")
 
+        # ---------- A5-переустановка boot-базы на single-SD с сохранением data/селектора ----------
+        boot_sel = write_sel(img1, selector(A14_NAME), pin=False)
+        flash_re, _ = a12.make_flash(boot_sel, data, tmp_root, "a14_reinst")
+        tgt_re = bytearray((2048 + len(data) // SECTOR) * SECTOR)
+        tgt_re[2048 * SECTOR:2048 * SECTOR + len(data)] = data
+        tgt_re[a5.MARKER_OFF:a5.MARKER_OFF + 16] = a5.TGT_MARKER
+        rc, raw, err, disks_re = a5.boot([flash_re, bytes(tgt_re)], tmp_root,
+                                         "a14_reinst_install")
+        got = a4.lines_of(raw)
+        tgt_re_after = disks_re[1]
+        reinst_ok = (rc == 39 and "CTOS A5 INSTALL OK" in got and
+                     tgt_re_after[SELECT_OFF:SELECT_OFF + 13] == A14_MARKER and
+                     tgt_re_after[2048 * SECTOR:2048 * SECTOR + len(data)] == data
+                     and not err)
+        print("a14_reinst_install rc=%s sel=%s data=%s %s" %
+              (rc, tgt_re_after[SELECT_OFF:SELECT_OFF + 13] == A14_MARKER,
+               tgt_re_after[2048 * SECTOR:2048 * SECTOR + len(data)] == data,
+               "OK" if reinst_ok else "FAIL"))
+        if not reinst_ok:
+            show("a14_reinst_install", rc, got, err)
+            fails.append("a14_reinst_install")
+        ok, _, _ = run_case(tgt_re_after, tmp_root, "a14_reinst_reboot",
+                            expect_boot(host))
+        if not ok:
+            fails.append("a14_reinst_reboot")
+
         # ---------- A14 на отдельном диске данных (HDD/SSD, дефолтный stage2) ----------
         sep_boot = write_sel(sep1, selector(A14_NAME), pin=False)
         ok, _, _ = run_sep_case(bytes(sep_boot), data_path, tmp_root,
